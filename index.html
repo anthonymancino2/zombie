@@ -380,11 +380,11 @@ h1.title em{font-style:normal;color:var(--accent2);}
             <canvas id="portraitFemale" width="160" height="160"></canvas>
             <div><div class="cname">CPT. MARA "VEGA" SOLIS</div><div class="cclass">TACTICAL OPERATOR</div></div>
           </div>
-          <div class="cdesc">Fast, precise, disciplined. Quicker on her feet and faster on the reload.</div>
+          <div class="cdesc">Fast, precise, disciplined. Covers ground others can't, and picks her shots.</div>
           <div class="stats">
             <span>VITALS</span><div class="bar"><i style="width:70%"></i></div>
             <span>SPEED</span><div class="bar"><i style="width:88%"></i></div>
-            <span>RELOAD</span><div class="bar"><i style="width:90%"></i></div>
+            <span>RELOAD</span><div class="bar"><i style="width:62%"></i></div>
           </div>
         </div>
       </div>
@@ -555,7 +555,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.1.0';
+const GAME_VERSION = 'v1.1.1';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -593,7 +593,7 @@ const CHARS = {
   },
   female: {
     id: 'female', short: 'VEGA', name: 'CPT. MARA "VEGA" SOLIS', cls: 'TACTICAL OPERATOR',
-    hp: 100, speed: 6.5, reloadMul: 0.78, hpLabel: 'VITALS', accent: 0x21e6c1, crosshair: 'ring',
+    hp: 100, speed: 6.5, reloadMul: 1.0, hpLabel: 'VITALS', accent: 0x21e6c1, crosshair: 'ring',
     voice: { pitch: 1.15, rate: 1.05 }, skin: 0xb27a55, glove: 0x141416,
     lines: {
       start: ["Perimeter is hot. Weapons free.", "Vega on site. Engaging on contact."],
