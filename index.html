@@ -608,7 +608,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.10.0';
+const GAME_VERSION = 'v1.11.0';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -629,7 +629,8 @@ const CFG = {
   tpTiers: {
     close: { dist: 1.35, side: 0.55, up: 0.32 },
     medium: { dist: 2.5, side: 0.92, up: 0.45 },
-    far: { dist: 4.6, side: 1.3, up: 0.7 }
+    far: { dist: 4.6, side: 1.3, up: 0.7 },
+    veryfar: { dist: 8.5, side: 1.8, up: 1.4 }
   },
   tpCloseAlpha: 0.38,
   // hunter: the coil, the leap, and how long it can ride you. pinMax is the safety valve — a solo
@@ -813,6 +814,21 @@ const Avatars = {
     f.scale.set(0.4, 0.4, 1); f.position.set(0.16, 1.35, -0.3); f.visible = false;
     return f;
   },
+  // finds the one bone that's the RIGHT hand across every rig naming scheme in the roster
+  // (RightHand_630_012, RightHand_gr, r_hand, hand_r, Bip001_R_Hand_025) while rejecting the left
+  // hand and finger sub-bones (RightHand_tip_gr) that would otherwise also match "right"/"hand".
+  findHandBone(root) {
+    let best = null;
+    root.traverse(o => {
+      if (!o.isBone) return;
+      const n = o.name;
+      if (/tip|thumb|index|middle|pinky|finger/i.test(n)) return;
+      if (/left/i.test(n) || /(^|_)l(_|$)/i.test(n)) return;
+      const isRight = /right/i.test(n) || /(^|_)r(_|$)/i.test(n);
+      if (isRight && /hand/i.test(n) && (!best || n.length < best.name.length)) best = o;
+    });
+    return best;
+  },
   // a live body instance for one player/peer slot; safe to call repeatedly for the same champion
   async spawn(id) {
     const av = AVATARS[id] || AVATARS.cloud;
@@ -831,7 +847,34 @@ const Avatars = {
     for (const role in tpl.clipsByRole) { const clip = tpl.clipsByRole[role]; actions[role] = clip ? mixer.clipAction(clip) : null; }
     if (actions.idle) actions.idle.play();
     const flash = this._flash(); root.add(flash);
-    return { kind: 'gltf', g: root, mixer: mixer, actions: actions, current: 'idle', flash: flash, avatarId: av.id };
+    // a wrapper on the hand bone, pre-scaled to cancel out whatever internal bind-pose scale that
+    // bone happens to carry in THIS rig — otherwise the same gun prop that looks right in one
+    // champion's hand renders comically large or tiny in another's, since the per-champion
+    // normalization scale cascades multiplicatively down through every bone in the skeleton.
+    const handBone = this.findHandBone(inner);
+    let gunSlot = null;
+    if (handBone) {
+      gunSlot = new THREE.Group();
+      const ws = new THREE.Vector3(); handBone.getWorldScale(ws);
+      gunSlot.scale.set(ws.x ? 1 / ws.x : 1, ws.y ? 1 / ws.y : 1, ws.z ? 1 / ws.z : 1);
+      handBone.add(gunSlot);
+    }
+    return { kind: 'gltf', g: root, mixer: mixer, actions: actions, current: 'idle', flash: flash, avatarId: av.id, gunSlot: gunSlot, gunMesh: null, gunKind: null };
+  },
+  // attaches (or swaps) whatever gun `kind` ('pistol'/'shotgun'/'rifle'/null) belongs in this
+  // body's hand — reuses the same buildGun() the first-person viewmodel already uses, so it's
+  // always visually whatever weapon that character actually has equipped.
+  setGun(m, kind) {
+    if (!m.gunSlot || m.gunKind === kind) return;
+    m.gunKind = kind;
+    if (m.gunMesh) { m.gunSlot.remove(m.gunMesh); m.gunMesh = null; }
+    if (!kind) return;
+    const def = WEAPONS.find(w => w.id === kind); if (!def) return;
+    const g = buildGun(def);
+    // buildGun() sizes/orients for the first-person viewmodel's own hand — a generic scale-down
+    // keeps it from looking absurd in an arbitrary rig's hand without hand-tuning all five rigs.
+    g.scale.setScalar(0.85);
+    m.gunSlot.add(g); m.gunMesh = g;
   },
   // walk-cycle crossfade + downed tilt, the GLTF-body equivalent of poseSurvivor
   pose(m, dt, gait, downed) {
@@ -3123,7 +3166,17 @@ const Player = {
     b.g.traverse(o => {
       if (!o.isMesh && !o.isSkinnedMesh) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
-      for (const m of mats) { m.transparent = !opaque; m.opacity = alpha; m.depthWrite = opaque; }
+      for (const m of mats) {
+        m.transparent = !opaque; m.opacity = alpha;
+        // depthWrite must stay ON even while transparent, and the material must be single-sided —
+        // otherwise a see-through head renders its OWN far side (the face) blended right on top of
+        // the near side (the back of the skull) when viewed from behind, which reads as the face
+        // showing through the back of the head. FrontSide culls the far-side triangles outright
+        // instead of relying on draw order to hide them.
+        m.depthWrite = true;
+        if (m._origSide === undefined) m._origSide = m.side;
+        m.side = opaque ? m._origSide : THREE.FrontSide;
+      }
     });
   },
   updateBody(dt) {
@@ -3132,6 +3185,7 @@ const Player = {
     b.g.visible = show; b.shadow.visible = show;
     if (!show) return;
     this._setBodyAlpha(b, Game.camDist === 'close' ? CFG.tpCloseAlpha : 1);
+    if (b.kind === 'gltf') Avatars.setGun(b, this.weapon().def.id);
     const gait = Math.min(1, this.moveMag * (this.sprinting ? 1.5 : 1));
     this.bodyAnim += dt * (1.6 + this.moveMag * (this.sprinting ? 11 : 7));
     b.g.position.set(this.x, 0, this.z);
@@ -3454,7 +3508,7 @@ const HUD = {
   refreshOptions() {
     const G = Game;
     [DOM.optAuto, DOM.pOptAuto].forEach(e => { e.classList.toggle('on', G.autoFire); e.querySelector('span').textContent = G.autoFire ? 'ON' : 'OFF'; });
-    [DOM.optCam, DOM.pOptCam].forEach(e => { e.classList.toggle('on', G.camMode === 'tp'); e.querySelector('span').textContent = G.camMode === 'tp' ? '3RD-' + G.camDist.slice(0, 3).toUpperCase() : '1ST'; });
+    [DOM.optCam, DOM.pOptCam].forEach(e => { e.classList.toggle('on', G.camMode === 'tp'); e.querySelector('span').textContent = G.camMode === 'tp' ? '3RD-' + G.CAM_DIST_ABBR[G.camDist] : '1ST'; });
     // in coop the squad is the people you are actually playing with, so the bot control steps
     // aside; solo cycles OFF/1/2/3 bots on a single click-through control
     [DOM.optSquad, DOM.pOptSquad].forEach(e => {
@@ -3466,7 +3520,7 @@ const HUD = {
     [DOM.optSound, DOM.pOptSound].forEach(e => { e.classList.toggle('on', G.sound); e.querySelector('span').textContent = G.sound ? 'ON' : 'OFF'; });
     DOM.optSens.value = Input.sens; DOM.pOptSens.value = Input.sens; DOM.sensVal.textContent = Input.sens.toFixed(1); DOM.pSensVal.textContent = Input.sens.toFixed(1);
     DOM.btnAuto.classList.toggle('on', G.autoFire); DOM.autoState.textContent = G.autoFire ? 'ON' : 'OFF';
-    DOM.btnCam.classList.toggle('on', G.camMode === 'tp'); DOM.camState.textContent = G.camMode === 'tp' ? G.camDist.slice(0, 3).toUpperCase() : '1ST';
+    DOM.btnCam.classList.toggle('on', G.camMode === 'tp'); DOM.camState.textContent = G.camMode === 'tp' ? G.CAM_DIST_ABBR[G.camDist] : '1ST';
     DOM.bestLine.textContent = G.best.wave > 0 ? 'BEST RUN: WAVE ' + G.best.wave + ' · ' + fmt(G.best.points) + ' PTS' : '';
   }
 };
@@ -3549,6 +3603,7 @@ const Bots = {
       if (b.avatarId !== myAvatarId || b._avGen !== gen) { R.scene.remove(body.g); return; }
       for (const c of b.vis.g.children.slice()) { if (c !== b.vis.flash) b.vis.g.remove(c); }
       b.vis.g.add(body.g); b.vis.mixer = body.mixer; b.vis.actions = body.actions; b.vis.current = body.current;
+      b.vis.gunSlot = body.gunSlot; b.vis.gunMesh = null; b.vis.gunKind = null;
     }).catch(e => console.error('bot avatar failed to load', e));
   },
 
@@ -3839,6 +3894,7 @@ const Bots = {
     const v = b.vis, show = !b.out;
     v.g.visible = show; b.shadow.visible = show; b.label.visible = show;
     if (!show) return;
+    Avatars.setGun(v, b.def.kind);
     b.anim += dt * (1.6 + b.gait * 7);
     v.g.position.set(b.x, 0, b.z);
     v.g.rotation.y = b.ry;
@@ -3949,12 +4005,12 @@ const Game = {
   state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0, insta: 0, dbl: 0, timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
-  CAM_TIERS: ['fp', 'close', 'medium', 'far'],
+  CAM_TIERS: ['fp', 'close', 'medium', 'far', 'veryfar'],
   best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
   fpsAcc: 0, fpsN: 0, fpsAvg: 16.7, fpsT: 0, resT: 0, chain: [], realDt: 0.016, newBest: false, _pt: { x: 0, z: 0 },
   init() {
     try { const cm = localStorage.getItem('dnd_cam'); if (cm === 'tp' || cm === 'fp') this.camMode = cm; } catch (e) { }
-    try { const cd = localStorage.getItem('dnd_camdist'); if (cd === 'close' || cd === 'medium' || cd === 'far') this.camDist = cd; } catch (e) { }
+    try { const cd = localStorage.getItem('dnd_camdist'); if (this.CAM_TIERS.indexOf(cd) > 0) this.camDist = cd; } catch (e) { }
     try { const sq = localStorage.getItem('dnd_squad'); if (sq === '0' || sq === '1') this.squad = sq === '1'; } catch (e) { }
     try { const sc = localStorage.getItem('dnd_squadcount'); if (sc != null) this.squadCount = clamp(parseInt(sc, 10) || 0, 0, 3); } catch (e) { }
     HUD.init(); HUD.refreshOptions();
@@ -4001,7 +4057,9 @@ const Game = {
   updateRotateHint() { const portrait = window.innerHeight > window.innerWidth && ('ontouchstart' in window); DOM.rotateHint.textContent = portrait ? 'ROTATE TO LANDSCAPE FOR THE BEST EXPERIENCE' : ''; },
   // FIRST PERSON is the default and stays the fastest option to get back to — cycling from any
   // third-person distance always passes back through it before looping to CLOSE again.
-  camLabel() { return this.camMode === 'fp' ? '1ST PERSON' : '3RD PERSON — ' + this.camDist.toUpperCase(); },
+  CAM_DIST_NAME: { close: 'CLOSE', medium: 'MEDIUM', far: 'FAR', veryfar: 'VERY FAR' },
+  CAM_DIST_ABBR: { close: 'CLO', medium: 'MED', far: 'FAR', veryfar: 'FAR+' },
+  camLabel() { return this.camMode === 'fp' ? '1ST PERSON' : '3RD PERSON — ' + this.CAM_DIST_NAME[this.camDist]; },
   cycleCam() {
     const cur = this.camMode === 'fp' ? 'fp' : this.camDist;
     const next = this.CAM_TIERS[(this.CAM_TIERS.indexOf(cur) + 1) % this.CAM_TIERS.length];
@@ -5056,7 +5114,7 @@ const Net = {
     // the champion model loads async — this wrapper goes up immediately (empty) so position,
     // shadow, name tag and the muzzle flash all work from frame one; the real body is added as a
     // child of m.g the moment Avatars.spawn resolves
-    const m = { kind: 'gltf', g: new THREE.Group(), mixer: null, actions: {}, current: 'idle', ready: false };
+    const m = { kind: 'gltf', g: new THREE.Group(), mixer: null, actions: {}, current: 'idle', ready: false, gunSlot: null, gunMesh: null, gunKind: null };
     R.scene.add(m.g);
     m.flash = Avatars._flash(); m.g.add(m.flash);
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.52, 14), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
@@ -5067,6 +5125,7 @@ const Net = {
     Avatars.spawn(peer.char).then(body => {
       if (peer.vis !== m) { R.scene.remove(body.g); return; } // peer left/rejoined before this landed
       m.g.add(body.g); m.mixer = body.mixer; m.actions = body.actions; m.ready = true;
+      m.gunSlot = body.gunSlot;
     }).catch(e => console.error('peer avatar failed to load', e));
     return peer.vis;
   },
@@ -5094,6 +5153,7 @@ const Net = {
       if (p.st === 2) { if (p.vis) { p.vis.g.visible = false; p.vis.shadow.visible = false; p.vis.label.visible = false; p.vis.beacon.g.visible = false; } continue; }
       const v = this.ensureAvatar(p);
       v.g.visible = true; v.shadow.visible = true; v.label.visible = true;
+      Avatars.setGun(v, WEAPONS[p.w] ? WEAPONS[p.w].id : null);
       const ox = p.x, oz = p.z, kk = Math.min(1, dt * 12);
       p.x += (p.tx - p.x) * kk; p.z += (p.tz - p.z) * kk;
       let da = p.tRy - p.ry; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
