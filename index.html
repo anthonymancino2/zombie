@@ -61,8 +61,8 @@ button{font-family:inherit;color:inherit;}
 #hud.show{display:block;}
 .hudtl{position:absolute;left:calc(12px + var(--sal));top:calc(10px + var(--sat));}
 .hudtc{position:absolute;left:50%;top:calc(8px + var(--sat));transform:translateX(-50%);text-align:center;}
-.hudtr{position:absolute;right:calc(58px + var(--sar));top:calc(10px + var(--sat));text-align:right;}
-.hudbr{position:absolute;right:calc(14px + var(--sar));bottom:calc(192px + var(--sab));text-align:right;}
+.hudtr{position:absolute;right:calc(112px + var(--sar));top:calc(10px + var(--sat));text-align:right;}
+.hudbr{position:absolute;right:calc(14px + var(--sar));bottom:calc(202px + var(--sab));text-align:right;}
 .lbl{font-size:11px;letter-spacing:.18em;color:var(--accent2);text-shadow:0 0 8px var(--glow),0 1px 3px #000;opacity:.95;}
 #hpBar{width:min(42vw,220px);height:14px;border:2px solid var(--accent);background:rgba(0,0,0,.45);border-radius:3px;
   box-shadow:0 0 12px var(--glow),inset 0 0 8px rgba(0,0,0,.6);margin-top:4px;overflow:hidden;position:relative;}
@@ -128,13 +128,35 @@ button{font-family:inherit;color:inherit;}
 #btnFire{width:94px;height:94px;right:calc(18px + var(--sar));bottom:calc(20px + var(--sab));font-size:18px;
   border-width:3px;background:radial-gradient(circle at 40% 35%,rgba(255,255,255,.18),rgba(120,30,0,.55) 75%);}
 #btnFire .ring{position:absolute;inset:-9px;border-radius:50%;border:2px solid rgba(255,255,255,.18);pointer-events:none;}
-#btnReload{width:58px;height:58px;right:calc(120px + var(--sar));bottom:calc(24px + var(--sab));font-size:12px;}
-#btnSwitch{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(122px + var(--sab));font-size:12px;}
-#btnAuto{width:52px;height:52px;right:calc(92px + var(--sar));bottom:calc(104px + var(--sab));font-size:11px;border-color:rgba(255,255,255,.35);box-shadow:none;}
+#btnReload{width:58px;height:58px;right:calc(134px + var(--sar));bottom:calc(26px + var(--sab));font-size:12px;}
+#btnSwitch{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(136px + var(--sab));font-size:12px;}
+/* AUTO lives up in the corner beside PAUSE: it is a toggle you touch between waves, and down in
+   the thumb cluster it kept getting hit by accident while firing. */
+#btnAuto{width:44px;height:44px;right:calc(60px + var(--sar));top:calc(10px + var(--sat));font-size:10px;border-color:rgba(255,255,255,.35);box-shadow:none;}
+#btnAuto small{font-size:8px;margin-top:1px;}
 #btnAuto.on{border-color:#ffd83b;box-shadow:0 0 14px rgba(255,216,59,.6);color:#ffd83b;}
+/* Sprint sits above the movement thumb, out of the stick's landing zone. */
+#btnSprint{width:64px;height:64px;left:calc(52px + var(--sal));bottom:calc(192px + var(--sab));font-size:11px;border-color:var(--accent2);}
+#btnSprint .meter{position:absolute;inset:-6px;border-radius:50%;pointer-events:none;
+  background:conic-gradient(var(--accent2) calc(var(--k,1) * 360deg),rgba(255,255,255,.09) 0);
+  -webkit-mask:radial-gradient(circle,transparent 0 62%,#000 64%);mask:radial-gradient(circle,transparent 0 62%,#000 64%);}
+#btnSprint.on{border-color:#fff;box-shadow:0 0 18px var(--glow);}
+#btnSprint.spent{opacity:.5;}
 #btnPause{position:absolute;right:calc(10px + var(--sar));top:calc(10px + var(--sat));width:40px;height:40px;border-radius:8px;border:1px solid rgba(255,255,255,.35);
   background:rgba(0,0,0,.45);color:#fff;font-size:16px;font-family:var(--hud-font);letter-spacing:.1em;pointer-events:auto;touch-action:manipulation;}
 #btnPause:active{background:rgba(255,255,255,.25);}
+/* ---------- layout editor ---------- */
+#controls.editing .tbtn{animation:layoutwig 1.4s ease-in-out infinite;border-style:dashed;}
+#controls.editing #touchLayer{pointer-events:none;}
+@keyframes layoutwig{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+.tbtn.dragging{animation:none;transform:scale(1.08);box-shadow:0 0 26px var(--glow),0 8px 18px rgba(0,0,0,.6);}
+#layoutBar{position:absolute;left:50%;top:calc(64px + var(--sat));transform:translateX(-50%);display:none;gap:8px;align-items:center;
+  background:rgba(12,6,3,.92);border:1px solid var(--accent);border-radius:24px;padding:6px 8px 6px 16px;pointer-events:auto;
+  font-family:var(--hud-font);font-size:11px;letter-spacing:.14em;color:var(--sand);white-space:nowrap;z-index:6;}
+#layoutBar.show{display:flex;}
+#layoutBar button{font-family:var(--hud-font);font-size:11px;letter-spacing:.12em;border-radius:18px;padding:7px 14px;
+  border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.5);color:#fff;touch-action:manipulation;}
+#layoutBar button.go{border-color:var(--accent);background:rgba(255,122,26,.25);}
 
 /* ---------- Screens ---------- */
 .screen{position:absolute;inset:0;display:none;align-items:center;justify-content:center;pointer-events:auto;touch-action:pan-y;
@@ -197,11 +219,13 @@ h1.title em{font-style:normal;color:var(--accent2);}
 @media (max-height:440px){
   #toast{top:calc(84px + var(--sat));font-size:11px;}
   #btnFire{width:78px;height:78px;bottom:calc(12px + var(--sab));right:calc(14px + var(--sar));}
-  #btnReload{width:50px;height:50px;right:calc(100px + var(--sar));bottom:calc(14px + var(--sab));}
-  #btnSwitch{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(96px + var(--sab));}
-  #btnAuto{width:44px;height:44px;right:calc(72px + var(--sar));bottom:calc(76px + var(--sab));}
+  #btnReload{width:50px;height:50px;right:calc(116px + var(--sar));bottom:calc(16px + var(--sab));}
+  #btnSwitch{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(112px + var(--sab));}
+  #btnAuto{width:40px;height:40px;right:calc(56px + var(--sar));top:calc(10px + var(--sat));}
+  #btnSprint{width:56px;height:56px;left:calc(42px + var(--sal));bottom:calc(158px + var(--sab));}
   #joyHint{left:calc(42px + var(--sal));bottom:calc(42px + var(--sab));width:104px;height:104px;}
-  .hudbr{bottom:calc(152px + var(--sab));} #ammoMag{font-size:30px;} #ammoRes{font-size:11px;} #wpnName{font-size:10px;} #reloadHint{font-size:10px;}
+  #layoutBar{top:calc(56px + var(--sat));}
+  .hudbr{bottom:calc(186px + var(--sab));} #ammoMag{font-size:30px;} #ammoRes{font-size:11px;} #wpnName{font-size:10px;} #reloadHint{font-size:10px;}
   #points{font-size:22px;} #waveNum{font-size:22px;} #hpBar{width:32vw;height:12px;} #hpNum{font-size:17px;} #zLeft{font-size:10px;}
   #subtitle{font-size:12px;bottom:calc(16px + var(--sab));max-width:44vw;left:38%;}
 }
@@ -314,7 +338,9 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <div id="btnAuto" class="tbtn">AUTO<small id="autoState">OFF</small></div>
     <div id="btnSwitch" class="tbtn">SWAP<small>WEAPON</small></div>
     <div id="btnReload" class="tbtn">RELOAD</div>
+    <div id="btnSprint" class="tbtn"><span class="meter"></span>SPRINT</div>
     <div id="btnFire" class="tbtn"><span class="ring"></span>FIRE</div>
+    <div id="layoutBar">DRAG THE BUTTONS<button id="btnLayoutReset">RESET</button><button id="btnLayoutDone" class="go">DONE</button></div>
   </div>
 
   <!-- HUD -->
@@ -403,8 +429,8 @@ h1.title em{font-style:normal;color:var(--accent2);}
       </div>
       <div class="best" id="bestLine"></div>
       <div class="help">
-        <b>Touch:</b> left side = move (joystick) · right side = swipe to look · FIRE button (drag it to aim while shooting).<br>
-        <b>Desktop:</b> WASD move · mouse look · click fire · R reload · Q / 1-2-3 weapons · Esc pause.<br>
+        <b>Touch:</b> left side = move (joystick) · right side = swipe to look · FIRE button (drag it to aim while shooting) · SPRINT for a burst of speed. Pause → MOVE BUTTONS to drag the controls where your thumbs want them.<br>
+        <b>Desktop:</b> WASD move · Shift sprint · mouse look · click fire · R reload · Q / 1-2-3 weapons · Esc pause.<br>
         Shotgun unlocks at wave 3, assault rifle at wave 6. Shoot the red barrels. Grab the glowing drops.
       </div>
       <div class="help" id="verLine" style="opacity:.5"></div>
@@ -424,6 +450,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       </div>
       <div class="row">
         <button class="bigbtn" id="btnResume">RESUME</button>
+        <button class="bigbtn secondary" id="btnLayout">MOVE BUTTONS</button>
         <button class="bigbtn secondary" id="btnQuit">QUIT TO MENU</button>
       </div>
     </div></div>
@@ -555,7 +582,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.2.0';
+const GAME_VERSION = 'v1.3.0';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -568,6 +595,8 @@ const CFG = {
   pickupLife: 40,
   // coop: how long you bleed out on the sand, and what it costs a teammate to pick you back up
   downTime: 45, reviveTime: 3.5, reviveRange: 2.4, reviveHp: 0.4,
+  // sprint: a full meter buys ~4s of running, and refills in ~7s once you stop leaning on it
+  sprintMul: 1.62, sprintDrain: 0.25, sprintRegen: 0.145, sprintHold: 0.7, sprintMin: 0.12,
 };
 
 /* ------------------------------------------------------------------ characters */
@@ -1106,11 +1135,11 @@ const Input = {
   fireId: null, fireLX: 0, fireLY: 0,
   sens: 1.0, R: 58,
   touchSeen: false, pointerLocked: false, mouseDown: false,
-  on: { reload() { }, swap() { }, auto() { }, pause() { }, select() { }, any() { } },
+  on: { reload() { }, swap() { }, auto() { }, pause() { }, select() { }, sprint() { }, any() { } },
   el: {},
   init() {
     const el = this.el;
-    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnPause', 'c'].forEach(id => el[id] = $(id));
+    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnSprint', 'btnPause', 'c'].forEach(id => el[id] = $(id));
     const self = this, opt = { passive: false };
     const layer = el.touchLayer;
     layer.addEventListener('touchstart', function (e) { e.preventDefault(); self.touchSeen = true; self.on.any(); for (const t of e.changedTouches) self.touchBegin(t); }, opt);
@@ -1120,6 +1149,7 @@ const Input = {
     // Fire button: hold to fire, drag on it to aim while firing.
     const fb = el.btnFire;
     fb.addEventListener('touchstart', function (e) {
+      if (Layout.editing) return;
       e.preventDefault(); self.touchSeen = true; self.on.any();
       if (self.fireId !== null) return;
       const t = e.changedTouches[0]; self.fireId = t.identifier; self.fireLX = t.clientX; self.fireLY = t.clientY;
@@ -1135,14 +1165,15 @@ const Input = {
     window.addEventListener('mouseup', function () { if (self.mouseDown) { self.mouseDown = false; } if (!self.pointerLocked) { self.fire = false; fb.classList.remove('pressed'); } else { self.fire = false; } });
     // Tap buttons
     const tap = function (b, fn) {
-      b.addEventListener('touchstart', function (e) { e.preventDefault(); self.touchSeen = true; self.on.any(); b.classList.add('pressed'); fn(); }, opt);
+      b.addEventListener('touchstart', function (e) { if (Layout.editing) return; e.preventDefault(); self.touchSeen = true; self.on.any(); b.classList.add('pressed'); fn(); }, opt);
       const off = function (e) { e.preventDefault(); b.classList.remove('pressed'); };
       b.addEventListener('touchend', off, opt); b.addEventListener('touchcancel', off, opt);
-      b.addEventListener('click', function (e) { e.preventDefault(); self.on.any(); fn(); });
+      b.addEventListener('click', function (e) { e.preventDefault(); if (Layout.editing) return; self.on.any(); fn(); });
     };
     tap(el.btnReload, () => self.on.reload());
     tap(el.btnSwitch, () => self.on.swap());
     tap(el.btnAuto, () => self.on.auto());
+    tap(el.btnSprint, () => self.on.sprint());
     tap(el.btnPause, () => self.on.pause());
     // Keyboard
     window.addEventListener('keydown', function (e) {
@@ -1176,6 +1207,7 @@ const Input = {
     document.addEventListener('dblclick', function (e) { e.preventDefault(); });
   },
   touchBegin(t) {
+    if (Layout.editing) return;
     const W = window.innerWidth;
     if (t.clientX < W * 0.5 && this.joyId === null) {
       this.joyId = t.identifier; this.joyOX = t.clientX; this.joyOY = t.clientY; this.mx = 0; this.my = 0;
@@ -1220,6 +1252,83 @@ const Input = {
     out.x = this.lookDX * this.sens; out.y = this.lookDY * this.sens; this.lookDX = 0; this.lookDY = 0; return out;
   },
   consumeFireEdge() { const e = this.fireEdge; this.fireEdge = false; return e; }
+};
+
+/* ------------------------------------------------------------------ movable touch layout
+   Thumb reach is personal and the stock arrangement cannot suit every hand, so every action
+   button can be dragged from the pause menu. Positions are stored as viewport fractions of the
+   button centre, which keeps them sane across a rotate or a different phone. */
+const Layout = {
+  KEY: 'dnd_layout_v1',
+  ids: ['btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnSprint'],
+  pos: {}, editing: false, drag: null, els: {}, bar: null,
+  init() {
+    for (const id of this.ids) this.els[id] = $(id);
+    this.bar = $('layoutBar');
+    this.load(); this.apply();
+    const self = this, opt = { passive: false, capture: true };
+    $('btnLayoutDone').addEventListener('click', function (e) { e.preventDefault(); self.end(); });
+    $('btnLayoutReset').addEventListener('click', function (e) { e.preventDefault(); self.reset(); });
+    const down = function (e) {
+      if (!self.editing || self.drag) return;
+      const el = e.target && e.target.closest ? e.target.closest('.tbtn') : null;
+      if (!el || self.ids.indexOf(el.id) < 0) return;
+      e.preventDefault(); e.stopPropagation();
+      const t = e.changedTouches ? e.changedTouches[0] : e, r = el.getBoundingClientRect();
+      self.drag = { el: el, id: el.id, tid: e.changedTouches ? t.identifier : null,
+        dx: t.clientX - (r.left + r.width / 2), dy: t.clientY - (r.top + r.height / 2) };
+      el.classList.add('dragging');
+    };
+    const move = function (e) {
+      const d = self.drag; if (!d) return;
+      let t = e;
+      if (e.changedTouches) { t = null; for (const c of e.changedTouches) if (c.identifier === d.tid) t = c; if (!t) return; }
+      e.preventDefault(); e.stopPropagation();
+      self.place(d.id, t.clientX - d.dx, t.clientY - d.dy);
+    };
+    const up = function (e) {
+      const d = self.drag; if (!d) return;
+      e.preventDefault(); e.stopPropagation();
+      d.el.classList.remove('dragging'); self.drag = null; self.save();
+    };
+    document.addEventListener('touchstart', down, opt); document.addEventListener('touchmove', move, opt);
+    document.addEventListener('touchend', up, opt); document.addEventListener('touchcancel', up, opt);
+    document.addEventListener('mousedown', down, opt); document.addEventListener('mousemove', move, opt); document.addEventListener('mouseup', up, opt);
+    window.addEventListener('resize', function () { self.apply(); });
+    window.addEventListener('orientationchange', function () { setTimeout(function () { self.apply(); }, 140); });
+  },
+  load() { try { const raw = localStorage.getItem(this.KEY); this.pos = raw ? (JSON.parse(raw) || {}) : {}; } catch (e) { this.pos = {}; } },
+  save() { try { localStorage.setItem(this.KEY, JSON.stringify(this.pos)); } catch (e) { } },
+  place(id, cx, cy) {
+    const el = this.els[id]; if (!el) return;
+    const mx = el.offsetWidth / 2 + 6, my = el.offsetHeight / 2 + 6;
+    cx = clamp(cx, mx, window.innerWidth - mx); cy = clamp(cy, my, window.innerHeight - my);
+    this.pos[id] = { x: cx / window.innerWidth, y: cy / window.innerHeight };
+    this.applyOne(id);
+  },
+  applyOne(id) {
+    const el = this.els[id], p = this.pos[id]; if (!el) return;
+    if (!p) { el.style.left = el.style.top = el.style.right = el.style.bottom = ''; return; }
+    el.style.right = 'auto'; el.style.bottom = 'auto';
+    el.style.left = Math.round(p.x * window.innerWidth - el.offsetWidth / 2) + 'px';
+    el.style.top = Math.round(p.y * window.innerHeight - el.offsetHeight / 2) + 'px';
+  },
+  apply() { for (const id of this.ids) this.applyOne(id); },
+  reset() { this.pos = {}; this.save(); this.apply(); HUD.toast('LAYOUT RESET', 1.6); },
+  begin() {
+    this.editing = true; Input.reset();
+    HUD.showScreen(null);
+    DOM.hud.classList.add('show'); DOM.controls.classList.add('show', 'editing');
+    this.bar.classList.add('show');
+  },
+  end() {
+    this.editing = false; this.drag = null; this.save();
+    DOM.controls.classList.remove('editing'); this.bar.classList.remove('show');
+    for (const id of this.ids) this.els[id].classList.remove('dragging', 'pressed');
+    Input.reset();
+    if (Game.state === 'paused' || Game.coopMenu) HUD.showScreen('pause');
+    else if (Game.state !== 'playing') { HUD.showScreen('menu'); HUD.showHud(false); }
+  }
 };
 
 /* ------------------------------------------------------------------ renderer, cameras, sky, ground, dunes */
@@ -2412,6 +2521,7 @@ function buildGun(def) {
 const Player = {
   x: 0, z: 0, yaw: 0, pitch: 0, hp: 100, maxHp: 100, alive: true, speed: 6, char: CHARS.male,
   downed: false, downT: 0, spectating: false,
+  stamina: 1, sprintOn: false, sprinting: false, staminaHold: 0,
   weapons: [], cur: 0, cooldown: 0, reloading: false, reloadT: 0, reloadTotal: 1, switchT: 0, bloom: 0,
   bobT: 0, stepD: 0, moveMag: 0, lastHurt: -99, recoil: 0, swayX: 0, swayY: 0, lastLookX: 0, lastLookY: 0,
   stats: { shots: 0, hits: 0, kills: 0, head: 0 },
@@ -2433,6 +2543,7 @@ const Player = {
     if (this.char !== char) { this.char = char; this.buildModels(); }
     this.x = 0; this.z = 0; this.yaw = rnd(0, TAU); this.pitch = 0; this.maxHp = char.hp; this.hp = char.hp; this.alive = true; this.speed = char.speed;
     this.downed = false; this.downT = 0; this.spectating = false;
+    this.stamina = 1; this.sprintOn = false; this.sprinting = false; this.staminaHold = 0;
     // squadmates would otherwise all boot up inside each other at the origin
     if (Net.mode !== 'off') { const a = rnd(0, TAU); this.x = Math.cos(a) * 2.6; this.z = Math.sin(a) * 2.6; }
     this.weapons = WEAPONS.map((def, i) => ({ def: def, owned: i === 0, mag: def.mag, reserve: def.reserve }));
@@ -2462,7 +2573,9 @@ const Player = {
       this.yaw -= lk.x * s; this.pitch = clamp(this.pitch - lk.y * s, -1.25, 1.25);
       const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw), rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
       const mag = Math.min(1, Math.sqrt(mv.x * mv.x + mv.y * mv.y)); this.moveMag = lerp(this.moveMag, mag, Math.min(1, dt * 10));
-      const vx = (fx * mv.y + rx * mv.x) * this.speed, vz = (fz * mv.y + rz * mv.x) * this.speed;
+      this.updateSprint(dt, mag);
+      const spd = this.speed * (this.sprinting ? CFG.sprintMul : 1);
+      const vx = (fx * mv.y + rx * mv.x) * spd, vz = (fz * mv.y + rz * mv.x) * spd;
       this.x += vx * dt; this.z += vz * dt;
       World.collide(this, CFG.playerR);
       const zs = Zombies.pool;
@@ -2486,6 +2599,25 @@ const Player = {
     this.recoil = Math.max(0, this.recoil - dt * 8);
     this.updateCamera();
     this.updateViewmodel(dt);
+  },
+  // Sprint is a tap-to-engage burst, not a hold: on a phone the movement thumb cannot also hold
+  // a second button. It drops out on its own when the meter empties or you stop moving.
+  updateSprint(dt, mag) {
+    const shift = !!(Input.keys.ShiftLeft || Input.keys.ShiftRight);
+    if (shift) this.sprintOn = true; else if (this._shiftWas) this.sprintOn = false;
+    this._shiftWas = shift;
+    const want = this.sprintOn && mag > 0.35 && this.stamina > 0;
+    if (this.sprintOn && (this.stamina <= 0 || mag <= 0.05)) this.sprintOn = false;
+    this.sprinting = want;
+    if (want) { this.stamina = Math.max(0, this.stamina - dt * CFG.sprintDrain); this.staminaHold = CFG.sprintHold; this.bobT += dt * 4; }
+    else if (this.staminaHold > 0) this.staminaHold -= dt;
+    else this.stamina = Math.min(1, this.stamina + dt * CFG.sprintRegen);
+  },
+  toggleSprint() {
+    if (!this.alive || this.downed) return;
+    if (this.sprintOn) { this.sprintOn = false; return; }
+    if (this.stamina < CFG.sprintMin) { Audio.empty(); HUD.toast('WINDED — CATCH YOUR BREATH', 1.4); return; }
+    this.sprintOn = true;
   },
   updateCamera() {
     const cam = R.camera, sh = Game.shake;
@@ -2725,7 +2857,7 @@ const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
     ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'reloadHint',
-      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'joyHint', 'rotateHint',
+      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnSprint', 'joyHint', 'rotateHint',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
       'btnLeaders', 'btnLeadersBack', 'btnLobbyStart', 'btnLobbyLeave', 'lobbyCode', 'lobbyPlayers', 'lobbyStatus', 'lobbyHint',
@@ -2763,6 +2895,14 @@ const HUD = {
     this.set('res', DOM.ammoRes, (w.reserve === Infinity ? '∞' : w.reserve) + ' RESERVE');
     this.set('wpn', DOM.wpnName, w.def.name);
     this.set('rh', DOM.reloadHint, P.reloading ? 'RELOADING...' : (w.mag === 0 ? (w.reserve > 0 ? 'TAP RELOAD' : 'NO AMMO — SWAP') : (w.mag <= Math.ceil(w.def.mag * 0.25) ? 'LOW AMMO' : '')));
+    // sprint charge ring
+    const stamK = Math.round(P.stamina * 40);
+    if (this.last.stam !== stamK) {
+      this.last.stam = stamK;
+      DOM.btnSprint.style.setProperty('--k', P.stamina.toFixed(3));
+      DOM.btnSprint.classList.toggle('spent', P.stamina < CFG.sprintMin);
+    }
+    if (this.last.spr !== P.sprinting) { this.last.spr = P.sprinting; DOM.btnSprint.classList.toggle('on', P.sprinting); }
   },
   toast(msg, dur) { DOM.toast.textContent = msg; DOM.toast.classList.add('show'); this.toastT = dur || 2.2; },
   banner(title, sub, long) {
@@ -2801,11 +2941,13 @@ const Game = {
     Input.on.swap = function () { if (self.state === 'playing') Player.swap(); };
     Input.on.select = function (i) { if (self.state === 'playing') Player.switchTo(i); };
     Input.on.auto = function () { self.autoFire = !self.autoFire; HUD.refreshOptions(); HUD.toast('AUTO-FIRE ' + (self.autoFire ? 'ON' : 'OFF')); };
-    Input.on.pause = function () { if (self.coopMenu) self.resume(); else if (self.state === 'playing') self.pause(); else if (self.state === 'paused') self.resume(); };
+    Input.on.sprint = function () { if (self.state === 'playing') Player.toggleSprint(); };
+    Input.on.pause = function () { if (Layout.editing) { Layout.end(); return; } if (self.coopMenu) self.resume(); else if (self.state === 'playing') self.pause(); else if (self.state === 'paused') self.resume(); };
     // menu
     $('cardMale').addEventListener('click', () => self.selectChar('male')); $('cardFemale').addEventListener('click', () => self.selectChar('female'));
     $('btnStart').addEventListener('click', () => { Audio.unlock(); self.start(); });
     $('btnResume').addEventListener('click', () => self.resume()); $('btnQuit').addEventListener('click', () => self.toMenu());
+    $('btnLayout').addEventListener('click', () => Layout.begin());
     $('btnAgain').addEventListener('click', () => {
       Audio.unlock();
       if (Net.mode === 'host') { Net.seed = Math.floor(Math.random() * 1e9); Net.wipeSent = false; Net.startRun(); }
@@ -3266,6 +3408,36 @@ const ZTYPE_LIST = ['walker', 'runner', 'brute'];
 const PU_LIST = ['health', 'ammo', 'insta', 'double'];
 const r2 = (v) => Math.round(v * 100) / 100;
 
+/* ------------------------------------------------------------------ pause beacon
+   Opening the menu in coop does not stop the world, so a survivor standing in the menu gets a
+   pillar of light: the squad can find them across the arena and stand over them until they are back. */
+const Beacon = {
+  make(color) {
+    const g = new THREE.Group(); g.frustumCulled = false;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.3, 30, 14, 1, true),
+      new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    beam.position.y = 15;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.42, 28),
+      new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03;
+    g.add(beam, ring); g.visible = false;
+    R.scene.add(g);
+    return { g: g, beam: beam, ring: ring, t: 0 };
+  },
+  update(b, dt, x, z, on) {
+    if (!b) return;
+    b.g.visible = on; if (!on) return;
+    b.t += dt;
+    const pulse = 0.5 + Math.sin(b.t * 3.1) * 0.5;
+    b.g.position.set(x, 0, z);
+    b.g.rotation.y += dt * 0.55;
+    b.beam.material.opacity = 0.1 + pulse * 0.15;
+    b.ring.scale.setScalar(1 + pulse * 0.22);
+    b.ring.material.opacity = 0.28 + pulse * 0.38;
+  },
+  dispose(b) { if (!b) return; R.scene.remove(b.g); b.beam.geometry.dispose(); b.ring.geometry.dispose(); }
+};
+
 const Net = {
   id: '', pid: '', name: '',
   mode: 'off',                 // 'off' | 'host' | 'client'
@@ -3274,7 +3446,7 @@ const Net = {
   started: false, inRoom: false, joining: false, joinT: 0, seed: 0,
   rooms: {}, browsing: false,
   tSnap: 0, tInput: 0, tBeacon: 0, lastRecv: 0,
-  reviveTarget: null, reviveT: 0, wipeSent: false,
+  reviveTarget: null, reviveT: 0, wipeSent: false, selfBeacon: null,
   clock: 0, _roomsT: 0, _v: null,      // clock runs in menus too, unlike Game.time
 
   /* ---------------- identity + link ---------------- */
@@ -3421,7 +3593,7 @@ const Net = {
     return {
       id: id, name: (String(name || 'SURVIVOR').slice(0, 14) || 'SURVIVOR').toUpperCase(),
       char: ch === 'female' ? 'female' : 'male',
-      x: 0, z: 0, ry: 0, hp: 100, maxHp: 100, st: 0, w: 0, fire: 0, kills: 0, head: 0,
+      x: 0, z: 0, ry: 0, hp: 100, maxHp: 100, st: 0, w: 0, fire: 0, kills: 0, head: 0, afk: 0,
       tx: 0, tz: 0, tRy: 0, vis: null, walk: 0, flashT: 0, last: Net.clock,
       get alive() { return this.st === 0; },
       hurt: function (amount, fx, fz) { self.damagePeer(this, amount); }
@@ -3506,6 +3678,7 @@ const Net = {
     for (const k in this.peers) this.killAvatar(this.peers[k]);
     this.peers = {}; this.mode = 'off'; this.code = ''; this.started = false;
     this.inRoom = false; this.joining = false; this.reviveTarget = null; this.reviveT = 0;
+    if (this.selfBeacon) { Beacon.dispose(this.selfBeacon); this.selfBeacon = null; }
     if (DOM.coop) DOM.coop.classList.remove('show');
     if (DOM.netPill) DOM.netPill.classList.remove('show');
     if (DOM.downed) DOM.downed.classList.remove('show');
@@ -3513,23 +3686,29 @@ const Net = {
   },
 
   /* ---------------- per-player state exchange ---------------- */
-  setPeer(peer, x, z, ry, hp, maxHp, st, w, kills, fire, head) {
+  setPeer(peer, x, z, ry, hp, maxHp, st, w, kills, fire, head, afk) {
     if (peer.vis === null) { peer.x = x; peer.z = z; peer.ry = ry; }
     peer.tx = x; peer.tz = z; peer.tRy = ry;
     peer.hp = hp; peer.maxHp = maxHp || 100; peer.st = st | 0; peer.w = w | 0;
     if (kills != null) peer.kills = kills | 0;
     if (head != null) peer.head = head | 0;
     if (fire) peer.flashT = 0.06;
+    if (afk != null) {
+      const was = peer.afk;
+      peer.afk = afk ? 1 : 0;
+      if (peer.afk && !was && Game.state === 'playing') HUD.toast(peer.name + ' IS IN THE MENU — COVER THE LIGHT', 2.6);
+    }
   },
   // A client owns its position and hit points but NOT its kill count — the host resolves kills,
   // so taking `kills` from the client here would wipe the tally the host just credited.
-  applyPeerState(peer, m) { this.setPeer(peer, m.x, m.z, m.r, m.h, m.m, m.s, m.w, null, m.f, null); },
+  applyPeerState(peer, m) { this.setPeer(peer, m.x, m.z, m.r, m.h, m.m, m.s, m.w, null, m.f, null, m.a); },
   sendInput() {
     Mqtt.publish(this.topicC(), JSON.stringify({
       k: 'p', id: this.id, x: r2(Player.x), z: r2(Player.z), r: r2(Player.yaw),
       h: Math.round(Player.hp), m: Player.maxHp,
       s: Player.alive ? 0 : (Player.downed ? 1 : 2),
-      w: Player.cur, kl: Player.stats.kills, f: Player.vm.flashT > 0 ? 1 : 0
+      w: Player.cur, kl: Player.stats.kills, f: Player.vm.flashT > 0 ? 1 : 0,
+      a: Game.coopMenu ? 1 : 0
     }));
   },
   damagePeer(peer, amount) {
@@ -3624,10 +3803,11 @@ const Net = {
     const us = [];
     for (let i = 0; i < Pickups.pool.length; i++) { const p = Pickups.pool[i]; if (p.on) us.push([i, PU_LIST.indexOf(p.type), r2(p.x), r2(p.z)]); }
     const pl = [[this.id, r2(Player.x), r2(Player.z), r2(Player.yaw), Math.round(Player.hp), Player.maxHp,
-      Player.alive ? 0 : (Player.downed ? 1 : 2), Player.cur, Player.stats.kills, Player.vm.flashT > 0 ? 1 : 0, Player.stats.head]];
+      Player.alive ? 0 : (Player.downed ? 1 : 2), Player.cur, Player.stats.kills, Player.vm.flashT > 0 ? 1 : 0, Player.stats.head,
+      Game.coopMenu ? 1 : 0]];
     for (const k in this.peers) {
       const p = this.peers[k];
-      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head]);
+      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head, p.afk]);
     }
     this.send({
       k: 's', wv: Game.wave, wa: Game.waveActive ? 1 : 0, ts: Game.toSpawn, pts: Math.round(Game.points),
@@ -3680,7 +3860,7 @@ const Net = {
       keep[id] = 1;
       let peer = this.peers[id];
       if (!peer) { peer = this.mkPeer(id, 'SURVIVOR', 'male'); this.peers[id] = peer; }
-      this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10]);
+      this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null);
     }
     for (const k in this.peers) if (!keep[k]) { this.killAvatar(this.peers[k]); delete this.peers[k]; }
   },
@@ -3749,7 +3929,8 @@ const Net = {
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.52, 14), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
     shadow.rotation.x = -Math.PI / 2; R.scene.add(shadow);
     const label = this.mkLabel(peer.name, accent); R.scene.add(label);
-    peer.vis = { g: g, legL: legL, legR: legR, torso: torso, armL: armL, armR: armR, flash: flash, shadow: shadow, label: label, anim: 0 };
+    peer.vis = { g: g, legL: legL, legR: legR, torso: torso, armL: armL, armR: armR, flash: flash, shadow: shadow, label: label, anim: 0,
+      beacon: Beacon.make(accent) };
     return peer.vis;
   },
   mkLabel(text, accent) {
@@ -3767,12 +3948,13 @@ const Net = {
     R.scene.remove(v.g); R.scene.remove(v.shadow); R.scene.remove(v.label);
     v.g.traverse(function (o) { if (o.geometry && o.geometry.dispose) o.geometry.dispose(); });
     v.shadow.geometry.dispose();
+    Beacon.dispose(v.beacon);
     peer.vis = null;
   },
   updateAvatars(dt) {
     for (const k in this.peers) {
       const p = this.peers[k];
-      if (p.st === 2) { if (p.vis) { p.vis.g.visible = false; p.vis.shadow.visible = false; p.vis.label.visible = false; } continue; }
+      if (p.st === 2) { if (p.vis) { p.vis.g.visible = false; p.vis.shadow.visible = false; p.vis.label.visible = false; p.vis.beacon.g.visible = false; } continue; }
       const v = this.ensureAvatar(p);
       v.g.visible = true; v.shadow.visible = true; v.label.visible = true;
       const ox = p.x, oz = p.z, kk = Math.min(1, dt * 12);
@@ -3801,7 +3983,11 @@ const Net = {
       }
       if (p.flashT > 0) { p.flashT -= dt; v.flash.visible = true; v.flash.material.rotation = Math.random() * TAU; }
       else v.flash.visible = false;
+      Beacon.update(v.beacon, dt, p.x, p.z, !!p.afk);
     }
+    // your own pillar, so you can see you are lit up while the menu is open
+    if (Game.coopMenu && !this.selfBeacon) this.selfBeacon = Beacon.make(0xffd83b);
+    Beacon.update(this.selfBeacon, dt, Player.x, Player.z, !!Game.coopMenu);
   },
 
   /* ---------------- downed + revive ---------------- */
@@ -4004,7 +4190,7 @@ function boot() {
   if (!window.THREE) { $('loadErr').classList.add('show'); return; }
   try {
     buildTextures(); R.init(); World.init(); Particles.init(); Dust.init(); Floaties.init(); Decals.init(); Bullets.init();
-    Zombies.init(); Pickups.init(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init();
+    Zombies.init(); Pickups.init(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
   } catch (e) {
     console.error(e);
     const el = $('loadErr'); el.classList.add('show'); el.querySelector('h3').textContent = 'COULD NOT START THE ARENA'; el.querySelector('p').textContent = 'WebGL may be unavailable on this device. (' + (e && e.message ? e.message : e) + ')';
