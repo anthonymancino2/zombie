@@ -587,7 +587,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.4.1';
+const GAME_VERSION = 'v1.4.2';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -603,7 +603,7 @@ const CFG = {
   // sprint: a full meter buys ~4s of running, and refills in ~7s once you stop leaning on it
   sprintMul: 1.62, sprintDrain: 0.25, sprintRegen: 0.145, sprintHold: 0.7, sprintMin: 0.12,
   // third-person boom: behind and over the right shoulder, camera axis parallel to the aim ray
-  tpDist: 2.5, tpSide: 0.85, tpUp: 0.28,
+  tpDist: 2.5, tpSide: 0.92, tpUp: 0.45,
 };
 
 /* ------------------------------------------------------------------ characters */
