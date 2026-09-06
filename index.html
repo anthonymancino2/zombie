@@ -9,6 +9,9 @@
 <meta name="theme-color" content="#1a0f08">
 <meta name="description" content="Dust & Dead — a first-person zombie wave survival shooter set in a sun-baked desert arena. Touch-first, single file, no downloads.">
 <title>Dust &amp; Dead</title>
+<!-- App icon: a sun-bleached skull against the desert sun. This inline SVG is the tab icon —
+     boot() draws a richer 180px version onto a canvas for the iOS home screen (makeAppIcon). -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a1508'/%3E%3Ccircle cx='32' cy='31' r='23' fill='%23ff7a1a'/%3E%3Ccircle cx='32' cy='31' r='15' fill='%23ffc36b'/%3E%3Cpath d='M2 50c9-5 16 2 30-1s21-6 30-1v17H2z' fill='%238f3c06'/%3E%3Cpath d='M2 57c11-4 18 2 30 0s19-4 30-1v11H2z' fill='%235c2405'/%3E%3Cpath d='M32 9c-11 0-18 7-18 17 0 6 2 11 6 14v6c0 2 2 4 4 4h16c2 0 4-2 4-4v-6c4-3 6-8 6-14 0-10-7-17-18-17z' fill='%23f2e3c4'/%3E%3Cellipse cx='24' cy='26' rx='6' ry='6.6' fill='%23200f04'/%3E%3Cellipse cx='40' cy='26' rx='6' ry='6.6' fill='%23200f04'/%3E%3Ccircle cx='24' cy='27' r='2.1' fill='%23ff5a10'/%3E%3Ccircle cx='40' cy='27' r='2.1' fill='%23ff5a10'/%3E%3Cpath d='M32 31l-3.4 7h6.8z' fill='%23200f04'/%3E%3Cpath d='M25 43h14M29 42v8M35 42v8' stroke='%23200f04' stroke-width='2.4'/%3E%3C/svg%3E">
 <style>
 :root{
   --accent:#ff7a1a;
@@ -303,6 +306,22 @@ h1.title em{font-style:normal;color:var(--accent2);}
 #revive .rbar{height:7px;width:170px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.18);border-radius:4px;overflow:hidden;margin:6px auto 0;}
 #revive .rbar i{display:block;height:100%;background:#5dff7a;transform-origin:left;transform:scaleX(0);}
 
+/* boss bar + hunter pin. The bar sits under the toast rather than beside the corner clusters,
+   which is the only band of the top strip that is free in both orientations. */
+#boss{position:absolute;left:50%;top:calc(124px + var(--sat));transform:translateX(-50%);width:min(46vw,320px);display:none;text-align:center;pointer-events:none;}
+#boss.show{display:block;}
+#boss .bn{font-family:var(--hud-font);font-size:11px;letter-spacing:.24em;color:#ff8a3a;text-shadow:0 0 10px rgba(255,60,20,.8),0 1px 3px #000;}
+#boss .bb{height:10px;background:rgba(0,0,0,.62);border:2px solid #ff3b1a;border-radius:4px;overflow:hidden;margin-top:3px;box-shadow:0 0 14px rgba(255,59,26,.55);}
+#boss .bb i{display:block;height:100%;transform-origin:left;background:linear-gradient(90deg,#ff2a1a,#ffb347);}
+#pinned{position:absolute;left:50%;top:56%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;display:none;width:min(90vw,380px);}
+#pinned.show{display:block;}
+#pinned .pt{font-family:var(--hud-font);font-size:clamp(22px,5vw,38px);letter-spacing:.14em;color:#ff3b3b;
+  text-shadow:0 0 26px rgba(255,59,59,.85),0 3px 2px #000;animation:pinshake .16s linear infinite;}
+#pinned .ps{font-family:var(--hud-font);font-size:12px;letter-spacing:.18em;color:var(--sand);margin-top:5px;text-shadow:0 1px 3px #000;}
+#pinned .pb{height:9px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);border-radius:4px;overflow:hidden;margin:9px auto 0;width:74%;}
+#pinned .pb i{display:block;height:100%;background:linear-gradient(90deg,#ffd83b,#5dff7a);transform-origin:left;transform:scaleX(0);}
+@keyframes pinshake{0%{transform:translateX(-1.5px)}50%{transform:translateX(1.5px)}100%{transform:translateX(-1.5px)}}
+
 /* leaderboard */
 #lbWrap{max-width:600px;margin:10px auto 0;text-align:left;}
 .lbrow{display:flex;align-items:center;gap:10px;padding:7px 12px;border-radius:8px;background:rgba(22,11,6,.55);border:1px solid rgba(255,255,255,.08);margin-bottom:5px;}
@@ -319,6 +338,10 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #coop{top:calc(70px + var(--sat));}
   .mate{padding:3px 6px;min-width:110px;}
   .mate .mn{font-size:10px;max-width:110px;}
+  #boss{top:calc(100px + var(--sat));width:min(38vw,260px);}
+  #boss .bb{height:8px;}
+  #pinned{top:64%;}
+  #pinned .ps{font-size:11px;}
 }
 </style>
 </head>
@@ -380,6 +403,8 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <div id="coop"></div>
     <div id="downed"><div class="dt">YOU ARE DOWN</div><div class="ds" id="downedSub">HOLD ON — A TEAMMATE CAN REVIVE YOU</div><div class="dbar"><i id="downedBar"></i></div></div>
     <div id="revive"><div class="rt" id="reviveText">REVIVING</div><div class="rbar"><i id="reviveBar"></i></div></div>
+    <div id="boss"><div class="bn" id="bossName">TANK</div><div class="bb"><i id="bossBar"></i></div></div>
+    <div id="pinned"><div class="pt">PINNED!</div><div class="ps" id="pinnedSub">MASH FIRE · SWIPE TO THROW IT OFF</div><div class="pb"><i id="pinnedBar"></i></div></div>
     <div id="netPill"></div>
     <div id="fpsTag"></div>
   </div>
@@ -587,7 +612,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.4.2';
+const GAME_VERSION = 'v1.5.0';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -604,6 +629,12 @@ const CFG = {
   sprintMul: 1.62, sprintDrain: 0.25, sprintRegen: 0.145, sprintHold: 0.7, sprintMin: 0.12,
   // third-person boom: behind and over the right shoulder, camera axis parallel to the aim ray
   tpDist: 2.5, tpSide: 0.92, tpUp: 0.45,
+  // hunter: the coil, the leap, and how long it can ride you. pinMax is the safety valve — a solo
+  // player with nobody to rescue them is never held down until they die.
+  hunterMin: 5.5, hunterRange: 15, hunterWindup: 0.55, hunterCool: 9, pounceSpeed: 15.5, pounceUp: 5.2, pounceGrav: 14,
+  pinMax: 5, pinClaw: 0.85, pinDmg: 9, escTap: 0.075, escSwipe: 0.0007, escHit: 0.3,
+  // director: when the specials are allowed out, and how long dead air is tolerated
+  hunterWave: 4, tankWave: 7, tankEvery: 4, lullMax: 14,
 };
 
 /* ------------------------------------------------------------------ characters */
@@ -1111,6 +1142,35 @@ const Audio = {
   death() {
     if (!this.on()) return; const t = this.ctx.currentTime;
     this.tone(t, 2.2, 'sawtooth', 110, 30, 0.35, this.sfx, 0.05); this.tone(t, 2.0, 'sine', 55, 20, 0.5); this.noise(t, 1.2, 'lowpass', 600, 60, 0.7, 0.5);
+  },
+  // --- specials ---
+  // The hunter announces itself twice: once coiling (you get ~half a second to move), once mid-air.
+  screech(x, z) {
+    if (!this.on()) return; const s = this.spatial(x, z); if (s.vol < 0.03) return;
+    const t = this.ctx.currentTime, p = this.panNode(s.pan), v = clamp(0.4 + s.vol, 0, 1.1);
+    this.tone(t, 0.52, 'sawtooth', 420, 1650, 0.34 * v, p, 0.02);
+    this.tone(t + 0.04, 0.44, 'square', 660, 2000, 0.13 * v, p, 0.02);
+    this.noise(t, 0.42, 'bandpass', 1700, 3800, 6, 0.26 * v, p);
+  },
+  pounce(x, z) {
+    if (!this.on()) return; const s = this.spatial(x, z); if (s.vol < 0.03) return;
+    const t = this.ctx.currentTime, p = this.panNode(s.pan);
+    this.noise(t, 0.3, 'highpass', 800, 2800, 1, 0.42 * s.vol, p);
+    this.tone(t, 0.24, 'sawtooth', 280, 940, 0.26 * s.vol, p);
+  },
+  roar(x, z) {
+    if (!this.on()) return; const s = this.spatial(x, z), v = clamp(0.5 + s.vol, 0, 1.25);
+    const t = this.ctx.currentTime, p = this.panNode(s.pan * 0.6);
+    this.tone(t, 1.9, 'sawtooth', 62, 38, 0.5 * v, p, 0.1);
+    this.tone(t, 1.7, 'square', 93, 55, 0.2 * v, p, 0.12);
+    this.tone(t, 2.0, 'sine', 31, 22, 0.45 * v, p, 0.08);
+    this.noise(t, 1.6, 'lowpass', 700, 160, 0.8, 0.45 * v, p);
+  },
+  slam(x, z) {
+    if (!this.on()) return; const s = this.spatial(x, z), v = clamp(0.4 + s.vol, 0, 1.2);
+    const t = this.ctx.currentTime, p = this.panNode(s.pan * 0.6);
+    this.noise(t, 0.7, 'lowpass', 900, 45, 0.7, 0.85 * v, p);
+    this.tone(t, 0.5, 'sine', 90, 26, 0.75 * v, p);
   },
   startWind() {
     if (this.windStarted || !this.ctx) return;
@@ -2037,7 +2097,12 @@ const Bullets = {
 const ZTYPES = {
   walker: { hpMul: 1, speedMul: 1, scale: 1, dmg: 12, radius: 0.45, height: 1.95, reach: 1.7, big: false, lean: 0.05 },
   runner: { hpMul: 0.62, speedMul: 1.72, scale: 0.92, dmg: 9, radius: 0.4, height: 1.8, reach: 1.6, big: false, lean: 0.28 },
-  brute: { hpMul: 3.6, speedMul: 0.7, scale: 1.4, dmg: 28, radius: 0.64, height: 2.7, reach: 2.1, big: true, lean: 0.02 }
+  brute: { hpMul: 3.6, speedMul: 0.7, scale: 1.4, dmg: 28, radius: 0.64, height: 2.7, reach: 2.1, big: true, lean: 0.02 },
+  // Specials. `special` keeps them out of the ordinary wave roll — the Director hands these out.
+  // The tank gets its own hp curve: the wave scaling that keeps walkers honest turns a boss into
+  // a five-minute magazine dump by wave 15.
+  hunter: { hpMul: 0.85, speedMul: 1.45, scale: 0.94, dmg: 10, radius: 0.42, height: 1.86, reach: 1.7, big: false, lean: 0.42, special: true, pounce: true, pts: 3 },
+  tank: { hpMul: 14, hpWave: 1.09, speedMul: 0.78, scale: 2.0, dmg: 40, radius: 0.95, height: 3.9, reach: 3.1, big: true, lean: 0.02, special: true, boss: true, pts: 14 }
 };
 const ZG = {};
 /* Merged box-cluster geometry: many boxes -> ONE BufferGeometry, so a detailed
@@ -2159,6 +2224,9 @@ class Zombie {
     this.type = ZTYPES.walker; this.radius = 0.45; this.height = 1.95; this.dmg = 10; this.big = false;
     this.t = 0; this.animT = Math.random() * 10; this.flashT = 0; this.stuckT = 0; this.lastX = 0; this.lastZ = 0; this.nudgeT = 0; this.nudgeX = 0; this.nudgeZ = 0;
     this.groanT = rnd(2, 8); this.struck = false; this.cool = 0; this.variant = 0; this.wave = 1; this.gen = 0;
+    // specials: the hunter's leap and the pin it lands, plus the boss flag the HUD reads
+    this.boss = false; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pinA = 0;
+    this.pvx = 0; this.pvy = 0; this.pvz = 0; this.netY = 0;
     const g = new THREE.Group(); this.group = g;
     this.skinMat = new THREE.MeshLambertMaterial({ map: TEX.skin[0] }); this.clothMat = new THREE.MeshLambertMaterial({ map: TEX.cloth[0] });
     this.legL = new THREE.Mesh(ZG.leg, this.clothMat); this.legL.position.set(-0.15, 1.04, 0);
@@ -2177,7 +2245,8 @@ class Zombie {
     const T = ZTYPES[typeName]; this.type = T; this.typeName = typeName; this.wave = wave; this.gen++;
     this.on = true; this.state = 'emerge'; this.t = 0; this.x = x; this.z = z; this.y = -2.4; this.vx = this.vz = 0; this.yaw = Math.atan2(-x, -z);
     this.radius = T.radius; this.height = T.height; this.dmg = T.dmg; this.big = T.big;
-    const wm = Math.pow(CFG.hpMul, wave - 1), sm = Math.pow(CFG.speedMul, wave - 1);
+    const wm = Math.pow(T.hpWave || CFG.hpMul, wave - 1), sm = Math.pow(CFG.speedMul, wave - 1);
+    this.boss = !!T.boss; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pvx = this.pvy = this.pvz = 0;
     this.maxHp = this.hp = Math.round(CFG.zombieBaseHp * wm * T.hpMul);
     this.speed = Math.min(7.6, CFG.zombieBaseSpeed * sm * T.speedMul) * rnd(0.92, 1.08);
     this.variant = Math.floor(Math.random() * TEX.skin.length);
@@ -2186,16 +2255,58 @@ class Zombie {
     this.skinMat.color.setRGB(tint * (T.big ? 0.92 : 1), tint * (T.big ? 0.86 : 1), tint * (T.big ? 0.8 : 1));
     this.clothMat.color.setRGB(tint, tint * 0.98, tint * 0.95);
     this.skinMat.emissive.setHex(0); this.clothMat.emissive.setHex(0);
-    this.group.scale.setScalar(T.scale); this.torso.scale.set(T.big ? 1.25 : 1, 1, T.big ? 1.2 : 1);
+    this.group.scale.setScalar(T.scale);
+    // the boss is the same procedural body, just slabbed out — no second mesh to pay for
+    this.torso.scale.set(T.boss ? 1.5 : (T.big ? 1.25 : 1), T.boss ? 1.12 : 1, T.boss ? 1.4 : (T.big ? 1.2 : 1));
     this.group.rotation.set(T.lean, this.yaw, 0); this.group.position.set(x, this.y, z); this.group.visible = true;
     this.shadow.visible = true; this.shadow.scale.setScalar(T.scale); this.shadow.position.set(x, 0.012, z);
-    this.flashT = 0; this.stuckT = 0; this.lastX = x; this.lastZ = z; this.nudgeT = 0; this.groanT = rnd(1, 6); this.cool = 0; this.struck = false;
+    this.flashT = 0; this.stuckT = 0; this.lastX = x; this.lastZ = z; this.nudgeT = 0; this.groanT = rnd(1, 6); this.cool = T.pounce ? rnd(2, 5) : 0; this.struck = false;
     Particles.emergeDust(x, z, T.scale); Audio.emerge(x, z);
+    if (T.boss) Audio.roar(x, z);
   }
-  deactivate() { this.on = false; this.state = 'dead'; this.group.visible = false; this.shadow.visible = false; }
+  deactivate() { this.endPin(); this.on = false; this.state = 'dead'; this.group.visible = false; this.shadow.visible = false; }
+  /* ---- hunter: coil, leap, ride ----
+     The target is locked in at the coil, not re-picked every frame, so a leap that is already in
+     the air stays committed to the survivor it was aimed at. */
+  canPounce(P, d) {
+    return this.type.pounce && this.cool <= 0 && this.stunT <= 0 && P && P.alive && !P.pinnedBy &&
+      d > CFG.hunterMin && d < CFG.hunterRange && World.los(this.x, this.z, P.x, P.z);
+  }
+  startPin(P) {
+    this.state = 'pin'; this.t = 0; this.pinT = 0; this.y = 0; this.pvy = 0;
+    this.pinTarget = P; this.pinId = (P === Player) ? (Net.id || 1) : (P.id || 0);
+    this.pinA = Math.atan2(this.x - P.x, this.z - P.z);
+    P.pinnedBy = this;
+    if (P === Player) {
+      Player.escape = 0; Player.escSend = 0; Input.reset(); HUD.dirty = true; Game.shake = Math.max(Game.shake, 2.4);
+      // spin the victim onto it — a thing you cannot see mauling you is just a health bar draining
+      Player.yaw = this.pinA + Math.PI; Player.pitch = 0.1;
+    }
+    Audio.screech(this.x, this.z);
+  }
+  endPin() {
+    const P = this.pinTarget;
+    if (P && P.pinnedBy === this) { P.pinnedBy = null; if (P === Player) { Player.escape = 0; HUD.dirty = true; } }
+    this.pinTarget = null; this.pinId = 0;
+  }
+  // shaken off, shot off, or simply bored — either way it lands short and needs a moment
+  throwOff() {
+    const wasMe = this.pinTarget === Player;
+    const a = this.pinA;
+    this.endPin();
+    this.state = 'chase'; this.t = 0; this.cool = CFG.hunterCool * 0.6; this.stunT = 0.9; this.vx = this.vz = 0;
+    this.x += Math.sin(a) * 1.6; this.z += Math.cos(a) * 1.6; World.collide(this, this.radius);
+    if (wasMe) { HUD.toast('SHOOK IT OFF', 1.6); Audio.killmark(); }
+  }
+  missPounce() {
+    this.state = 'chase'; this.t = 0; this.y = 0; this.vx = this.vz = 0; this.pinTarget = null;
+    this.cool = CFG.hunterCool * 0.5; this.stunT = 1.15;
+    Particles.emergeDust(this.x, this.z, this.type.scale); Audio.fleshHit(this.x, this.z);
+  }
   // ---- coop client mirrors: the host owns this zombie, we only draw it ----
   netDie() {
     if (this.state === 'dead') return;
+    this.endPin();
     this.state = 'dead'; this.t = 0; this.vx = this.vz = 0;
     this.skinMat.emissive.setHex(0); this.clothMat.emissive.setHex(0);
     Particles.blood(this.x, this.y + this.height * 0.6, this.z, this.big ? 26 : 16, 0, 0, true);
@@ -2215,16 +2326,16 @@ class Zombie {
       if (this.t > 1.3) this.y -= dt * 0.7;
       if (this.t > 2.8) { this.deactivate(); return; }
     } else {
-      const ox = this.x, oz = this.z, k = Math.min(1, dt * 11);
+      const ox = this.x, oz = this.z, k = Math.min(1, dt * (st === 'pounce' ? 20 : 11));
       this.x += ((this.netX != null ? this.netX : this.x) - this.x) * k;
       this.z += ((this.netZ != null ? this.netZ : this.z) - this.z) * k;
-      this.y = 0;
+      this.y = st === 'pounce' ? (this.netY || 0) : 0;
       let da = (this.netYaw != null ? this.netYaw : this.yaw) - this.yaw;
       while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
       this.yaw += da * Math.min(1, dt * 10);
       const mx = this.x - ox, mz = this.z - oz, sp = Math.sqrt(mx * mx + mz * mz) / Math.max(dt, 1e-4);
-      if (st === 'attack') this.t += dt; else this.t = 0;
-      this.animT += dt * Math.max(1.5, sp * 1.9);
+      if (st === 'attack' || st === 'crouch' || st === 'pin') this.t += dt; else this.t = 0;
+      this.animT += dt * (st === 'pin' ? 9 : Math.max(1.5, sp * 1.9));
       this.groanT -= dt; if (this.groanT <= 0) { this.groanT = rnd(4, 11); Audio.groan(this.x, this.z, this.big); }
     }
     this.pose(dt);
@@ -2242,11 +2353,19 @@ class Zombie {
     this.hp -= dmg; this.flashT = 0.09;
     this.skinMat.emissive.setRGB(0.55, 0.02, 0); this.clothMat.emissive.setRGB(0.4, 0.02, 0);
     if (!silent) { Particles.blood(hx, hy, hz, head ? 10 : 6, dirx, dirz, false); Audio.fleshHit(this.x, this.z); }
-    if (this.state !== 'emerge' && !this.big) { this.x += dirx * 0.12; this.z += dirz * 0.12; }
+    if (this.state !== 'emerge' && this.state !== 'pin' && !this.big) { this.x += dirx * 0.12; this.z += dirz * 0.12; }
+    // Shooting a hunter off a teammate is the whole rescue. It costs the pin real time for anyone
+    // it is riding (which is all a remote client can see), and fills the meter directly when the
+    // victim is the player on this machine.
+    if (this.state === 'pin') {
+      this.pinT += CFG.escHit * CFG.pinMax;
+      if (this.pinTarget === Player) Player.escape = Math.min(1, Player.escape + CFG.escHit);
+    }
     if (this.hp <= 0) { this.die(head, dirx, dirz); return true; }
     return false;
   }
   die(head, dirx, dirz) {
+    this.endPin();
     this.state = 'dead'; this.t = 0; this.vx = this.vz = 0;
     this.skinMat.emissive.setHex(0); this.clothMat.emissive.setHex(0);
     Particles.blood(this.x, this.y + this.height * 0.6, this.z, this.big ? 26 : 16, dirx || 0, dirz || 0, true);
@@ -2257,9 +2376,11 @@ class Zombie {
   }
   update(dt) {
     // in coop the host runs every zombie, so each one chases whichever survivor is closest
-    const P = Net.isHost() ? Net.targetFor(this) : Player, T = this.type;
+    const T = this.type, st = this.state;
+    // ...except a hunter mid-leap or mid-ride, which stays with the survivor it committed to
+    let P = (this.pinTarget && (st === 'crouch' || st === 'pounce' || st === 'pin')) ? this.pinTarget
+      : (Net.isHost() ? Net.targetFor(this) : Player);
     if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) { this.skinMat.emissive.setHex(0); this.clothMat.emissive.setHex(0); } }
-    const st = this.state;
     if (st === 'emerge') {
       this.t += dt; const k = Math.min(1, this.t / 1.1); this.y = -2.4 + 2.4 * easeOut(k);
       if (this.t > 1.1) { this.state = 'chase'; this.y = 0; }
@@ -2268,7 +2389,12 @@ class Zombie {
       const dx = P.x - this.x, dz = P.z - this.z, d = Math.sqrt(dx * dx + dz * dz);
       if (st === 'chase') {
         if (this.cool > 0) this.cool -= dt;
-        if (d < T.reach && P.alive && this.cool <= 0) { this.state = 'attack'; this.t = 0; this.struck = false; Audio.swing(this.x, this.z); }
+        // a missed leap leaves it face-down in the sand for a beat — that beat is the reward
+        if (this.stunT > 0) { this.stunT -= dt; this.vx = this.vz = 0; this.animT += dt * 1.4; }
+        else if (d < T.reach && P.alive && this.cool <= 0) { this.state = 'attack'; this.t = 0; this.struck = false; Audio.swing(this.x, this.z); }
+        else if (this.canPounce(P, d) && !Zombies.hasPin(P)) {
+          this.state = 'crouch'; this.t = 0; this.pinTarget = P; this.vx = this.vz = 0; Audio.screech(this.x, this.z);
+        }
         else {
           let tx = P.x, tz = P.z;
           if (this.nudgeT > 0) { this.nudgeT -= dt; tx = this.nudgeX; tz = this.nudgeZ; }
@@ -2307,12 +2433,67 @@ class Zombie {
       if (this.state === 'attack') {
         this.t += dt;
         const ty = Math.atan2(dx, dz); let da = ty - this.yaw; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU; this.yaw += da * Math.min(1, dt * 10);
-        if (this.t > 0.42 && !this.struck) { this.struck = true; if (d < T.reach + 0.45 && P.alive) P.hurt(this.dmg, this.x, this.z); }
-        if (this.t > 1.0) { this.state = 'chase'; this.cool = 0.25; }
+        if (this.t > 0.42 && !this.struck) {
+          this.struck = true;
+          if (d < T.reach + 0.45 && P.alive) P.hurt(this.dmg, this.x, this.z);
+          // the boss swing lands whether or not it connects: dust, a shockwave and a camera hit
+          if (this.boss) {
+            Audio.slam(this.x, this.z); Particles.emergeDust(this.x + dx / (d || 1) * 1.6, this.z + dz / (d || 1) * 1.6, 2.4);
+            if (P === Player) Game.shake = Math.max(Game.shake, clamp(3.4 - d * 0.35, 0.6, 3.4));
+          }
+        }
+        if (this.t > 1.0) { this.state = 'chase'; this.cool = this.boss ? 0.7 : 0.25; }
         this.animT += dt * 2;
       }
       // groans
       this.groanT -= dt; if (this.groanT <= 0) { this.groanT = rnd(4, 11); Audio.groan(this.x, this.z, this.big); }
+    } else if (st === 'crouch') {
+      // the tell. It coils, screeches, and turns to face you — then it is committed either way.
+      this.t += dt; this.vx = this.vz = 0;
+      const dx = P.x - this.x, dz = P.z - this.z;
+      const ty = Math.atan2(dx, dz); let da = ty - this.yaw; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
+      this.yaw += da * Math.min(1, dt * 12);
+      this.animT += dt * 3;
+      if (!P.alive || P.pinnedBy) { this.state = 'chase'; this.pinTarget = null; this.cool = 2; this.t = 0; }
+      else if (this.t >= CFG.hunterWindup) {
+        // The arc has a fixed hang time, so the leap is aimed by *speed*. Fire every one of them
+        // at a flat 15m/s and anything launched from further out lands metres short.
+        const l = Math.sqrt(dx * dx + dz * dz) || 1;
+        const sp = clamp(l / (2 * CFG.pounceUp / CFG.pounceGrav), CFG.pounceSpeed * 0.5, CFG.pounceSpeed * 1.4);
+        this.pvx = dx / l * sp; this.pvz = dz / l * sp; this.pvy = CFG.pounceUp;
+        this.state = 'pounce'; this.t = 0; this.y = 0.05; Audio.pounce(this.x, this.z);
+      }
+    } else if (st === 'pounce') {
+      this.t += dt;
+      this.pvy -= CFG.pounceGrav * dt;
+      const nx = this.x + this.pvx * dt, nz = this.z + this.pvz * dt;
+      if (World.isBlocked(nx, nz)) { this.missPounce(); }
+      else {
+        this.x = nx; this.z = nz; this.y = Math.max(0, this.y + this.pvy * dt);
+        this.yaw = Math.atan2(this.pvx, this.pvz);
+        const dx = P.x - this.x, dz = P.z - this.z, d2 = dx * dx + dz * dz;
+        if (P.alive && !P.pinnedBy && d2 < 2.0 * 2.0 && this.y < 2.2 && this.t > 0.06) this.startPin(P);
+        else if (this.t > 0.15 && this.y <= 0) this.missPounce();
+        else if (this.t > 2.2) this.missPounce();
+      }
+      this.animT += dt * 2;
+    } else if (st === 'pin') {
+      const tgt = this.pinTarget;
+      if (!tgt || !tgt.alive || Game.state !== 'playing') { this.endPin(); this.state = 'chase'; this.cool = 1.5; this.stunT = 0.4; this.t = 0; }
+      else {
+        this.pinT += dt; this.t += dt;
+        // glued to the survivor from the side it landed on, so the camera always finds it
+        this.x = tgt.x + Math.sin(this.pinA) * 1.15; this.z = tgt.z + Math.cos(this.pinA) * 1.15;
+        this.y = 0; this.yaw = this.pinA + Math.PI;
+        this.animT += dt * 9;
+        if (this.t >= CFG.pinClaw) {
+          this.t = 0;
+          Audio.fleshHit(this.x, this.z); Particles.blood(tgt.x, 1.25, tgt.z, 8, 0, 0, false);
+          tgt.hurt(CFG.pinDmg, this.x, this.z);
+          if (tgt === Player) Game.shake = Math.max(Game.shake, 1.5);
+        }
+        if (this.pinT >= CFG.pinMax) this.throwOff();
+      }
     } else if (st === 'dead') {
       this.t += dt;
       if (this.t > 1.3) this.y -= dt * 0.7;
@@ -2332,6 +2513,38 @@ class Zombie {
       return;
     }
     g.rotation.set(T.lean, this.yaw, 0);
+    if (st === 'crouch' || st === 'pounce') {
+      const coil = st === 'crouch' ? Math.min(1, this.t / CFG.hunterWindup) : 1;
+      g.rotation.x = T.lean + (st === 'pounce' ? 0.55 : 0.28 + coil * 0.5);
+      const lk = st === 'pounce' ? 1.0 : 0.5 + coil * 0.7;
+      this.legL.rotation.x = lk; this.legR.rotation.x = lk * 0.78;
+      this.legL.rotation.z = 0.12; this.legR.rotation.z = -0.12;
+      const ax = st === 'pounce' ? -2.5 : -0.55 + coil * 0.45;
+      this.armL.rotation.set(ax, 0.5, 0.2); this.armR.rotation.set(ax, -0.5, -0.2);
+      this.torso.position.y = 1.34; this.torso.rotation.set(0.35, 0, 0);
+      this.head.position.y = 1.85; this.head.rotation.set(-0.25, 0, 0);
+      if (st === 'pounce') this.shadow.scale.setScalar(T.scale * Math.max(0.45, 1 - this.y * 0.14));
+      return;
+    }
+    if (st === 'pin') {
+      const sl = Math.sin(this.animT * 2.4);
+      g.rotation.x = T.lean + 0.38;
+      this.legL.rotation.x = 0.8; this.legR.rotation.x = 0.8; this.legL.rotation.z = 0.14; this.legR.rotation.z = -0.14;
+      this.armL.rotation.set(-2.2 + sl * 1.15, 0.42, 0.16); this.armR.rotation.set(-2.2 - sl * 1.15, -0.42, -0.16);
+      this.torso.position.y = 1.34; this.torso.rotation.set(0.2, 0, 0);
+      this.head.position.y = 1.85; this.head.rotation.set(-0.3, sl * 0.2, 0);
+      return;
+    }
+    if (this.stunT > 0) {
+      // sprawled after a miss: still a target, just not a threat for a moment
+      g.rotation.x = T.lean + 1.05;
+      this.legL.rotation.x = 0.2; this.legR.rotation.x = -0.1; this.legL.rotation.z = 0.2; this.legR.rotation.z = -0.2;
+      this.armL.rotation.set(-0.4, 0.5, 0.5); this.armR.rotation.set(-0.5, -0.5, -0.5);
+      this.torso.position.y = 1.34; this.torso.rotation.set(0.1, 0, 0);
+      this.head.position.y = 1.85; this.head.rotation.set(0.4, 0, 0);
+      return;
+    }
+    if (st === 'chase' && this.shadow.scale.x !== T.scale) this.shadow.scale.setScalar(T.scale);
     this.legL.rotation.x = s * 0.55; this.legR.rotation.x = -s * 0.55;
     this.legL.rotation.z = 0.05; this.legR.rotation.z = -0.05;
     this.torso.position.y = 1.34 + Math.abs(s) * 0.045; this.torso.rotation.z = c * 0.07; this.torso.rotation.x = 0.08;
@@ -2350,12 +2563,17 @@ const Zombies = {
   pool: [], _tmp: { x: 0, z: 0 }, _sp: { x: 0, z: 0 },
   init() { buildZombieGeometries(); for (let i = 0; i < CFG.maxZombies; i++) this.pool.push(new Zombie(i)); },
   activeCount() { let n = 0; for (const z of this.pool) if (z.on && z.state !== 'dead') n++; return n; },
+  countType(name) { let n = 0; for (const z of this.pool) if (z.on && z.state !== 'dead' && z.typeName === name) n++; return n; },
+  // one hunter per survivor: two riding the same person is an unrecoverable pile-on
+  hasPin(target) { for (const z of this.pool) if (z.on && z.state === 'pin' && z.pinTarget === target) return true; return false; },
+  bossAlive() { for (const z of this.pool) if (z.on && z.boss && z.state !== 'dead') return z; return null; },
   clear() { for (const z of this.pool) z.deactivate(); },
   spawn(typeName, wave) {
     let zb = null; for (const z of this.pool) if (!z.on) { zb = z; break; }
     if (!zb) return null;
     const P = Player, sp = this._sp; let ok;
-    if (Math.random() < 0.3) ok = World.randomPoint(P.x, P.z, 16, 34, true, sp); else ok = false;
+    // a boss never claws up out of the sand next to you — it comes in from the rim, in the open
+    if (!ZTYPES[typeName].boss && Math.random() < 0.3) ok = World.randomPoint(P.x, P.z, 16, 34, true, sp); else ok = false;
     if (!ok) {
       for (let t = 0; t < 30 && !ok; t++) {
         const a = rnd(0, TAU), r = CFG.arenaR - 4 - Math.random() * 4, x = Math.cos(a) * r, z = Math.sin(a) * r;
@@ -2567,6 +2785,7 @@ function poseSurvivor(m, anim, gait, downed, pitch) {
 const Player = {
   x: 0, z: 0, yaw: 0, pitch: 0, hp: 100, maxHp: 100, alive: true, speed: 6, char: CHARS.male,
   downed: false, downT: 0, spectating: false,
+  pinnedBy: null, escape: 0, escSend: 0,
   stamina: 1, sprintOn: false, sprinting: false, staminaHold: 0,
   weapons: [], cur: 0, cooldown: 0, reloading: false, reloadT: 0, reloadTotal: 1, switchT: 0, bloom: 0,
   bobT: 0, stepD: 0, moveMag: 0, lastHurt: -99, recoil: 0, swayX: 0, swayY: 0, lastLookX: 0, lastLookY: 0,
@@ -2600,6 +2819,7 @@ const Player = {
     if (this.char !== char) { this.char = char; this.buildModels(); this.buildBody(); }
     this.x = 0; this.z = 0; this.yaw = rnd(0, TAU); this.pitch = 0; this.maxHp = char.hp; this.hp = char.hp; this.alive = true; this.speed = char.speed;
     this.downed = false; this.downT = 0; this.spectating = false;
+    this.pinnedBy = null; this.escape = 0; this.escSend = 0;
     this.stamina = 1; this.sprintOn = false; this.sprinting = false; this.staminaHold = 0;
     // squadmates would otherwise all boot up inside each other at the origin
     if (Net.mode !== 'off') { const a = rnd(0, TAU); this.x = Math.cos(a) * 2.6; this.z = Math.sin(a) * 2.6; }
@@ -2614,6 +2834,8 @@ const Player = {
   update(dt) {
     const mv = Input.getMove(this._mv), lk = Input.consumeLook(this._lk);
     this.lastLookX = lk.x; this.lastLookY = lk.y;
+    // never stay stuck to a hunter that died, got recycled, or stopped riding us
+    if (this.pinnedBy && (!this.pinnedBy.on || this.pinnedBy.state !== 'pin')) { this.pinnedBy = null; this.escape = 0; }
     // a downed survivor keeps their head: they can look around and watch for help, nothing else
     if (!this.alive && (this.downed || this.spectating)) {
       const s = 0.0042;
@@ -2626,8 +2848,12 @@ const Player = {
       if (this.downT <= 0) this.bleedOut();
     }
     if (this.alive) {
-      const s = 0.0042;
+      // thrashing under a hunter still turns you, but at a third of the rate — otherwise shaking
+      // it off spins you to face a random corner of the arena
+      const s = 0.0042 * (this.pinnedBy ? 0.35 : 1);
       this.yaw -= lk.x * s; this.pitch = clamp(this.pitch - lk.y * s, -1.25, 1.25);
+      if (this.pinnedBy) this.updatePin(dt, lk, mv);
+      else {
       const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw), rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
       const mag = Math.min(1, Math.sqrt(mv.x * mv.x + mv.y * mv.y)); this.moveMag = lerp(this.moveMag, mag, Math.min(1, dt * 10));
       this.updateSprint(dt, mag);
@@ -2652,6 +2878,7 @@ const Player = {
       this.autoTarget = Game.autoFire ? this.findAutoTarget() : null;
       const wantFire = Input.fire || (this.autoTarget !== null);
       if (wantFire) this.tryFire(); else Input.consumeFireEdge();
+      }
     }
     this.recoil = Math.max(0, this.recoil - dt * 8);
     this.updateCamera();
@@ -2670,6 +2897,24 @@ const Player = {
     if (want) { this.stamina = Math.max(0, this.stamina - dt * CFG.sprintDrain); this.staminaHold = CFG.sprintHold; this.bobT += dt * 4; }
     else if (this.staminaHold > 0) this.staminaHold -= dt;
     else this.stamina = Math.min(1, this.stamina + dt * CFG.sprintRegen);
+  },
+  // Getting a hunter off you has to work with one thumb, because solo there is nobody else to do
+  // it: mash FIRE (which is idle anyway, since you cannot shoot pinned) or swipe anywhere to look.
+  // Desktop gets the movement keys and the mouse. The pin also expires on its own — see CFG.pinMax.
+  updatePin(dt, lk, mv) {
+    this.moveMag = lerp(this.moveMag, 0, Math.min(1, dt * 10));
+    this.sprintOn = false; this.sprinting = false; this.reloading = false; this.autoTarget = null;
+    if (Input.consumeFireEdge()) this.escape += CFG.escTap;
+    this.escape += (Math.abs(lk.x) + Math.abs(lk.y)) * CFG.escSwipe;
+    const k = Input.keys;
+    if (k.KeyA || k.KeyD || k.ArrowLeft || k.ArrowRight || Math.abs(mv.x) > 0.35) this.escape += dt * 0.5;
+    this.escape = Math.min(1.2, this.escape);
+    if (this.escape < 1) return;
+    const h = this.pinnedBy;
+    // a coop client does not own the horde, so it asks the host to let go and stays pinned until
+    // the next snapshot agrees — resent, because a dropped ask would strand it
+    if (Net.isClient()) { this.escSend -= dt; if (this.escSend <= 0) { this.escSend = 0.35; Net.sendEscape(h); } }
+    else if (h) h.throwOff();
   },
   toggleSprint() {
     if (!this.alive || this.downed) return;
@@ -2963,7 +3208,8 @@ const HUD = {
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
       'btnLeaders', 'btnLeadersBack', 'btnLobbyStart', 'btnLobbyLeave', 'lobbyCode', 'lobbyPlayers', 'lobbyStatus', 'lobbyHint',
-      'coop', 'netPill', 'downed', 'downedBar', 'downedSub', 'revive', 'reviveText', 'reviveBar', 'lbWrap', 'lbStatus', 'goCoop', 'goRoom'
+      'coop', 'netPill', 'downed', 'downedBar', 'downedSub', 'revive', 'reviveText', 'reviveBar', 'lbWrap', 'lbStatus', 'goCoop', 'goRoom',
+      'boss', 'bossName', 'bossBar', 'pinned', 'pinnedSub', 'pinnedBar'
     ].forEach(id => DOM[id] = $(id));
     DOM.lowhp.style.backgroundImage = 'url(' + TEX.lowhpUrl + ')';
   },
@@ -3005,6 +3251,21 @@ const HUD = {
       DOM.btnSprint.classList.toggle('spent', P.stamina < CFG.sprintMin);
     }
     if (this.last.spr !== P.sprinting) { this.last.spr = P.sprinting; DOM.btnSprint.classList.toggle('on', P.sprinting); }
+    // boss bar — the label goes through the text diff, the fill is a transform, same as health
+    const boss = Zombies.bossAlive(), hasBoss = !!boss;
+    if (this.last.boss !== hasBoss) { this.last.boss = hasBoss; DOM.boss.classList.toggle('show', hasBoss); }
+    if (hasBoss) {
+      this.set('bossName', DOM.bossName, 'TANK · ' + Math.max(0, Math.ceil(boss.hp)) + ' HP');
+      const bk = Math.round(clamp(boss.hp / boss.maxHp, 0, 1) * 100) / 100;
+      if (this.last.bossK !== bk) { this.last.bossK = bk; DOM.bossBar.style.transform = 'scaleX(' + bk.toFixed(2) + ')'; }
+    }
+    // hunter pin
+    const pin = !!P.pinnedBy;
+    if (this.last.pin !== pin) { this.last.pin = pin; DOM.pinned.classList.toggle('show', pin); }
+    if (pin) {
+      const ek = Math.round(clamp(P.escape, 0, 1) * 50) / 50;
+      if (this.last.esc !== ek) { this.last.esc = ek; DOM.pinnedBar.style.transform = 'scaleX(' + ek.toFixed(2) + ')'; }
+    }
   },
   toast(msg, dur) { DOM.toast.textContent = msg; DOM.toast.classList.add('show'); this.toastT = dur || 2.2; },
   banner(title, sub, long) {
@@ -3023,6 +3284,73 @@ const HUD = {
     DOM.optSens.value = Input.sens; DOM.pOptSens.value = Input.sens; DOM.sensVal.textContent = Input.sens.toFixed(1); DOM.pSensVal.textContent = Input.sens.toFixed(1);
     DOM.btnAuto.classList.toggle('on', G.autoFire); DOM.autoState.textContent = G.autoFire ? 'ON' : 'OFF';
     DOM.bestLine.textContent = G.best.wave > 0 ? 'BEST RUN: WAVE ' + G.best.wave + ' · ' + fmt(G.best.points) + ' PTS' : '';
+  }
+};
+
+/* ------------------------------------------------------------------ AI director
+   Left 4 Dead's trick was never "more zombies" — it was timing. A hard push, then air to breathe,
+   then a special the moment you relax. This scores how much pressure the player is actually under
+   right now and pulls the spawn tap and the specials against it. Host-authoritative: a coop client
+   never runs it, the same as waves and pickups. */
+const Director = {
+  stress: 0, lull: 0, peak: 0, hunterT: 0, tankT: 0, nextTank: 0, rushT: 0,
+  reset() { this.stress = 0; this.lull = 0; this.peak = 0; this.hunterT = 8; this.tankT = 0; this.nextTank = CFG.tankWave; this.rushT = 0; },
+  // 0 = strolling the dunes, 1 = fighting for your life
+  measure() {
+    const P = Player, zs = Zombies.pool;
+    let near = 0;
+    for (let i = 0; i < zs.length; i++) {
+      const z = zs[i]; if (!z.on || z.state === 'dead' || z.state === 'emerge') continue;
+      const dx = z.x - P.x, dz = z.z - P.z;
+      if (dx * dx + dz * dz < 144) near += z.boss ? 4 : (z.big ? 2.2 : 1);
+    }
+    const hurt = 1 - clamp(P.hp / P.maxHp, 0, 1);
+    const recent = clamp(1 - (Game.time - P.lastHurt) / 6, 0, 1);
+    return clamp(near / 7 * 0.5 + hurt * 0.3 + recent * 0.25 + (P.pinnedBy ? 0.4 : 0), 0, 1);
+  },
+  update(dt) {
+    this.stress = lerp(this.stress, this.measure(), Math.min(1, dt * 0.8));
+    if (this.stress > 0.55) { this.peak += dt; this.lull = 0; }
+    else { this.lull += dt; this.peak = Math.max(0, this.peak - dt * 0.4); }
+    if (this.hunterT > 0) this.hunterT -= dt;
+    if (this.tankT > 0) this.tankT -= dt;
+    if (this.rushT > 0) this.rushT -= dt;
+    if (Game.state === 'playing' && Game.waveActive) this.trySpecials();
+  },
+  // multiplies the gap between ordinary spawns: crowd them in during dead air, back off after a
+  // sustained peak so the wave has a shape instead of a flat drip
+  spawnScale() {
+    if (this.rushT > 0) return 0.42;
+    if (this.peak > 7) return 1.75;
+    if (this.lull > 6) return 0.6;
+    return 1;
+  },
+  trySpecials() {
+    const w = Game.wave, alive = Zombies.activeCount();
+    // the pool is shared with the horde and it is only 28 deep — never spend the last slots
+    if (alive >= CFG.maxZombies - 1) return;
+    // and never once the wave has stopped feeding, or a late special would stall the clear
+    if (Game.toSpawn <= 0) return;
+    if (w >= this.nextTank && this.tankT <= 0 && !Zombies.bossAlive() &&
+        this.stress < 0.7 && Player.hp > Player.maxHp * 0.35 && alive < CFG.maxZombies - 4) {
+      const z = Zombies.spawn('tank', w);
+      if (z) {
+        this.nextTank = w + CFG.tankEvery; this.tankT = 60;
+        HUD.banner('TANK', 'RUN, OR PUT IT DOWN', false); Audio.roar(z.x, z.z);
+        return;
+      }
+    }
+    if (w >= CFG.hunterWave && this.hunterT <= 0 && this.stress < 0.62 &&
+        Zombies.countType('hunter') < (w >= 9 ? 2 : 1) && alive < CFG.maxZombies - 3) {
+      if (Zombies.spawn('hunter', w)) {
+        this.hunterT = rnd(16, 30) * (this.lull > 8 ? 0.6 : 1);
+        HUD.toast('SOMETHING IS STALKING YOU', 2.2);
+      }
+    }
+    // dead air for too long: pull the wave forward so the arena never feels abandoned
+    if (this.lull > CFG.lullMax && this.rushT <= 0 && Game.toSpawn > 2) {
+      this.rushT = 7; this.lull = 0; HUD.toast('THE HORDE STIRS', 2);
+    }
   }
 };
 
@@ -3098,6 +3426,7 @@ const Game = {
     Player.reset(char); Input.reset();
     this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0; this.insta = 0; this.dbl = 0; this.timeScale = 1;
     this.toSpawn = 0; this.waveActive = false; this.streak = 0; this.sayT = -99; this.deathK = 0; this.deathRoll = 0; this.chain.length = 0; this.pickupT = 15;
+    Director.reset();
     HUD.last = {}; HUD.dirty = true; HUD.showScreen(null); HUD.showHud(true); HUD.refreshOptions();
     DOM.joyHint.classList.toggle('hide', !('ontouchstart' in window)); DOM.dmg.style.opacity = '0'; DOM.lowhp.classList.remove('on');
     this.interT = 4; HUD.banner('GET READY', 'THE SAND IS HUNGRY', false);
@@ -3125,6 +3454,8 @@ const Game = {
     Net.leave(); this.coopMenu = false;
     this.state = 'menu'; HUD.showScreen('menu'); HUD.showHud(false); Input.reset(); HUD.refreshOptions();
     Zombies.clear(); Bullets.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
+    Director.reset(); Player.pinnedBy = null; Player.escape = 0;
+    DOM.boss.classList.remove('show'); DOM.pinned.classList.remove('show');
     if (Player.body) { Player.body.g.visible = false; Player.body.shadow.visible = false; }
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
     try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { }
@@ -3150,6 +3481,8 @@ const Game = {
     this.toSpawn = this.waveCount(w); this.waveActive = true; this.spawnT = 0.5;
     HUD.banner('WAVE ' + w, w === 1 ? "THEY'RE COMING" : this.toSpawn + ' UNDEAD INBOUND', false);
     Audio.horn(); this.say('wave');
+    // let the wave banner land before the director drops a special on top of it
+    Director.tankT = Math.max(Director.tankT, 12); Director.hunterT = Math.max(Director.hunterT, 7);
     // Weapons unlock at their wave milestone, or earlier if the player has banked
     // enough points — that is what points buy.
     WEAPONS.forEach((def, i) => {
@@ -3212,9 +3545,15 @@ const Game = {
     const by = this._by;
     this.kills++; this.streak++;
     if (by) by.kills++; else Player.stats.kills++;
-    let pts = CFG.ptsKill;
+    let pts = CFG.ptsKill * (z.type.pts || 1);
     if (head) { pts += CFG.ptsHead; if (by) by.head++; else Player.stats.head++; Floaties.spawn(z.x, z.y + z.height + 0.5, z.z, 'HEADSHOT', '#ff4a2a', 18, 1.1); }
     this.addPoints(pts, z.x, z.y + z.height + 0.15, z.z, '#ffd83b', 20);
+    if (z.boss) {
+      // a boss is worth a breather as well as the points, so it always leaves a medkit behind
+      HUD.banner('TANK DOWN', 'THE SAND TAKES IT BACK', false);
+      Particles.blood(z.x, z.y + 1.6, z.z, 30, 0, 0, true);
+      if (World.coverPoint(z.x, z.z, this._pt)) Pickups.spawn('health', this._pt.x, this._pt.z);
+    }
     if (!by) Audio.killmark();
     if (Net.isHost()) Net.send({ k: 'kill', i: Zombies.pool.indexOf(z), hd: head ? 1 : 0, by: by ? by.id : Net.id, p: Math.round(pts * (this.dbl > 0 ? 2 : 1)) });
     if (!by && this.streak % 8 === 0) this.say('streak');
@@ -3326,12 +3665,13 @@ const Game = {
     // waves
     if (this.state === 'playing') {
       if (Net.isClient()) { /* the host owns waves, spawning and pickups — we just render them */ }
-      else if (!this.waveActive) { this.interT -= dt; if (this.interT <= 0) this.beginWave(); }
+      else if (!this.waveActive) { this.interT -= dt; if (this.interT <= 0) this.beginWave(); Director.update(dt); }
       else {
+        Director.update(dt);
         const alive = Zombies.activeCount();
         if (this.toSpawn > 0) {
           this.spawnT -= dt;
-          if (this.spawnT <= 0 && alive < this.maxAlive(this.wave)) { this.spawnZombie(); this.spawnT = clamp(2.3 - this.wave * 0.14, 0.5, 2.3) * rnd(0.7, 1.3); }
+          if (this.spawnT <= 0 && alive < this.maxAlive(this.wave)) { this.spawnZombie(); this.spawnT = clamp(2.3 - this.wave * 0.14, 0.5, 2.3) * rnd(0.7, 1.3) * Director.spawnScale(); }
         } else if (alive === 0 && !Zombies.pool.some(z => z.on)) {
           this.waveActive = false; this.interT = 6.5;
           HUD.banner('WAVE ' + this.wave + ' CLEARED', 'CATCH YOUR BREATH', false); Audio.cleared(); this.say('cleared');
@@ -3516,8 +3856,10 @@ const Mqtt = {
 // STALE ages out room listings; DROP is the far more forgiving window before a player is kicked,
 // because a browser throttles requestAnimationFrame to nothing the moment a tab goes to the back.
 const NET = { PREFIX: 'dnd/1/', VER: 1, MAX: 4, SNAP: 1 / 12, INPUT: 1 / 15, BEACON: 2, STALE: 7, DROP: 16, TIMEOUT: 6 };
-const ZSTATE = ['emerge', 'chase', 'attack', 'dead'];
-const ZTYPE_LIST = ['walker', 'runner', 'brute'];
+// APPEND-ONLY. Both arrays are the wire format: snapshots pack the index, so inserting or
+// reordering makes an older client read a hunter as a walker, or `attack` as `dead`.
+const ZSTATE = ['emerge', 'chase', 'attack', 'dead', 'crouch', 'pounce', 'pin'];
+const ZTYPE_LIST = ['walker', 'runner', 'brute', 'hunter', 'tank'];
 const PU_LIST = ['health', 'ammo', 'insta', 'double'];
 const r2 = (v) => Math.round(v * 100) / 100;
 
@@ -3699,6 +4041,7 @@ const Net = {
     else if (m.k === 'bye') this.dropPeer(id, ' LEFT THE RUN');
     else if (m.k === 'hit') this.applyRemoteHit(peer, m);
     else if (m.k === 'rev') this.applyRevive(m.to, peer);
+    else if (m.k === 'esc') this.applyEscape(peer, m);
     else if (m.k === 'brl') { const br = World.barrels[m.i]; if (br && br.alive) Game.explodeBarrel(br); }
   },
   mkPeer(id, name, ch) {
@@ -3706,7 +4049,7 @@ const Net = {
     return {
       id: id, name: (String(name || 'SURVIVOR').slice(0, 14) || 'SURVIVOR').toUpperCase(),
       char: ch === 'female' ? 'female' : 'male',
-      x: 0, z: 0, ry: 0, hp: 100, maxHp: 100, st: 0, w: 0, fire: 0, kills: 0, head: 0, afk: 0,
+      x: 0, z: 0, ry: 0, hp: 100, maxHp: 100, st: 0, w: 0, fire: 0, kills: 0, head: 0, afk: 0, pinnedBy: null,
       tx: 0, tz: 0, tRy: 0, vis: null, walk: 0, flashT: 0, last: Net.clock,
       get alive() { return this.st === 0; },
       hurt: function (amount, fx, fz) { self.damagePeer(this, amount); }
@@ -3910,8 +4253,10 @@ const Net = {
     const zs = [], pool = Zombies.pool;
     for (let i = 0; i < pool.length; i++) {
       const z = pool[i]; if (!z.on) continue;
+      // 8 and 9 are appended, not inserted: an older client just reads the row it already knew
       zs.push([i, ZTYPE_LIST.indexOf(z.typeName), r2(z.x), r2(z.z), r2(z.yaw),
-        ZSTATE.indexOf(z.state), Math.round(z.hp / z.maxHp * 100) / 100, z.gen & 255]);
+        ZSTATE.indexOf(z.state), Math.round(z.hp / z.maxHp * 100) / 100, z.gen & 255,
+        z.state === 'pounce' ? r2(z.y) : 0, z.state === 'pin' ? (z.pinId || 0) : 0]);
     }
     const us = [];
     for (let i = 0; i < Pickups.pool.length; i++) { const p = Pickups.pool[i]; if (p.on) us.push([i, PU_LIST.indexOf(p.type), r2(p.x), r2(p.z)]); }
@@ -3947,9 +4292,16 @@ const Net = {
         if (stName !== 'emerge') { zb.state = 'chase'; zb.y = 0; zb.t = 0; }
       }
       zb.netX = e[2]; zb.netZ = e[3]; zb.netYaw = e[4]; zb.netMiss = 0;
+      zb.netY = e.length > 8 ? e[8] : 0;
       zb.hp = Math.max(0, zb.maxHp * e[6]);
       if (stName === 'dead') { if (zb.state !== 'dead') zb.netDie(); }
       else if (zb.state !== 'emerge' && zb.state !== 'dead') zb.state = stName;
+      // A pin is host-authoritative like everything else: we are pinned exactly while the host
+      // says this hunter is riding us, and we are free the moment it stops saying so.
+      const pinId = e.length > 9 ? e[9] : 0;
+      if (stName === 'pin' && pinId && pinId === this.id) {
+        if (Player.pinnedBy !== zb) { Player.pinnedBy = zb; Player.escape = 0; Player.escSend = 0; Audio.screech(zb.x, zb.z); Input.reset(); HUD.dirty = true; }
+      } else if (Player.pinnedBy === zb) { Player.pinnedBy = null; Player.escape = 0; HUD.dirty = true; }
     }
     for (let i = 0; i < Zombies.pool.length; i++) {
       const zb = Zombies.pool[i];
@@ -3976,6 +4328,19 @@ const Net = {
       this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null);
     }
     for (const k in this.peers) if (!keep[k]) { this.killAvatar(this.peers[k]); delete this.peers[k]; }
+  },
+
+  // "I shook it off" — the client cannot free itself, it can only ask, and it keeps asking until
+  // the next snapshot shows the hunter let go
+  sendEscape(zb) {
+    if (!zb) return;
+    this.send({ k: 'esc', id: this.id, i: Zombies.pool.indexOf(zb), g: zb.gen & 255 });
+  },
+  applyEscape(peer, m) {
+    const zb = Zombies.pool[m.i | 0];
+    if (!zb || !zb.on || zb.state !== 'pin') return;
+    if ((zb.gen & 255) !== (m.g | 0) || zb.pinTarget !== peer) return;
+    zb.throwOff();
   },
 
   reportHit(idx, zb, dmg, hx, hy, hz, head, dirx, dirz) {
@@ -4265,6 +4630,56 @@ const Board = {
     }
   }
 };
+/* ------------------------------------------------------------------ app icon
+   iOS reads apple-touch-icon off the live DOM at the moment you Add to Home Screen, so painting it
+   at boot keeps the game one file with no base64 blob wedged into the source. Same motif as the
+   tab icon in <head> — a sun-bleached skull against the desert sun — with the detail a 180px tile
+   can actually show and the 64-unit layout shared, so the two never drift apart. */
+function makeAppIcon() {
+  try {
+    const S = 180, k = S / 64, c = mkCanvas(S, S), g = c.getContext('2d');
+    const sky = g.createLinearGradient(0, 0, 0, S);
+    sky.addColorStop(0, '#3c1d0a'); sky.addColorStop(0.55, '#7a3208'); sky.addColorStop(1, '#c25a10');
+    g.fillStyle = sky; g.fillRect(0, 0, S, S);
+    const sun = g.createRadialGradient(S / 2, S * 0.46, 4, S / 2, S * 0.46, S * 0.44);
+    sun.addColorStop(0, '#fff2cc'); sun.addColorStop(0.34, '#ffb347'); sun.addColorStop(0.7, '#ff7a1a'); sun.addColorStop(1, 'rgba(255,90,10,0)');
+    g.fillStyle = sun; g.beginPath(); g.arc(S / 2, S * 0.46, S * 0.44, 0, TAU); g.fill();
+    g.fillStyle = '#8f3c06'; g.beginPath(); g.moveTo(0, S * 0.79);
+    g.bezierCurveTo(S * 0.3, S * 0.69, S * 0.62, S * 0.87, S, S * 0.75); g.lineTo(S, S); g.lineTo(0, S); g.closePath(); g.fill();
+    g.fillStyle = '#4e1e04'; g.beginPath(); g.moveTo(0, S * 0.89);
+    g.bezierCurveTo(S * 0.35, S * 0.81, S * 0.7, S * 0.96, S, S * 0.87); g.lineTo(S, S); g.lineTo(0, S); g.closePath(); g.fill();
+    g.save(); g.scale(k, k);
+    g.beginPath();
+    g.moveTo(32, 9);
+    g.bezierCurveTo(20, 9, 14, 16, 14, 26);
+    g.bezierCurveTo(14, 32, 16, 37, 20, 40);
+    g.lineTo(20, 46); g.quadraticCurveTo(20, 50, 24, 50);
+    g.lineTo(40, 50); g.quadraticCurveTo(44, 50, 44, 46);
+    g.lineTo(44, 40);
+    g.bezierCurveTo(48, 37, 50, 32, 50, 26);
+    g.bezierCurveTo(50, 16, 44, 9, 32, 9);
+    g.closePath();
+    g.fillStyle = '#f2e3c4'; g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 5; g.shadowOffsetY = 1.5; g.fill();
+    g.shadowBlur = 0; g.shadowOffsetY = 0;
+    g.fillStyle = '#200f04';
+    g.beginPath(); g.ellipse(24, 26, 6, 6.6, 0, 0, TAU); g.fill();
+    g.beginPath(); g.ellipse(40, 26, 6, 6.6, 0, 0, TAU); g.fill();
+    g.beginPath(); g.moveTo(32, 31); g.lineTo(28.6, 38); g.lineTo(35.4, 38); g.closePath(); g.fill();
+    // the horde's eyes, same ember as ZG.eyeMat
+    g.fillStyle = '#ff5a10'; g.shadowColor = '#ff5a10'; g.shadowBlur = 4;
+    g.beginPath(); g.arc(24, 27, 2.2, 0, TAU); g.fill();
+    g.beginPath(); g.arc(40, 27, 2.2, 0, TAU); g.fill();
+    g.shadowBlur = 0;
+    g.strokeStyle = '#200f04'; g.lineWidth = 2.4; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(25, 43); g.lineTo(39, 43); g.moveTo(29, 42); g.lineTo(29, 50); g.moveTo(35, 42); g.lineTo(35, 50); g.stroke();
+    g.restore();
+    let link = document.querySelector('link[rel="apple-touch-icon"]');
+    if (!link) { link = document.createElement('link'); link.rel = 'apple-touch-icon'; document.head.appendChild(link); }
+    link.setAttribute('sizes', S + 'x' + S);
+    link.href = c.toDataURL('image/png');
+  } catch (e) { console.warn('app icon failed', e); }
+}
+
 /* ------------------------------------------------------------------ boot */
 let lastFrame = 0;
 function loop(now) {
@@ -4275,6 +4690,7 @@ function loop(now) {
   try { Game.frame(dt); } catch (e) { if (!loop.err) { loop.err = true; console.error('frame error', e); } }
 }
 function boot() {
+  makeAppIcon();
   if (!window.THREE) { $('loadErr').classList.add('show'); return; }
   try {
     buildTextures(); R.init(); World.init(); Particles.init(); Dust.init(); Floaties.init(); Decals.init(); Bullets.init();
@@ -4288,7 +4704,7 @@ function boot() {
   // exposed for debugging / automated testing
   window.DND = { Game: Game, Player: Player, Zombies: Zombies, World: World, Bullets: Bullets, Pickups: Pickups, Audio: Audio, Input: Input,
     R: R, Explosions: Explosions, Particles: Particles, Floaties: Floaties, Decals: Decals, Dust: Dust, FX: FX, HUD: HUD, CFG: CFG, WEAPONS: WEAPONS,
-    Net: Net, Board: Board, Mqtt: Mqtt, version: GAME_VERSION };
+    Net: Net, Board: Board, Mqtt: Mqtt, Director: Director, ZTYPES: ZTYPES, version: GAME_VERSION };
   requestAnimationFrame(function (t) { lastFrame = t; requestAnimationFrame(loop); });
 }
 boot();
