@@ -3218,7 +3218,9 @@ const Mqtt = {
    their own hit points) and report bullet hits upward; the host resolves damage, waves, pickups
    and score, then streams the world back down. Everything rides the MQTT relay above, so there
    is no NAT traversal to fail and no TURN server to pay for. */
-const NET = { PREFIX: 'dnd/1/', VER: 1, MAX: 4, SNAP: 1 / 12, INPUT: 1 / 15, BEACON: 2, STALE: 7, TIMEOUT: 6 };
+// STALE ages out room listings; DROP is the far more forgiving window before a player is kicked,
+// because a browser throttles requestAnimationFrame to nothing the moment a tab goes to the back.
+const NET = { PREFIX: 'dnd/1/', VER: 1, MAX: 4, SNAP: 1 / 12, INPUT: 1 / 15, BEACON: 2, STALE: 7, DROP: 16, TIMEOUT: 6 };
 const ZSTATE = ['emerge', 'chase', 'attack', 'dead'];
 const ZTYPE_LIST = ['walker', 'runner', 'brute'];
 const PU_LIST = ['health', 'ammo', 'insta', 'double'];
@@ -3246,6 +3248,9 @@ const Net = {
     const self = this;
     Mqtt.onMessage = function (t, p, r) { self.route(t, p, r); };
     Mqtt.onState = function (ok) { self.onLink(ok); };
+    // A timer keeps beaconing and keepalives alive when the render loop is throttled to a stop
+    // in a background tab. Timers get throttled too, but to about 1Hz rather than to nothing.
+    setInterval(function () { self.heartbeat(); }, 1000);
     this.wireUI();
   },
   displayName() { return (this.name || 'SURVIVOR').toUpperCase(); },
@@ -3272,6 +3277,11 @@ const Net = {
       this.setStatus('RELAY DROPPED — RECONNECTING…', 'bad');
       if (this.on()) HUD.toast('CONNECTION LOST — RECONNECTING', 3);
     }
+  },
+  heartbeat() {
+    if (!Mqtt.connected) return;
+    if (this.mode === 'host' && this.inRoom) { this.tBeacon = NET.BEACON; this.beacon(); }
+    else if (this.mode === 'client' && this.started) this.sendInput();
   },
   setStatus(text, cls) { const el = DOM.netStatus; if (el) { el.textContent = text; el.className = cls || ''; } },
   esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); },
@@ -3530,7 +3540,7 @@ const Net = {
     if (this.mode === 'host') {
       this.tBeacon -= dt;
       if (this.tBeacon <= 0) { this.tBeacon = NET.BEACON; this.beacon(); }
-      for (const k in this.peers) if (this.clock - this.peers[k].last > NET.STALE) { this.dropPeer(k, ' TIMED OUT'); break; }
+      for (const k in this.peers) if (this.clock - this.peers[k].last > NET.DROP) { this.dropPeer(k, ' TIMED OUT'); break; }
     }
     if (!this.started) return;
 
@@ -3541,7 +3551,9 @@ const Net = {
     } else {
       this.tInput -= dt;
       if (this.tInput <= 0) { this.tInput = NET.INPUT; this.sendInput(); }
-      if (this.clock - this.lastRecv > NET.STALE && Game.state === 'playing') {
+      const gap = this.clock - this.lastRecv;
+      if (gap > NET.STALE && gap <= NET.DROP && Game.state === 'playing') HUD.toast('HOST STALLED — HOLDING ON…', 1.2);
+      else if (gap > NET.DROP && Game.state === 'playing') {
         HUD.toast('LOST THE HOST — RETURNING TO MENU', 3); this.leave(true); Game.toMenu(); return;
       }
     }
