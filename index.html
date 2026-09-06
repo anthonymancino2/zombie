@@ -555,7 +555,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.1.1';
+const GAME_VERSION = 'v1.2.0';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -1926,36 +1926,64 @@ const ZG = {};
 /* Merged box-cluster geometry: many boxes -> ONE BufferGeometry, so a detailed
    zombie limb still costs a single draw call. Each spec is [w,h,d, x,y,z, rx?,ry?,rz?]. */
 const _bq = new THREE.Quaternion(), _be = new THREE.Euler(), _bv = new THREE.Vector3();
-function boxesGeo(specs) {
+function boxesGeo(specs, bevel) {
   const pos = [], nor = [], uv = [], idx = [];
-  const F = [ // dir, normal, corners (u,v ordering keeps textures upright)
-    [0, [1, 0, 0], [[1, 1, -1], [1, 1, 1], [1, -1, 1], [1, -1, -1]]],
-    [1, [-1, 0, 0], [[-1, 1, 1], [-1, 1, -1], [-1, -1, -1], [-1, -1, 1]]],
-    [2, [0, 1, 0], [[-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]]],
-    [3, [0, -1, 0], [[-1, -1, 1], [1, -1, 1], [1, -1, -1], [-1, -1, -1]]],
-    [4, [0, 0, 1], [[-1, 1, 1], [1, 1, 1], [1, -1, 1], [-1, -1, 1]]],
-    [5, [0, 0, -1], [[1, 1, -1], [-1, 1, -1], [-1, -1, -1], [1, -1, -1]]]
+  // per face: outward normal, then the two in-plane axis indices used for the grid and texturing
+  const F = [
+    [[1, 0, 0], 2, 1], [[-1, 0, 0], 2, 1],
+    [[0, 1, 0], 0, 2], [[0, -1, 0], 0, 2],
+    [[0, 0, 1], 0, 1], [[0, 0, -1], 0, 1]
   ];
   const UVS = 2.6;   // texture tiles per world unit — keeps grain the same size on every part
+  const h = [0, 0, 0], inner = [0, 0, 0], o = [0, 0, 0], v = [0, 0, 0], core = [0, 0, 0];
   for (const sp of specs) {
-    const hw = sp[0] / 2, hh = sp[1] / 2, hd = sp[2] / 2, ox = sp[3], oy = sp[4], oz = sp[5];
+    h[0] = sp[0] / 2; h[1] = sp[1] / 2; h[2] = sp[2] / 2;
+    o[0] = sp[3]; o[1] = sp[4]; o[2] = sp[5];
     const hasRot = sp.length > 6;
     if (hasRot) { _be.set(sp[6] || 0, sp[7] || 0, sp[8] || 0); _bq.setFromEuler(_be); }
+    // never eat the whole part: a rag 0.03 deep still keeps a core to round around
+    const r = Math.min(bevel || 0, h[0] * 0.9, h[1] * 0.9, h[2] * 0.9);
+    for (let i = 0; i < 3; i++) inner[i] = h[i] - r;
+    // grid lines per axis: the outer pair bends into the round, the inner pair bounds the flat face
+    const line = [];
+    for (let i = 0; i < 3; i++) line.push(r > 1e-5 ? [-h[i], -inner[i], inner[i], h[i]] : [-h[i], h[i]]);
     for (const f of F) {
-      const base = pos.length / 3, n = f[1], ax = f[0];
-      // face extents in world units -> uv span, offset by the box origin so neighbouring boxes line up
-      const uSpan = (ax < 2 ? sp[2] : sp[0]) * UVS, vSpan = (ax < 4 ? (ax < 2 ? sp[1] : sp[2]) : sp[1]) * UVS;
-      const u0 = (ax < 2 ? oz : ox) * UVS, v0 = (ax < 4 ? (ax < 2 ? oy : oz) : oy) * UVS;
-      let nx = n[0], ny = n[1], nz = n[2];
-      if (hasRot) { _bv.set(nx, ny, nz).applyQuaternion(_bq); nx = _bv.x; ny = _bv.y; nz = _bv.z; }
-      for (let i = 0; i < 4; i++) {
-        const c = f[2][i];
-        let x = c[0] * hw, y = c[1] * hh, z = c[2] * hd;
-        if (hasRot) { _bv.set(x, y, z).applyQuaternion(_bq); x = _bv.x; y = _bv.y; z = _bv.z; }
-        pos.push(x + ox, y + oy, z + oz); nor.push(nx, ny, nz);
-        uv.push(u0 + (i === 0 || i === 3 ? 0 : uSpan), v0 + (i < 2 ? vSpan : 0));
+      const n = f[0], ua = f[1], va = f[2];
+      const a = n[0] ? 0 : (n[1] ? 1 : 2), s = n[a];
+      const U = line[ua], V = line[va], nu = U.length, nv = V.length;
+      const base = pos.length / 3;
+      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+        v[a] = s * h[a]; v[ua] = U[i]; v[va] = V[j];
+        // clamp into the inner core then push back out to radius r: flat faces land exactly where
+        // they started, while edges and corners bend onto the sphere around the core
+        for (let k = 0; k < 3; k++) core[k] = Math.max(-inner[k], Math.min(inner[k], v[k]));
+        const dx = v[0] - core[0], dy = v[1] - core[1], dz = v[2] - core[2];
+        const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        let px = v[0], py = v[1], pz = v[2], nx = n[0], ny = n[1], nz = n[2];
+        if (len > 1e-6) {
+          const k = r / len;
+          px = core[0] + dx * k; py = core[1] + dy * k; pz = core[2] + dz * k;
+          nx = dx / len; ny = dy / len; nz = dz / len;
+        }
+        // Each of the three faces meeting at an edge computes the same position and the same
+        // normal there, so the seam is watertight and shades as one smooth curve.
+        if (hasRot) {
+          _bv.set(px, py, pz).applyQuaternion(_bq); px = _bv.x; py = _bv.y; pz = _bv.z;
+          _bv.set(nx, ny, nz).applyQuaternion(_bq); nx = _bv.x; ny = _bv.y; nz = _bv.z;
+        }
+        pos.push(px + o[0], py + o[1], pz + o[2]); nor.push(nx, ny, nz);
+        // texture from the un-rounded grid position, offset by the box origin, so the grain
+        // stays continuous across neighbouring boxes
+        uv.push((o[ua] + U[i]) * UVS, (o[va] + V[j]) * UVS);
       }
-      idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+      // Wind counter-clockwise as seen from outside. The (u,v) basis is left-handed against the
+      // normal on three of the six faces, which is what used to cull both X faces away entirely.
+      const flip = (a === 2) ? (s < 0) : (s > 0);
+      for (let j = 0; j < nv - 1; j++) for (let i = 0; i < nu - 1; i++) {
+        const p0 = base + j * nu + i, p1 = p0 + 1, p2 = p0 + nu + 1, p3 = p0 + nu;
+        if (flip) idx.push(p0, p2, p1, p0, p3, p2);
+        else idx.push(p0, p1, p2, p0, p2, p3);
+      }
     }
   }
   const g = new THREE.BufferGeometry();
@@ -1971,7 +1999,7 @@ function buildZombieGeometries() {
     [0.22, 0.46, 0.24, 0, -0.23, 0],
     [0.19, 0.44, 0.2, 0, -0.66, 0.015],
     [0.2, 0.11, 0.31, 0, -0.93, 0.05]
-  ]);
+  ], 0.05);
   // torso: ribcage + shoulders + gut + hips + hanging rags
   ZG.torso = boxesGeo([
     [0.56, 0.42, 0.32, 0, 0.16, 0],
@@ -1981,7 +2009,7 @@ function buildZombieGeometries() {
     [0.2, 0.22, 0.03, -0.13, -0.42, 0.15, 0.1, 0, 0.15],
     [0.16, 0.17, 0.03, 0.15, -0.44, -0.14, -0.12, 0, -0.2],
     [0.1, 0.3, 0.03, 0.05, -0.4, 0.16, 0.05, 0, 0.35]
-  ]);
+  ], 0.06);
   // arm: upper + forearm + hand + splayed fingers, pivoting at the shoulder
   ZG.arm = boxesGeo([
     [0.185, 0.38, 0.19, 0, -0.18, 0],
@@ -1990,7 +2018,7 @@ function buildZombieGeometries() {
     [0.032, 0.1, 0.038, -0.025, -0.805, 0.025, 0.3, 0, 0.12],
     [0.032, 0.11, 0.038, 0.02, -0.81, 0.035, 0.2, 0, -0.05],
     [0.032, 0.09, 0.038, 0.055, -0.79, 0.01, 0.14, 0, -0.28]
-  ]);
+  ], 0.045);
   // head: skull + brow + nose + hanging jaw + ears
   ZG.head = boxesGeo([
     [0.19, 0.14, 0.19, 0, -0.14, -0.01],
@@ -2001,7 +2029,7 @@ function buildZombieGeometries() {
     [0.05, 0.09, 0.06, -0.17, 0.0, -0.01],
     [0.05, 0.09, 0.06, 0.17, 0.0, -0.01],
     [0.22, 0.05, 0.2, -0.02, 0.16, -0.04, 0.1, 0.2, 0.12]
-  ]);
+  ], 0.055);
   ZG.eye = new THREE.PlaneGeometry(0.075, 0.05);
   ZG.shadow = new THREE.PlaneGeometry(1.5, 1.5); ZG.shadow.rotateX(-Math.PI / 2);
   ZG.eyeMat = new THREE.MeshBasicMaterial({ color: 0xff5a10, fog: false, transparent: true, opacity: 0.95 });
