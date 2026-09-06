@@ -1,1 +1,15 @@
-{"updated":null,"entries":[]}
+{
+  "updated": "2026-09-06T08:57:05.212Z",
+  "count": 1,
+  "entries": [
+    {
+      "pid": "ub55eq1ok1",
+      "n": "GUESTY",
+      "pts": 48250,
+      "w": 9,
+      "k": 137,
+      "c": 1,
+      "t": 1788670625418
+    }
+  ]
+}
