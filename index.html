@@ -2760,7 +2760,7 @@ const Game = {
   state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0, insta: 0, dbl: 0, timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, voice: true, sound: true, charId: 'male',
-  best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, _fp: { x: 0, z: 0 },
+  best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
   fpsAcc: 0, fpsN: 0, fpsAvg: 16.7, fpsT: 0, resT: 0, chain: [], realDt: 0.016, newBest: false, _pt: { x: 0, z: 0 },
   init() {
     HUD.init(); HUD.refreshOptions();
@@ -2773,7 +2773,7 @@ const Game = {
     Input.on.swap = function () { if (self.state === 'playing') Player.swap(); };
     Input.on.select = function (i) { if (self.state === 'playing') Player.switchTo(i); };
     Input.on.auto = function () { self.autoFire = !self.autoFire; HUD.refreshOptions(); HUD.toast('AUTO-FIRE ' + (self.autoFire ? 'ON' : 'OFF')); };
-    Input.on.pause = function () { if (self.state === 'playing') self.pause(); else if (self.state === 'paused') self.resume(); };
+    Input.on.pause = function () { if (self.coopMenu) self.resume(); else if (self.state === 'playing') self.pause(); else if (self.state === 'paused') self.resume(); };
     // menu
     $('cardMale').addEventListener('click', () => self.selectChar('male')); $('cardFemale').addEventListener('click', () => self.selectChar('female'));
     $('btnStart').addEventListener('click', () => { Audio.unlock(); self.start(); });
@@ -2790,8 +2790,10 @@ const Game = {
     optToggle([DOM.optVoice, DOM.pOptVoice], () => self.voice = !self.voice);
     optToggle([DOM.optSound, DOM.pOptSound], () => { self.sound = !self.sound; Audio.setEnabled(self.sound); });
     [DOM.optSens, DOM.pOptSens].forEach(e => e.addEventListener('input', () => { Input.sens = parseFloat(e.value) || 1; HUD.refreshOptions(); }));
-    document.addEventListener('visibilitychange', () => { if (document.hidden) { if (self.state === 'playing') self.pause(); } else Audio.resume(); });
-    window.addEventListener('pagehide', () => { if (self.state === 'playing') self.pause(); });
+    // tabbing away must not pop the menu mid-coop: there is nothing to pause and it would just
+    // hand the player a screen they did not ask for when they come back
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { if (self.state === 'playing' && !Net.on()) self.pause(); } else Audio.resume(); });
+    window.addEventListener('pagehide', () => { if (self.state === 'playing' && !Net.on()) self.pause(); });
     this.updateRotateHint(); window.addEventListener('resize', () => self.updateRotateHint());
     World.generate(Math.floor(Math.random() * 1e9));
     this.selectChar('male');
@@ -2821,14 +2823,24 @@ const Game = {
     if (!Input.touchSeen && $('c').requestPointerLock && !Input.pointerLocked) { try { $('c').requestPointerLock(); } catch (e) { } }
   },
   pause() {
-    // the squad keeps fighting whether you look away or not, so coop has no pause
-    if (Net.on()) { if (this.state === 'playing') HUD.toast('NO PAUSING IN A SQUAD RUN', 2); return; }
+    // Coop cannot freeze the world for everyone else, so the menu opens over a running game.
+    // You stay exposed while it is up — that is the trade for being able to quit or tweak options.
+    if (Net.on()) {
+      if (this.state !== 'playing' || this.coopMenu) return;
+      this.coopMenu = true; HUD.showScreen('pause'); HUD.refreshOptions(); Input.reset();
+      HUD.toast('THE SQUAD KEEPS FIGHTING — YOU ARE STILL EXPOSED', 3);
+      if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
+      return;
+    }
     if (this.state !== 'playing') return; this.state = 'paused'; HUD.showScreen('pause'); HUD.refreshOptions(); Input.reset();
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
   },
-  resume() { if (this.state !== 'paused') return; this.state = 'playing'; HUD.showScreen(null); Input.reset(); Audio.resume(); },
+  resume() {
+    if (this.coopMenu) { this.coopMenu = false; HUD.showScreen(null); Input.reset(); Audio.resume(); return; }
+    if (this.state !== 'paused') return; this.state = 'playing'; HUD.showScreen(null); Input.reset(); Audio.resume();
+  },
   toMenu() {
-    Net.leave();
+    Net.leave(); this.coopMenu = false;
     this.state = 'menu'; HUD.showScreen('menu'); HUD.showHud(false); Input.reset(); HUD.refreshOptions();
     Zombies.clear(); Bullets.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
