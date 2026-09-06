@@ -2918,7 +2918,7 @@ const Game = {
     this.kills++; this.streak++;
     if (by) by.kills++; else Player.stats.kills++;
     let pts = CFG.ptsKill;
-    if (head) { pts += CFG.ptsHead; if (!by) Player.stats.head++; Floaties.spawn(z.x, z.y + z.height + 0.5, z.z, 'HEADSHOT', '#ff4a2a', 18, 1.1); }
+    if (head) { pts += CFG.ptsHead; if (by) by.head++; else Player.stats.head++; Floaties.spawn(z.x, z.y + z.height + 0.5, z.z, 'HEADSHOT', '#ff4a2a', 18, 1.1); }
     this.addPoints(pts, z.x, z.y + z.height + 0.15, z.z, '#ffd83b', 20);
     if (!by) Audio.killmark();
     if (Net.isHost()) Net.send({ k: 'kill', i: Zombies.pool.indexOf(z), hd: head ? 1 : 0, by: by ? by.id : Net.id, p: Math.round(pts * (this.dbl > 0 ? 2 : 1)) });
@@ -3381,7 +3381,7 @@ const Net = {
     return {
       id: id, name: (String(name || 'SURVIVOR').slice(0, 14) || 'SURVIVOR').toUpperCase(),
       char: ch === 'female' ? 'female' : 'male',
-      x: 0, z: 0, ry: 0, hp: 100, maxHp: 100, st: 0, w: 0, fire: 0, kills: 0,
+      x: 0, z: 0, ry: 0, hp: 100, maxHp: 100, st: 0, w: 0, fire: 0, kills: 0, head: 0,
       tx: 0, tz: 0, tRy: 0, vis: null, walk: 0, flashT: 0, last: Net.clock,
       get alive() { return this.st === 0; },
       hurt: function (amount, fx, fz) { self.damagePeer(this, amount); }
@@ -3473,13 +3473,17 @@ const Net = {
   },
 
   /* ---------------- per-player state exchange ---------------- */
-  setPeer(peer, x, z, ry, hp, maxHp, st, w, kills, fire) {
+  setPeer(peer, x, z, ry, hp, maxHp, st, w, kills, fire, head) {
     if (peer.vis === null) { peer.x = x; peer.z = z; peer.ry = ry; }
     peer.tx = x; peer.tz = z; peer.tRy = ry;
-    peer.hp = hp; peer.maxHp = maxHp || 100; peer.st = st | 0; peer.w = w | 0; peer.kills = kills | 0;
+    peer.hp = hp; peer.maxHp = maxHp || 100; peer.st = st | 0; peer.w = w | 0;
+    if (kills != null) peer.kills = kills | 0;
+    if (head != null) peer.head = head | 0;
     if (fire) peer.flashT = 0.06;
   },
-  applyPeerState(peer, m) { this.setPeer(peer, m.x, m.z, m.r, m.h, m.m, m.s, m.w, m.kl, m.f); },
+  // A client owns its position and hit points but NOT its kill count — the host resolves kills,
+  // so taking `kills` from the client here would wipe the tally the host just credited.
+  applyPeerState(peer, m) { this.setPeer(peer, m.x, m.z, m.r, m.h, m.m, m.s, m.w, null, m.f, null); },
   sendInput() {
     Mqtt.publish(this.topicC(), JSON.stringify({
       k: 'p', id: this.id, x: r2(Player.x), z: r2(Player.z), r: r2(Player.yaw),
@@ -3578,10 +3582,10 @@ const Net = {
     const us = [];
     for (let i = 0; i < Pickups.pool.length; i++) { const p = Pickups.pool[i]; if (p.on) us.push([i, PU_LIST.indexOf(p.type), r2(p.x), r2(p.z)]); }
     const pl = [[this.id, r2(Player.x), r2(Player.z), r2(Player.yaw), Math.round(Player.hp), Player.maxHp,
-      Player.alive ? 0 : (Player.downed ? 1 : 2), Player.cur, Player.stats.kills, Player.vm.flashT > 0 ? 1 : 0]];
+      Player.alive ? 0 : (Player.downed ? 1 : 2), Player.cur, Player.stats.kills, Player.vm.flashT > 0 ? 1 : 0, Player.stats.head]];
     for (const k in this.peers) {
       const p = this.peers[k];
-      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0]);
+      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head]);
     }
     this.send({
       k: 's', wv: Game.wave, wa: Game.waveActive ? 1 : 0, ts: Game.toSpawn, pts: Math.round(Game.points),
@@ -3628,11 +3632,13 @@ const Net = {
 
     const keep = {};
     for (const e of (m.pl || [])) {
-      const id = e[0]; if (id === this.id) continue;
+      const id = e[0];
+      // our own row carries the kill tally the host resolved on our behalf
+      if (id === this.id) { Player.stats.kills = e[8] | 0; Player.stats.head = e[10] | 0; continue; }
       keep[id] = 1;
       let peer = this.peers[id];
       if (!peer) { peer = this.mkPeer(id, 'SURVIVOR', 'male'); this.peers[id] = peer; }
-      this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9]);
+      this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10]);
     }
     for (const k in this.peers) if (!keep[k]) { this.killAvatar(this.peers[k]); delete this.peers[k]; }
   },
