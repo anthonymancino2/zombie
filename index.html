@@ -587,7 +587,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.4.0';
+const GAME_VERSION = 'v1.4.1';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -602,8 +602,8 @@ const CFG = {
   downTime: 45, reviveTime: 3.5, reviveRange: 2.4, reviveHp: 0.4,
   // sprint: a full meter buys ~4s of running, and refills in ~7s once you stop leaning on it
   sprintMul: 1.62, sprintDrain: 0.25, sprintRegen: 0.145, sprintHold: 0.7, sprintMin: 0.12,
-  // third-person boom: behind, over the right shoulder, converging on the aim ray at tpConverge
-  tpDist: 3.1, tpSide: 0.62, tpUp: 0.34, tpConverge: 26,
+  // third-person boom: behind and over the right shoulder, camera axis parallel to the aim ray
+  tpDist: 2.5, tpSide: 0.85, tpUp: 0.28,
 };
 
 /* ------------------------------------------------------------------ characters */
@@ -2685,24 +2685,31 @@ const Player = {
     if (Game.state === 'dying') { cam.position.y = lerp(cam.position.y, 0.35, Game.deathK); cam.rotation.x = lerp(this.pitch, -0.55, Game.deathK); }
     Audio.lx = this.x; Audio.lz = this.z; Audio.lyaw = this.yaw;
   },
-  // Over-the-shoulder boom. The camera looks at a point far down the aim ray rather than at the
-  // player, so the screen centre still lines up with where the gun actually shoots.
+  // Over-the-shoulder boom. The camera axis stays parallel to the aim ray rather than converging
+  // on it, which keeps the body clear of the middle of the screen; the crosshair is projected onto
+  // whatever the ray actually hits (see FX.draw), so it still tells the truth about your shot.
   updateCameraTP(cam, sh) {
     const dir = this.eyeDir(this._dir);
     let py = this.eyeY();
     if (Game.state === 'dying') py = lerp(py, 0.5, Game.deathK);
     const px = this.x, pz = this.z;
     const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
-    const back = CFG.tpDist, side = CFG.tpSide, up = CFG.tpUp;
-    let cx = px - dir.x * back + rx * side, cy = py - dir.y * back + up, cz = pz - dir.z * back + rz * side;
+    let cx = px - dir.x * CFG.tpDist + rx * CFG.tpSide, cy = py - dir.y * CFG.tpDist + CFG.tpUp, cz = pz - dir.z * CFG.tpDist + rz * CFG.tpSide;
     // never let the boom punch through a wall: pull it in to the first thing it crosses
     const t = World.segHit(px, py, pz, cx, cy, cz);
     if (t >= 0) { const k = Math.max(0.12, t * 0.86); cx = px + (cx - px) * k; cy = py + (cy - py) * k; cz = pz + (cz - pz) * k; }
     if (cy < 0.35) cy = 0.35;
     cam.position.set(cx + (Math.random() - 0.5) * sh * 0.12, cy + (Math.random() - 0.5) * sh * 0.08, cz + (Math.random() - 0.5) * sh * 0.12);
-    const aim = this._v.set(px + dir.x * CFG.tpConverge, py + dir.y * CFG.tpConverge, pz + dir.z * CFG.tpConverge);
-    cam.lookAt(aim);
-    cam.rotation.z += (Math.random() - 0.5) * sh * 0.03 + (Game.state === 'dying' ? Game.deathRoll : 0);
+    cam.rotation.set(this.pitch + (Math.random() - 0.5) * sh * 0.02, this.yaw,
+      (Math.random() - 0.5) * sh * 0.03 + (Game.state === 'dying' ? Game.deathRoll : 0));
+  },
+  // where the shot lands: the auto-lock target, else the first wall down the ray, else far away
+  aimPoint(out) {
+    const dir = this.eyeDir(this._dir), ey = this.eyeY();
+    let dist = 40;
+    if (this.autoTarget) dist = Math.max(1.2, Math.sqrt((this.autoTarget.x - this.x) * (this.autoTarget.x - this.x) + (this.autoTarget.z - this.z) * (this.autoTarget.z - this.z)));
+    else { const t = World.segHit(this.x, ey, this.z, this.x + dir.x * 40, ey + dir.y * 40, this.z + dir.z * 40); if (t >= 0) dist = Math.max(1.2, t * 40); }
+    return out.set(this.x + dir.x * dist, ey + dir.y * dist, this.z + dir.z * dist);
   },
   updateBody(dt) {
     const b = this.body; if (!b) return;
@@ -2884,7 +2891,10 @@ const FX = {
     this.dmgFlash = Math.max(0, this.dmgFlash - dt * 2.2); DOM.dmg.style.opacity = (this.dmgFlash * 0.85).toFixed(2);
     this.white = Math.max(0, this.white - dt * 3); DOM.flashwhite.style.opacity = (this.white * 0.8).toFixed(2);
     if (Game.state !== 'playing' && Game.state !== 'dying') return;
-    const cx = W / 2, cy = H / 2, P = Player, acc = P.char.id === 'male' ? '#ff9a3a' : '#5dffe0';
+    const scx = W / 2, scy = H / 2, P = Player, acc = P.char.id === 'male' ? '#ff9a3a' : '#5dffe0';
+    // third person aims from the body, not the lens, so the reticle follows the ray to its target
+    let cx = scx, cy = scy;
+    if (Game.camMode === 'tp' && this.project(P.aimPoint(this._p))) { cx = this.sx; cy = this.sy; }
     // crosshair
     this.crossKick = Math.max(0, this.crossKick - dt * 5);
     const spread = 5 + P.moveMag * 5 + this.crossKick * 9 + P.bloom * 2.2;
@@ -2913,7 +2923,7 @@ const FX = {
       if (ind.t <= 0) continue; ind.t -= dt * 1.2;
       const rad = Math.min(W, H) * 0.19, a0 = ind.a - Math.PI / 2;
       c.strokeStyle = 'rgba(255,40,40,' + (ind.t * 0.9).toFixed(2) + ')'; c.lineWidth = 7; c.shadowColor = '#ff2020'; c.shadowBlur = 12;
-      c.beginPath(); c.arc(cx, cy, rad, a0 - 0.4, a0 + 0.4); c.stroke(); c.shadowBlur = 0;
+      c.beginPath(); c.arc(scx, scy, rad, a0 - 0.4, a0 + 0.4); c.stroke(); c.shadowBlur = 0;
     }
     // auto-fire target bracket
     if (locked) {
