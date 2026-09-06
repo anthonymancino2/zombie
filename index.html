@@ -3353,8 +3353,9 @@ const Net = {
         this.refreshLobby(); this.beacon();
       }
       peer.last = this.clock;
-      this.send({ k: 'welcome', to: id, seed: this.seed, host: this.displayName(), st: this.started ? 'playing' : 'lobby', roster: this.roster() });
+      this.send({ k: 'welcome', to: id, h: this.id, seed: this.seed, host: this.displayName(), st: this.started ? 'playing' : 'lobby', roster: this.roster() });
       if (this.started) this.send({ k: 'go', to: id, seed: this.seed });
+      else this.send({ k: 'roster', roster: this.roster() });   // everyone already waiting needs the update
       return;
     }
     const peer = this.peers[id]; if (!peer) return;
@@ -3386,6 +3387,7 @@ const Net = {
     HUD.toast(p.name + (why || ' DISCONNECTED'), 2.6);
     this.killAvatar(p); delete this.peers[id];
     this.refreshLobby(); this.beacon();
+    this.send({ k: 'roster', roster: this.roster() });
     if (this.started) this.checkTeamWipe();
   },
   startRun() {
@@ -3412,7 +3414,8 @@ const Net = {
     if (m.to && m.to !== this.id && m.k !== 's' && m.k !== 'ev') return;
     if (m.k === 'full') { this.setStatus('THAT RUN IS FULL', 'bad'); this.teardown(); return; }
     if (m.k === 'welcome') {
-      this.joining = false; this.inRoom = true; this.seed = m.seed; this.hostName = String(m.host || 'HOST');
+      this.joining = false; this.inRoom = true; this.seed = m.seed;
+      this.hostId = m.h || ''; this.hostName = String(m.host || 'HOST');
       this.applyRoster(m.roster);
       if (m.st !== 'playing') this.showLobby();
       return;
@@ -3833,9 +3836,9 @@ const Net = {
   refreshLobby() {
     if (!DOM.lobbyPlayers) return;
     const host = this.mode === 'host';
+    // the host is already in `peers` on a client, so it must not be prepended a second time
     const rows = [{ id: this.id, name: this.displayName(), me: true, host: host }];
-    for (const k in this.peers) rows.push({ id: k, name: this.peers[k].name, me: false, host: false });
-    if (!host) rows.unshift({ id: this.hostId, name: this.hostName || 'HOST', me: false, host: true });
+    for (const k in this.peers) rows.push({ id: k, name: this.peers[k].name, me: false, host: k === this.hostId });
     DOM.lobbyPlayers.innerHTML = rows.map(function (r) {
       return '<div class="pent' + (r.me ? ' me' : '') + '"><span class="dot"></span><span class="pn">' +
         Net.esc(r.name) + '</span><span class="pr">' + (r.host ? 'HOST' : 'SURVIVOR') + '</span></div>';
@@ -3950,7 +3953,8 @@ function boot() {
   window.__resume = function (t) { lastFrame = t; requestAnimationFrame(loop); };
   // exposed for debugging / automated testing
   window.DND = { Game: Game, Player: Player, Zombies: Zombies, World: World, Bullets: Bullets, Pickups: Pickups, Audio: Audio, Input: Input,
-    R: R, Explosions: Explosions, Particles: Particles, Floaties: Floaties, Decals: Decals, Dust: Dust, FX: FX, HUD: HUD, CFG: CFG, WEAPONS: WEAPONS };
+    R: R, Explosions: Explosions, Particles: Particles, Floaties: Floaties, Decals: Decals, Dust: Dust, FX: FX, HUD: HUD, CFG: CFG, WEAPONS: WEAPONS,
+    Net: Net, Board: Board, Mqtt: Mqtt, version: GAME_VERSION };
   requestAnimationFrame(function (t) { lastFrame = t; requestAnimationFrame(loop); });
 }
 boot();
