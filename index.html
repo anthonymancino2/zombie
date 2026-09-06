@@ -138,8 +138,9 @@ button{font-family:inherit;color:inherit;}
 #btnAuto{width:44px;height:44px;right:calc(60px + var(--sar));top:calc(10px + var(--sat));font-size:10px;border-color:rgba(255,255,255,.35);box-shadow:none;}
 #btnAuto small{font-size:8px;margin-top:1px;}
 #btnAuto.on{border-color:#ffd83b;box-shadow:0 0 14px rgba(255,216,59,.6);color:#ffd83b;}
-/* Sprint sits above the movement thumb, out of the stick's landing zone. */
-#btnSprint{width:64px;height:64px;left:calc(52px + var(--sal));bottom:calc(192px + var(--sab));font-size:11px;border-color:var(--accent2);}
+/* Sprint sits in the right-side cluster, between SWAP WEAPON and the fire/reload row — clear of
+   both by design, not just visually close (checked against every neighbor's own box). */
+#btnSprint{width:60px;height:60px;right:calc(104px + var(--sar));bottom:calc(118px + var(--sab));font-size:11px;border-color:var(--accent2);}
 #btnSprint .meter{position:absolute;inset:-6px;border-radius:50%;pointer-events:none;
   background:conic-gradient(var(--accent2) calc(var(--k,1) * 360deg),rgba(255,255,255,.09) 0);
   -webkit-mask:radial-gradient(circle,transparent 0 62%,#000 64%);mask:radial-gradient(circle,transparent 0 62%,#000 64%);}
@@ -228,7 +229,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnReload{width:50px;height:50px;right:calc(116px + var(--sar));bottom:calc(16px + var(--sab));}
   #btnSwitch{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(112px + var(--sab));}
   #btnAuto{width:40px;height:40px;right:calc(64px + var(--sar));top:calc(10px + var(--sat));}
-  #btnSprint{width:56px;height:56px;left:calc(42px + var(--sal));bottom:calc(158px + var(--sab));}
+  #btnSprint{width:50px;height:50px;right:calc(88px + var(--sar));bottom:calc(100px + var(--sab));}
   #joyHint{left:calc(42px + var(--sal));bottom:calc(42px + var(--sab));width:104px;height:104px;}
   #layoutBar{top:calc(56px + var(--sat));}
   .hudbr{bottom:calc(186px + var(--sab));} #ammoMag{font-size:30px;} #ammoRes{font-size:11px;} #wpnName{font-size:10px;} #reloadHint{font-size:10px;}
@@ -430,7 +431,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="opts">
         <div class="opt" id="optAuto">AUTO-FIRE: <span>OFF</span></div>
         <div class="opt" id="optCam">CAMERA: <span>1ST</span></div>
-        <div class="opt on" id="optSquad">SQUAD: <span>ON</span></div>
+        <div class="opt on" id="optSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="optVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="optSound">SOUND: <span>ON</span></div>
         <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="0.4" max="2.2" step="0.1" value="1"><span id="sensVal">1.0</span></div>
@@ -460,7 +461,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="opts">
         <div class="opt" id="pOptAuto">AUTO-FIRE: <span>OFF</span></div>
         <div class="opt" id="pOptCam">CAMERA: <span>1ST</span></div>
-        <div class="opt on" id="pOptSquad">SQUAD: <span>ON</span></div>
+        <div class="opt on" id="pOptSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="pOptVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="pOptSound">SOUND: <span>ON</span></div>
         <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="0.4" max="2.2" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
@@ -599,7 +600,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.7.1';
+const GAME_VERSION = 'v1.8.0';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -715,7 +716,7 @@ const AVATARS = {
     accent: 0x9b59b6, hide: ['1H_Wand', '2H_Staff', 'Spellbook', 'Spellbook_open'] },
   dragonlord: { id: 'dragonlord', gender: 'female', key: 'dragonlord', short: 'NYXARA', label: 'NYXARA', cls: 'DEMON QUEEN',
     desc: 'Royalty from somewhere considerably worse than this. Slumming it in the sand until something better comes along.',
-    accent: 0xff3b3b, hide: [] },
+    accent: 0xff3b3b, hide: [], scaleExclude: ['Skinned_Mesh_2'] },
   barbarian: { id: 'barbarian', gender: 'female', key: 'barbarian', short: 'AESIR', label: 'AESIR BARBARIAN', cls: 'STORM-FORGED',
     desc: 'A warrior who has outlived every war she started. This one is just the next line item.',
     accent: 0x21e6c1, hide: [] }
@@ -746,9 +747,20 @@ const Avatars = {
         const pat = new RegExp('^(' + av.hide.join('|') + ')$', 'i');
         gltf.scene.traverse(o => { if (pat.test(o.name)) o.visible = false; });
       }
-      // export scales are wildly inconsistent (Cloud ships roughly 250x too big) — normalize every
-      // champion onto the same ~1.82m standing height the box survivor used, feet at y=0
+      // export scales are wildly inconsistent (Cloud ships roughly 150x too big, uniformly across
+      // his whole rig) — normalize every champion onto the same ~1.82m standing height the box
+      // survivor used, feet at y=0. `Box3.setFromObject` only walks *visible* objects, so anything
+      // in `av.hide` is already excluded automatically. `av.scaleExclude` additionally excludes a
+      // mesh from THIS measurement only (still rendered) — needed for Dragonlord, whose wings
+      // (`Skinned_Mesh_2`) measure ~65 units on an axis where her actual body measures ~1, which
+      // would otherwise scale her down to nothing. Toggle, measure, restore.
+      const excluded = (av.scaleExclude || []).map(name => {
+        let o = null; gltf.scene.traverse(n => { if (n.name === name) o = n; });
+        if (o) { const was = o.visible; o.visible = false; return { o: o, was: was }; }
+        return null;
+      }).filter(Boolean);
       const box = new THREE.Box3().setFromObject(gltf.scene);
+      for (const e of excluded) e.o.visible = e.was;
       const size = box.getSize(new THREE.Vector3());
       const scale = size.y > 1e-4 ? 1.82 / size.y : 1;
       gltf.scene.scale.setScalar(scale);
@@ -775,7 +787,15 @@ const Avatars = {
   async spawn(id) {
     const av = AVATARS[id] || AVATARS.cloud;
     const tpl = await this._template(av.id);
-    const root = THREE.SkeletonUtils.clone(tpl.root);
+    const inner = THREE.SkeletonUtils.clone(tpl.root);
+    // every one of these rigs was authored facing the opposite of this engine's forward axis (yaw 0
+    // looks down -Z) — confirmed by watching one walk backwards in third person. This has to live on
+    // an INNER wrapper, separate from the outer `root` returned below: every caller (Player, Net,
+    // Bots) sets `g.rotation.y = yaw` once per frame, which would silently overwrite a facing offset
+    // baked onto that same object. Override av.facing per-champion if a future asset already faces
+    // the right way.
+    inner.rotation.y = av.facing != null ? av.facing : Math.PI;
+    const root = new THREE.Group(); root.add(inner);
     const mixer = new THREE.AnimationMixer(root);
     const actions = {};
     for (const role in tpl.clipsByRole) { const clip = tpl.clipsByRole[role]; actions[role] = clip ? mixer.clipAction(clip) : null; }
@@ -3385,11 +3405,12 @@ const HUD = {
     const G = Game;
     [DOM.optAuto, DOM.pOptAuto].forEach(e => { e.classList.toggle('on', G.autoFire); e.querySelector('span').textContent = G.autoFire ? 'ON' : 'OFF'; });
     [DOM.optCam, DOM.pOptCam].forEach(e => { e.classList.toggle('on', G.camMode === 'tp'); e.querySelector('span').textContent = G.camMode === 'tp' ? '3RD' : '1ST'; });
-    // in coop the squad is the people you are actually playing with, so the bot toggle steps aside
+    // in coop the squad is the people you are actually playing with, so the bot control steps
+    // aside; solo cycles OFF/1/2/3 bots on a single click-through control
     [DOM.optSquad, DOM.pOptSquad].forEach(e => {
       const coop = Net.mode !== 'off';
-      e.classList.toggle('on', G.squad && !coop);
-      e.querySelector('span').textContent = coop ? 'COOP' : (G.squad ? 'ON' : 'OFF');
+      e.classList.toggle('on', G.squadCount > 0 && !coop);
+      e.querySelector('span').textContent = coop ? 'COOP' : (G.squadCount > 0 ? String(G.squadCount) : 'OFF');
     });
     [DOM.optVoice, DOM.pOptVoice].forEach(e => { e.classList.toggle('on', G.voice); e.querySelector('span').textContent = G.voice ? 'ON' : 'OFF'; });
     [DOM.optSound, DOM.pOptSound].forEach(e => { e.classList.toggle('on', G.sound); e.querySelector('span').textContent = G.sound ? 'ON' : 'OFF'; });
@@ -3428,19 +3449,24 @@ const Bots = {
     if (this.built) return;
     this.built = true;
     for (const def of BOT_DEFS) {
-      const m = buildSurvivor(def.accent);
+      // the body is a champion avatar chosen at spawn() time (whichever the player didn't pick),
+      // so only the scene-permanent parts — shadow, name tag, muzzle flash, an empty transform
+      // root — go up here. Avatars.spawn() fills the root in once its model has loaded.
+      const g = new THREE.Group(); R.scene.add(g);
+      const flash = Avatars._flash(); g.add(flash);
       const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.52, 14),
         new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
       shadow.rotation.x = -Math.PI / 2;
       const label = Net.mkLabel(def.name, def.accent);
-      R.scene.add(m.g); R.scene.add(shadow); R.scene.add(label);
+      R.scene.add(shadow); R.scene.add(label);
       this.list.push({
         def: def, id: def.id, name: def.name,
         x: 0, z: 0, ry: 0, vx: 0, vz: 0, hp: def.hp, maxHp: def.hp,
         alive: true, down: false, out: false, downT: 0, pinnedBy: null,
         kills: 0, head: 0, cool: 0, anim: 0, gait: 0, flashT: 0, lastHurt: -99,
         target: null, aimT: 0, reviveT: 0, reviveOn: null,
-        vis: m, shadow: shadow, label: label,
+        vis: { kind: 'gltf', g: g, mixer: null, actions: {}, current: 'idle', flash: flash },
+        avatarId: null, squadActive: false, shadow: shadow, label: label,
         // the zombie AI, the pin and the barrel blast all call this the same way they call it on a
         // peer, so nothing upstream needs to know a bot is not a person
         hurt: function (amount, fx, fz) { Bots.hurtBot(this, amount); }
@@ -3448,7 +3474,26 @@ const Bots = {
     }
     this.ids = this.list.map(function (b) { return b.id; }).join(',');
   },
-  enabled() { return Game.squad && Net.mode === 'off'; },
+  enabled() { return Game.squad && Game.squadCount > 0 && Net.mode === 'off'; },
+  // the squad is whichever champions the player DIDN'T pick — Boone/Kess draw from the male roster,
+  // June from the female roster, regardless of the player's own gender. Recomputed every spawn()
+  // since the player's own choice can change between runs.
+  pickAvatars() {
+    const mine = Game.charId;
+    const male = AVATAR_ORDER.male.filter(id => id !== mine);
+    const female = AVATAR_ORDER.female.filter(id => id !== mine);
+    return { bot_boone: male[0] || AVATAR_ORDER.male[0], bot_kess: male[1] || AVATAR_ORDER.male[1], bot_june: female[0] || AVATAR_ORDER.female[0] };
+  },
+  assignAvatar(b, avatarId) {
+    if (b.avatarId === avatarId) return;
+    const myAvatarId = avatarId, gen = (b._avGen = (b._avGen || 0) + 1);
+    b.avatarId = avatarId;
+    Avatars.spawn(avatarId).then(body => {
+      if (b.avatarId !== myAvatarId || b._avGen !== gen) { R.scene.remove(body.g); return; }
+      for (const c of b.vis.g.children.slice()) { if (c !== b.vis.flash) b.vis.g.remove(c); }
+      b.vis.g.add(body.g); b.vis.mixer = body.mixer; b.vis.actions = body.actions; b.vis.current = body.current;
+    }).catch(e => console.error('bot avatar failed to load', e));
+  },
 
   /* ---------------- lifecycle ---------------- */
   spawn() {
@@ -3456,13 +3501,22 @@ const Bots = {
     if (!this.enabled()) return;
     this.build();
     this.on = true;
-    for (let i = 0; i < this.list.length; i++) {
-      const b = this.list[i], a = rnd(0, TAU);
+    const avatars = this.pickAvatars();
+    const active = this.list.slice(0, clamp(Game.squadCount, 0, this.list.length));
+    for (let i = 0; i < active.length; i++) {
+      const b = active[i], a = rnd(0, TAU);
+      this.assignAvatar(b, avatars[b.id]);
+      b.squadActive = true;
       b.hp = b.maxHp; b.alive = true; b.down = false; b.out = false; b.downT = 0; b.pinnedBy = null;
       b.kills = 0; b.head = 0; b.cool = rnd(0, 0.4); b.anim = rnd(0, 6); b.gait = 0; b.flashT = 0;
       b.lastHurt = -99; b.target = null; b.aimT = 0; b.reviveT = 0; b.reviveOn = null;
       b.x = Player.x + Math.cos(a) * 2.4; b.z = Player.z + Math.sin(a) * 2.4; b.vx = b.vz = 0; b.ry = Player.yaw;
       World.collide(b, 0.42);
+    }
+    // any slot beyond the chosen squad size stays fully out of the run, same as a bled-out bot
+    for (let i = active.length; i < this.list.length; i++) {
+      const b = this.list[i]; b.alive = false; b.down = false; b.out = true; b.squadActive = false;
+      b.vis.g.visible = false; b.shadow.visible = false; b.label.visible = false;
     }
     this.reviver = null; this.revTarget = null; this.revT = 0; this.reinforceT = 0;
   },
@@ -3482,7 +3536,7 @@ const Bots = {
     if (!this.on) return;
     let back = 0;
     for (const b of this.list) {
-      if (!b.out) continue;
+      if (!b.out || !b.squadActive) continue;
       const a = rnd(0, TAU);
       b.out = false; b.down = false; b.alive = true; b.hp = Math.round(b.maxHp * 0.6); b.downT = 0;
       b.x = Player.x + Math.cos(a) * 3.2; b.z = Player.z + Math.sin(a) * 3.2; b.vx = b.vz = 0;
@@ -3496,7 +3550,7 @@ const Bots = {
   // solo and the player find out by dying.
   reinforce() {
     let pick = null;
-    for (const b of this.list) { if (!b.out) continue; if (!pick || (b.def.medic && !pick.def.medic)) pick = b; }
+    for (const b of this.list) { if (!b.out || !b.squadActive) continue; if (!pick || (b.def.medic && !pick.def.medic)) pick = b; }
     if (!pick) return;
     const a = rnd(0, TAU);
     pick.out = false; pick.down = false; pick.alive = true; pick.downT = 0;
@@ -3733,7 +3787,7 @@ const Bots = {
     v.g.rotation.y = b.ry;
     b.shadow.position.set(b.x, 0.014, b.z);
     b.label.position.set(b.x, b.down ? 1.1 : 2.35, b.z);
-    poseSurvivor(v, b.anim, b.gait, b.down, 0);
+    Avatars.pose(v, dt, b.gait, b.down);
     if (b.flashT > 0) { b.flashT -= dt; v.flash.visible = true; v.flash.material.rotation = Math.random() * TAU; }
     else v.flash.visible = false;
   },
@@ -3750,6 +3804,10 @@ const Bots = {
     const nodes = el.children;
     for (let i = 0; i < this.list.length && i < nodes.length; i++) {
       const b = this.list[i], n = nodes[i];
+      // a slot the player didn't include this run (squadCount) is hidden outright, not shown as
+      // "OUT" — that label is for a bot who bled out mid-fight and can still come back
+      n.style.display = b.squadActive ? '' : 'none';
+      if (!b.squadActive) continue;
       n.classList.toggle('down', b.down); n.classList.toggle('gone', b.out);
       const txt = b.name + (b.down ? ' — DOWN' : (b.out ? ' — OUT' : (b.pinnedBy ? ' — PINNED' : '')));
       if (n._t !== txt) { n._t = txt; n.children[0].textContent = txt; }
@@ -3833,12 +3891,13 @@ const Director = {
 const Game = {
   state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0, insta: 0, dbl: 0, timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
-  autoFire: false, voice: true, sound: true, charId: 'male', camMode: 'fp', squad: true,
+  autoFire: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', squad: true, squadCount: 3,
   best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
   fpsAcc: 0, fpsN: 0, fpsAvg: 16.7, fpsT: 0, resT: 0, chain: [], realDt: 0.016, newBest: false, _pt: { x: 0, z: 0 },
   init() {
     try { const cm = localStorage.getItem('dnd_cam'); if (cm === 'tp' || cm === 'fp') this.camMode = cm; } catch (e) { }
     try { const sq = localStorage.getItem('dnd_squad'); if (sq === '0' || sq === '1') this.squad = sq === '1'; } catch (e) { }
+    try { const sc = localStorage.getItem('dnd_squadcount'); if (sc != null) this.squadCount = clamp(parseInt(sc, 10) || 0, 0, 3); } catch (e) { }
     HUD.init(); HUD.refreshOptions();
     this.buildCharCards();
     const self = this;
@@ -3866,7 +3925,7 @@ const Game = {
     const optToggle = (els, fn) => els.forEach(e => e.addEventListener('click', () => { fn(); HUD.refreshOptions(); }));
     optToggle([DOM.optAuto, DOM.pOptAuto], () => self.autoFire = !self.autoFire);
     optToggle([DOM.optCam, DOM.pOptCam], () => self.setCamMode(self.camMode === 'tp' ? 'fp' : 'tp'));
-    optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquad(!self.squad));
+    optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquadCount((self.squadCount + 1) % 4));
     optToggle([DOM.optVoice, DOM.pOptVoice], () => self.voice = !self.voice);
     optToggle([DOM.optSound, DOM.pOptSound], () => { self.sound = !self.sound; Audio.setEnabled(self.sound); });
     [DOM.optSens, DOM.pOptSens].forEach(e => e.addEventListener('input', () => { Input.sens = parseFloat(e.value) || 1; HUD.refreshOptions(); }));
@@ -3887,12 +3946,13 @@ const Game = {
     if (this.camMode === 'fp' && Player.body) { Player.body.g.visible = false; Player.body.shadow.visible = false; }
     HUD.refreshOptions();
   },
-  // Toggling mid-run takes effect immediately, because waiting for the next run to find out
-  // whether you have a squad is a worse answer than the squad just appearing or leaving.
-  setSquad(v) {
-    this.squad = !!v;
-    try { localStorage.setItem('dnd_squad', this.squad ? '1' : '0'); } catch (e) { }
-    if (this.state === 'playing' || this.state === 'paused') { if (this.squad && Net.mode === 'off') Bots.spawn(); else Bots.clear(); }
+  // One control cycles OFF/1/2/3 rather than a separate on-off toggle plus a count, since 0 IS
+  // "off". Changing it mid-run takes effect immediately — waiting for the next run to find out
+  // whether you have a squad is a worse answer than the squad just changing size on the spot.
+  setSquadCount(n) {
+    this.squadCount = clamp(n, 0, 3); this.squad = this.squadCount > 0;
+    try { localStorage.setItem('dnd_squadcount', String(this.squadCount)); localStorage.setItem('dnd_squad', this.squad ? '1' : '0'); } catch (e) { }
+    if (this.state === 'playing' || this.state === 'paused') { if (Net.mode === 'off') Bots.spawn(); else Bots.clear(); }
     HUD.refreshOptions();
   },
   // GRIT/VITALS, SPEED and RELOAD bars are per-gender (every champion of a gender shares that
