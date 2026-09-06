@@ -343,6 +343,12 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #pinned{top:64%;}
   #pinned .ps{font-size:11px;}
 }
+/* Portrait is narrow enough that the centred boss bar reaches the squad/coop strip running down
+   the left, so it drops below it. This has to sit after #boss's own rule, not up with the other
+   responsive blocks — same specificity, so source order is what decides. */
+@media (max-width:560px) and (orientation:portrait){
+  #boss{top:calc(214px + var(--sat));}
+}
 </style>
 </head>
 <body class="char-male">
@@ -445,6 +451,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="opts">
         <div class="opt" id="optAuto">AUTO-FIRE: <span>OFF</span></div>
         <div class="opt" id="optCam">CAMERA: <span>1ST</span></div>
+        <div class="opt on" id="optSquad">SQUAD: <span>ON</span></div>
         <div class="opt on" id="optVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="optSound">SOUND: <span>ON</span></div>
         <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="0.4" max="2.2" step="0.1" value="1"><span id="sensVal">1.0</span></div>
@@ -474,6 +481,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="opts">
         <div class="opt" id="pOptAuto">AUTO-FIRE: <span>OFF</span></div>
         <div class="opt" id="pOptCam">CAMERA: <span>1ST</span></div>
+        <div class="opt on" id="pOptSquad">SQUAD: <span>ON</span></div>
         <div class="opt on" id="pOptVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="pOptSound">SOUND: <span>ON</span></div>
         <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="0.4" max="2.2" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
@@ -612,7 +620,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.5.0';
+const GAME_VERSION = 'v1.6.0';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -632,9 +640,12 @@ const CFG = {
   // hunter: the coil, the leap, and how long it can ride you. pinMax is the safety valve — a solo
   // player with nobody to rescue them is never held down until they die.
   hunterMin: 5.5, hunterRange: 15, hunterWindup: 0.55, hunterCool: 9, pounceSpeed: 15.5, pounceUp: 5.2, pounceGrav: 14,
-  pinMax: 5, pinClaw: 0.85, pinDmg: 9, escTap: 0.075, escSwipe: 0.0007, escHit: 0.3,
+  pinMax: 5, pinClaw: 0.85, pinDmg: 9, escTap: 0.075, escSwipe: 0.0007, escHit: 0.3, escHitGap: 0.4,
   // director: when the specials are allowed out, and how long dead air is tolerated
   hunterWave: 4, tankWave: 7, tankEvery: 4, lullMax: 14,
+  // squad: how close the bots hold formation, when they break off to catch up, and how fast they
+  // knit themselves back together between fights
+  botLeash: 6, botBreak: 13, botRegen: 3.4, botCalm: 6, botAimHold: 0.35, medicReviveMul: 1.75,
 };
 
 /* ------------------------------------------------------------------ characters */
@@ -1165,6 +1176,15 @@ const Audio = {
     this.tone(t, 1.7, 'square', 93, 55, 0.2 * v, p, 0.12);
     this.tone(t, 2.0, 'sine', 31, 22, 0.45 * v, p, 0.08);
     this.noise(t, 1.6, 'lowpass', 700, 160, 0.8, 0.45 * v, p);
+  },
+  // a teammate's gun, heard from across the arena: same shape as Audio.shot, spatialised and
+  // pulled well down so three of them firing does not drown out your own weapon
+  botShot(kind, x, z) {
+    if (!this.on()) return; const s = this.spatial(x, z); if (s.vol < 0.04) return;
+    const t = this.ctx.currentTime, p = this.panNode(s.pan), v = s.vol * 0.5;
+    const P = kind === 'shotgun' ? [1000, 0.3, 85, 0.26, 1.0] : [3200, 0.07, 200, 0.08, 0.7];
+    this.noise(t, P[1], 'lowpass', P[0] * 2, P[0] * 0.22, 0.9, P[4] * v, p, rnd(0.9, 1.1));
+    this.tone(t, P[3], 'triangle', P[2], 38, P[4] * 0.8 * v, p);
   },
   slam(x, z) {
     if (!this.on()) return; const s = this.spatial(x, z), v = clamp(0.4 + s.vol, 0, 1.2);
@@ -2046,13 +2066,15 @@ const Bullets = {
     const mat = new THREE.MeshBasicMaterial({ color: 0xffe2a8, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
     for (let i = 0; i < CFG.bullets; i++) {
       const m = new THREE.Mesh(geo, mat); m.visible = false; m.frustumCulled = false; R.scene.add(m);
-      this.pool.push({ on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, dmg: 0, kind: 'pistol', falloff: null, mesh: m, dist: 0 });
+      this.pool.push({ on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, dmg: 0, kind: 'pistol', falloff: null, mesh: m, dist: 0, by: null });
     }
   },
-  fire(x, y, z, dx, dy, dz, speed, dmg, range, kind, falloff) {
+  // `by` is whoever pulled the trigger when it was not the local player — a teammate bot today.
+  // It rides the bullet so the hit lands in the same scoring path a coop peer's hit uses.
+  fire(x, y, z, dx, dy, dz, speed, dmg, range, kind, falloff, by) {
     let b = null; for (let i = 0; i < this.pool.length; i++) if (!this.pool[i].on) { b = this.pool[i]; break; }
     if (!b) return;
-    b.on = true; b.x = x; b.y = y; b.z = z; b.vx = dx * speed; b.vy = dy * speed; b.vz = dz * speed; b.life = range / speed; b.dmg = dmg; b.kind = kind; b.falloff = falloff || null; b.dist = 0;
+    b.on = true; b.x = x; b.y = y; b.z = z; b.vx = dx * speed; b.vy = dy * speed; b.vz = dz * speed; b.life = range / speed; b.dmg = dmg; b.kind = kind; b.falloff = falloff || null; b.dist = 0; b.by = by || null;
     b.mesh.visible = true; b.mesh.position.set(x, y, z); this._t.set(x + dx, y + dy, z + dz); b.mesh.lookAt(this._t);
   },
   clear() { for (const b of this.pool) { b.on = false; b.mesh.visible = false; } },
@@ -2077,8 +2099,8 @@ const Bullets = {
         const hx = ax + ex * bestT, hy = ay + ey * bestT, hz = az + ez * bestT, L = Math.sqrt(L2) || 1;
         let dmg = b.dmg;
         if (b.falloff) { const d = b.dist + L * bestT; if (d > b.falloff.s) dmg *= Math.max(b.falloff.min, 1 - (d - b.falloff.s) / (b.falloff.e - b.falloff.s)); }
-        Game.onBulletHit(bestZ, dmg, hx, hy, hz, head, ex / L, ez / L);
-        b.on = false; b.mesh.visible = false; continue;
+        Game.onBulletHit(bestZ, dmg, hx, hy, hz, head, ex / L, ez / L, b.by);
+        b.on = false; b.by = null; b.mesh.visible = false; continue;
       }
       if (wt >= 0) {
         const hx = ax + ex * wt, hy = ay + ey * wt, hz = az + ez * wt;
@@ -2225,7 +2247,7 @@ class Zombie {
     this.t = 0; this.animT = Math.random() * 10; this.flashT = 0; this.stuckT = 0; this.lastX = 0; this.lastZ = 0; this.nudgeT = 0; this.nudgeX = 0; this.nudgeZ = 0;
     this.groanT = rnd(2, 8); this.struck = false; this.cool = 0; this.variant = 0; this.wave = 1; this.gen = 0;
     // specials: the hunter's leap and the pin it lands, plus the boss flag the HUD reads
-    this.boss = false; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pinA = 0;
+    this.boss = false; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pinA = 0; this.pinHitT = -99;
     this.pvx = 0; this.pvy = 0; this.pvz = 0; this.netY = 0;
     const g = new THREE.Group(); this.group = g;
     this.skinMat = new THREE.MeshLambertMaterial({ map: TEX.skin[0] }); this.clothMat = new THREE.MeshLambertMaterial({ map: TEX.cloth[0] });
@@ -2246,7 +2268,7 @@ class Zombie {
     this.on = true; this.state = 'emerge'; this.t = 0; this.x = x; this.z = z; this.y = -2.4; this.vx = this.vz = 0; this.yaw = Math.atan2(-x, -z);
     this.radius = T.radius; this.height = T.height; this.dmg = T.dmg; this.big = T.big;
     const wm = Math.pow(T.hpWave || CFG.hpMul, wave - 1), sm = Math.pow(CFG.speedMul, wave - 1);
-    this.boss = !!T.boss; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pvx = this.pvy = this.pvz = 0;
+    this.boss = !!T.boss; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pinHitT = -99; this.pvx = this.pvy = this.pvz = 0;
     this.maxHp = this.hp = Math.round(CFG.zombieBaseHp * wm * T.hpMul);
     this.speed = Math.min(7.6, CFG.zombieBaseSpeed * sm * T.speedMul) * rnd(0.92, 1.08);
     this.variant = Math.floor(Math.random() * TEX.skin.length);
@@ -2357,7 +2379,11 @@ class Zombie {
     // Shooting a hunter off a teammate is the whole rescue. It costs the pin real time for anyone
     // it is riding (which is all a remote client can see), and fills the meter directly when the
     // victim is the player on this machine.
-    if (this.state === 'pin') {
+    // Rate-limited, because a shotgun pellet counts as a hit: three teammates emptying into it
+    // would otherwise end the pin inside one frame and take the mechanic with it. One credit per
+    // window means sustained covering fire frees you in about a second, not instantly.
+    if (this.state === 'pin' && Game.time - this.pinHitT > CFG.escHitGap) {
+      this.pinHitT = Game.time;
       this.pinT += CFG.escHit * CFG.pinMax;
       if (this.pinTarget === Player) Player.escape = Math.min(1, Player.escape + CFG.escHit);
     }
@@ -2379,7 +2405,7 @@ class Zombie {
     const T = this.type, st = this.state;
     // ...except a hunter mid-leap or mid-ride, which stays with the survivor it committed to
     let P = (this.pinTarget && (st === 'crouch' || st === 'pounce' || st === 'pin')) ? this.pinTarget
-      : (Net.isHost() ? Net.targetFor(this) : Player);
+      : (Net.isHost() ? Net.targetFor(this) : (Bots.on ? Bots.targetFor(this) : Player));
     if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) { this.skinMat.emissive.setHex(0); this.clothMat.emissive.setHex(0); } }
     if (st === 'emerge') {
       this.t += dt; const k = Math.min(1, this.t / 1.1); this.y = -2.4 + 2.4 * easeOut(k);
@@ -3061,8 +3087,9 @@ const Player = {
     if (this.hp > this.maxHp * 0.45) this.lowSaid = false;
     if (this.hp <= 0) {
       this.hp = 0; this.alive = false;
-      // in coop you go down instead of dying, as long as somebody is left standing to reach you
-      if (Net.canRevive()) { this.downed = true; this.downT = CFG.downTime; Net.onSelfDowned(); }
+      // you go down instead of dying as long as somebody is left standing to reach you —
+      // a coop teammate, or one of your bots
+      if (Net.canRevive() || Bots.canRevive()) { this.downed = true; this.downT = CFG.downTime; Net.onSelfDowned(); }
       else Game.onPlayerDeath();
     }
   },
@@ -3073,8 +3100,11 @@ const Player = {
     Net.onSelfUp(); Audio.powerup(); HUD.dirty = true;
   },
   bleedOut() {
-    this.downed = false; this.downT = 0; this.spectating = true;
-    Net.onSelfUp(); Audio.death();
+    this.downed = false; this.downT = 0;
+    Net.onSelfUp();
+    // bots cannot call another run, so solo there is nothing to spectate — bleeding out ends it
+    if (!Net.on()) { this.spectating = false; Game.onPlayerDeath(); return; }
+    this.spectating = true; Audio.death();
     HUD.toast('YOU BLED OUT — WAITING ON THE SQUAD', 4);
     if (Net.isHost()) Net.checkTeamWipe();
   },
@@ -3205,7 +3235,7 @@ const HUD = {
   init() {
     ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnSprint', 'joyHint', 'rotateHint',
-      'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'loadErr',
+      'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
       'btnLeaders', 'btnLeadersBack', 'btnLobbyStart', 'btnLobbyLeave', 'lobbyCode', 'lobbyPlayers', 'lobbyStatus', 'lobbyHint',
       'coop', 'netPill', 'downed', 'downedBar', 'downedSub', 'revive', 'reviveText', 'reviveBar', 'lbWrap', 'lbStatus', 'goCoop', 'goRoom',
@@ -3279,11 +3309,380 @@ const HUD = {
     const G = Game;
     [DOM.optAuto, DOM.pOptAuto].forEach(e => { e.classList.toggle('on', G.autoFire); e.querySelector('span').textContent = G.autoFire ? 'ON' : 'OFF'; });
     [DOM.optCam, DOM.pOptCam].forEach(e => { e.classList.toggle('on', G.camMode === 'tp'); e.querySelector('span').textContent = G.camMode === 'tp' ? '3RD' : '1ST'; });
+    // in coop the squad is the people you are actually playing with, so the bot toggle steps aside
+    [DOM.optSquad, DOM.pOptSquad].forEach(e => {
+      const coop = Net.mode !== 'off';
+      e.classList.toggle('on', G.squad && !coop);
+      e.querySelector('span').textContent = coop ? 'COOP' : (G.squad ? 'ON' : 'OFF');
+    });
     [DOM.optVoice, DOM.pOptVoice].forEach(e => { e.classList.toggle('on', G.voice); e.querySelector('span').textContent = G.voice ? 'ON' : 'OFF'; });
     [DOM.optSound, DOM.pOptSound].forEach(e => { e.classList.toggle('on', G.sound); e.querySelector('span').textContent = G.sound ? 'ON' : 'OFF'; });
     DOM.optSens.value = Input.sens; DOM.pOptSens.value = Input.sens; DOM.sensVal.textContent = Input.sens.toFixed(1); DOM.pSensVal.textContent = Input.sens.toFixed(1);
     DOM.btnAuto.classList.toggle('on', G.autoFire); DOM.autoState.textContent = G.autoFire ? 'ON' : 'OFF';
     DOM.bestLine.textContent = G.best.wave > 0 ? 'BEST RUN: WAVE ' + G.best.wave + ' · ' + fmt(G.best.points) + ' PTS' : '';
+  }
+};
+
+/* ------------------------------------------------------------------ AI teammates
+   Revive only ever worked with a real human on the other end, so solo was a different game from
+   coop: no rescue, no covering fire, no reason to hold ground. Three bots fix that.
+
+   They are deliberately NOT peers. They never enter Net.peers, never touch the wire, and only
+   exist while Net is off, so a squad run and a coop run can never be mistaken for one another.
+   What they DO borrow from a peer record is its *shape* — x, z, alive, hp, maxHp, kills, head,
+   pinnedBy, hurt() — because that is exactly the duck type the zombie AI, the hunter pin and the
+   scoring path already accept. A bot can therefore be chased, pounced on, pinned, clawed and
+   credited with a kill without a single special case anywhere else in the file. */
+const BOT_DEFS = [
+  // the anchor: longest reach, takes point off your right shoulder where you can see him working
+  { id: 'bot_boone', name: 'BOONE', char: 'male', accent: 0xff7a1a, hp: 115, speed: 5.4,
+    dmg: 15, rate: 3.4, range: 32, spread: 2.4, pellets: 1, kind: 'rifle', slot: 0.75 },
+  // short reach, brutal inside it: holds your left flank and pushes onto whatever is closest
+  { id: 'bot_kess', name: 'KESS', char: 'male', accent: 0xd8a24a, hp: 135, speed: 5.0,
+    dmg: 9, rate: 1.2, range: 14, spread: 7.5, pellets: 6, kind: 'shotgun', slot: -1.3 },
+  // weakest gun, picks people up at nearly twice the speed and never strays far
+  { id: 'bot_june', name: 'JUNE', char: 'female', accent: 0x21e6c1, hp: 95, speed: 6.0,
+    dmg: 12, rate: 3.0, range: 24, spread: 3.2, pellets: 1, kind: 'rifle', slot: Math.PI, medic: true }
+];
+const Bots = {
+  list: [], ids: "", on: false, built: false, reviver: null, revTarget: null, revT: 0, reinforceT: 0,
+  _t: { x: 0, z: 0 },
+
+  build() {
+    if (this.built) return;
+    this.built = true;
+    for (const def of BOT_DEFS) {
+      const m = buildSurvivor(def.accent);
+      const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.52, 14),
+        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
+      shadow.rotation.x = -Math.PI / 2;
+      const label = Net.mkLabel(def.name, def.accent);
+      R.scene.add(m.g); R.scene.add(shadow); R.scene.add(label);
+      this.list.push({
+        def: def, id: def.id, name: def.name,
+        x: 0, z: 0, ry: 0, vx: 0, vz: 0, hp: def.hp, maxHp: def.hp,
+        alive: true, down: false, out: false, downT: 0, pinnedBy: null,
+        kills: 0, head: 0, cool: 0, anim: 0, gait: 0, flashT: 0, lastHurt: -99,
+        target: null, aimT: 0, reviveT: 0, reviveOn: null,
+        vis: m, shadow: shadow, label: label,
+        // the zombie AI, the pin and the barrel blast all call this the same way they call it on a
+        // peer, so nothing upstream needs to know a bot is not a person
+        hurt: function (amount, fx, fz) { Bots.hurtBot(this, amount); }
+      });
+    }
+    this.ids = this.list.map(function (b) { return b.id; }).join(',');
+  },
+  enabled() { return Game.squad && Net.mode === 'off'; },
+
+  /* ---------------- lifecycle ---------------- */
+  spawn() {
+    this.clear();
+    if (!this.enabled()) return;
+    this.build();
+    this.on = true;
+    for (let i = 0; i < this.list.length; i++) {
+      const b = this.list[i], a = rnd(0, TAU);
+      b.hp = b.maxHp; b.alive = true; b.down = false; b.out = false; b.downT = 0; b.pinnedBy = null;
+      b.kills = 0; b.head = 0; b.cool = rnd(0, 0.4); b.anim = rnd(0, 6); b.gait = 0; b.flashT = 0;
+      b.lastHurt = -99; b.target = null; b.aimT = 0; b.reviveT = 0; b.reviveOn = null;
+      b.x = Player.x + Math.cos(a) * 2.4; b.z = Player.z + Math.sin(a) * 2.4; b.vx = b.vz = 0; b.ry = Player.yaw;
+      World.collide(b, 0.42);
+    }
+    this.reviver = null; this.revTarget = null; this.revT = 0; this.reinforceT = 0;
+  },
+  clear() {
+    this.on = false; this.reviver = null; this.revTarget = null; this.revT = 0; this.reinforceT = 0;
+    for (const b of this.list) {
+      if (b.pinnedBy) b.pinnedBy.endPin();
+      b.pinnedBy = null; b.alive = false; b.down = false; b.out = true; b.target = null;
+      b.vis.g.visible = false; b.shadow.visible = false; b.label.visible = false;
+    }
+    if (DOM.coop && !Net.on()) { DOM.coop.classList.remove('show'); DOM.coop.innerHTML = ''; DOM.coop._ids = ''; }
+  },
+  standing() { let n = 0; for (const b of this.list) if (this.on && !b.down && !b.out) n++; return n; },
+  canRevive() { return this.on && this.standing() > 0; },
+  // between waves the squad regroups: anyone who bled out walks back in, hurt but upright
+  regroup() {
+    if (!this.on) return;
+    let back = 0;
+    for (const b of this.list) {
+      if (!b.out) continue;
+      const a = rnd(0, TAU);
+      b.out = false; b.down = false; b.alive = true; b.hp = Math.round(b.maxHp * 0.6); b.downT = 0;
+      b.x = Player.x + Math.cos(a) * 3.2; b.z = Player.z + Math.sin(a) * 3.2; b.vx = b.vz = 0;
+      World.collide(b, 0.42); back++;
+    }
+    if (back) HUD.toast(back === 1 ? 'A SQUADMATE IS BACK ON THEIR FEET' : 'THE SQUAD REGROUPS', 2.4);
+  },
+
+  // A late wave can run for minutes, so waiting for the next one is too long to be the only way
+  // back: a wiped-out squad walks one member back in rather than letting the run quietly turn
+  // solo and the player find out by dying.
+  reinforce() {
+    let pick = null;
+    for (const b of this.list) { if (!b.out) continue; if (!pick || (b.def.medic && !pick.def.medic)) pick = b; }
+    if (!pick) return;
+    const a = rnd(0, TAU);
+    pick.out = false; pick.down = false; pick.alive = true; pick.downT = 0;
+    pick.hp = Math.round(pick.maxHp * 0.6); pick.lastHurt = Game.time;
+    pick.x = Player.x + Math.cos(a) * 4; pick.z = Player.z + Math.sin(a) * 4; pick.vx = pick.vz = 0;
+    World.collide(pick, 0.42);
+    HUD.toast(pick.name + ' IS BACK ON THEIR FEET', 2.6);
+  },
+
+  /* ---------------- who the horde goes for ---------------- */
+  targetFor(zb) {
+    let best = Player.alive ? Player : null;
+    let bd = best ? (Player.x - zb.x) * (Player.x - zb.x) + (Player.z - zb.z) * (Player.z - zb.z) : Infinity;
+    for (const b of this.list) {
+      if (b.down || b.out) continue;
+      const d = (b.x - zb.x) * (b.x - zb.x) + (b.z - zb.z) * (b.z - zb.z);
+      if (d < bd) { bd = d; best = b; }
+    }
+    // everybody is down: keep shambling at the player so the horde does not freeze in place
+    return best || Player;
+  },
+
+  /* ---------------- per-frame ---------------- */
+  update(dt) {
+    if (!this.on) { return; }
+    if (this.standing() === 0 && Game.state === 'playing') {
+      this.reinforceT += dt;
+      if (this.reinforceT > 25) { this.reinforceT = 0; this.reinforce(); }
+    } else this.reinforceT = 0;
+    // one designated reviver per frame, so the squad never all kneels down at once
+    this.reviver = this.pickReviver();
+    for (const b of this.list) {
+      if (b.out) { this.draw(b, dt); continue; }
+      if (b.down) {
+        b.downT -= dt;
+        b.gait = 0; b.target = null;
+        if (b.downT <= 0) this.bleedOut(b);
+        this.draw(b, dt); continue;
+      }
+      // pinned: frozen and bleeding until a squadmate shoots it off (or CFG.pinMax expires)
+      if (b.pinnedBy) { b.gait = 0; b.target = null; b.reviveT = 0; this.draw(b, dt); continue; }
+      if (b.hp < b.maxHp && Game.time - b.lastHurt > CFG.botCalm) b.hp = Math.min(b.maxHp, b.hp + CFG.botRegen * dt);
+      this.think(b, dt);
+      this.draw(b, dt);
+    }
+    this.updatePlayerRevive(dt);
+    this.renderHud();
+  },
+  // the closest standing bot to whoever most needs picking up — the player always outranks a bot
+  pickReviver() {
+    let who = Player.downed ? Player : null;
+    if (!who) { for (const b of this.list) if (b.down) { who = b; break; } }
+    if (!who) return null;
+    let best = null, bd = Infinity;
+    for (const b of this.list) {
+      if (b.down || b.out || b.pinnedBy || b === who) continue;
+      const d = (b.x - who.x) * (b.x - who.x) + (b.z - who.z) * (b.z - who.z);
+      // the medic wins ties by a wide margin: it is what she is for
+      const score = d * (b.def.medic ? 0.35 : 1);
+      if (score < bd) { bd = score; best = b; }
+    }
+    if (best) best.reviveOn = who;
+    for (const b of this.list) if (b !== best) b.reviveOn = null;
+    return best;
+  },
+  think(b, dt) {
+    // 1. shooting is never suspended — a bot walking to a pickup still covers the ground it crosses
+    b.aimT -= dt;
+    const t = b.target;
+    if (b.aimT <= 0 || !t || !t.on || t.state === 'dead' ||
+        (t.x - b.x) * (t.x - b.x) + (t.z - b.z) * (t.z - b.z) > b.def.range * b.def.range) {
+      b.target = this.pickTarget(b); b.aimT = CFG.botAimHold;
+    }
+    let faced = false;
+    if (b.target) { this.shoot(b, b.target, dt); faced = true; } else b.cool = Math.max(0, b.cool - dt);
+
+    // 2. picking somebody up outranks holding formation, but not covering fire
+    if (b.reviveOn) {
+      const w = b.reviveOn, dx = w.x - b.x, dz = w.z - b.z, d = Math.sqrt(dx * dx + dz * dz);
+      if (d > CFG.reviveRange * 0.75) { b.reviveT = 0; this.moveTo(b, w.x, w.z, dt, 1.2); }
+      else {
+        b.gait = lerp(b.gait, 0, Math.min(1, dt * 8));
+        b.reviveT += dt * (b.def.medic ? CFG.medicReviveMul : 1);
+        if (!faced) { b.ry = Math.atan2(-dx, -dz); }
+        if (w === Player && DOM.downedSub) {
+          DOM.downedSub.textContent = b.name + ' IS PICKING YOU UP — ' +
+            Math.max(0, CFG.reviveTime - b.reviveT).toFixed(1) + 's';
+        }
+        if (b.reviveT >= CFG.reviveTime) {
+          b.reviveT = 0;
+          if (w === Player) { Player.revive(); HUD.toast(b.name + ' PICKED YOU UP', 2.6); }
+          else { this.reviveBot(w); HUD.toast(b.name + ' PICKED UP ' + w.name, 2.4); }
+          Audio.ding();
+        }
+      }
+      return;
+    }
+    b.reviveT = 0;
+
+    // 3. formation. Stand and fight inside the leash; break off and run when you fall behind.
+    const pdx = Player.x - b.x, pdz = Player.z - b.z, pd = Math.sqrt(pdx * pdx + pdz * pdz);
+    const ang = Player.yaw + b.def.slot;
+    const gx = Player.x - Math.sin(ang) * CFG.botLeash, gz = Player.z - Math.cos(ang) * CFG.botLeash;
+    if (pd > CFG.botBreak) this.moveTo(b, gx, gz, dt, 1.35);
+    else if (!b.target) this.moveTo(b, gx, gz, dt, 1);
+    else if (pd > CFG.botLeash + 2.5) this.moveTo(b, gx, gz, dt, 0.8);
+    else { b.gait = lerp(b.gait, 0, Math.min(1, dt * 8)); b.vx *= 0.8; b.vz *= 0.8; }
+  },
+  pickTarget(b) {
+    const zs = Zombies.pool, R = b.def.range;
+    let best = null, bestScore = 0;
+    for (let i = 0; i < zs.length; i++) {
+      const z = zs[i];
+      if (!z.on || z.state === 'dead' || z.state === 'emerge') continue;
+      const dx = z.x - b.x, dz = z.z - b.z, d2 = dx * dx + dz * dz;
+      if (d2 > R * R) continue;
+      const d = Math.sqrt(d2);
+      let s = 100 - d * 2;
+      // a hunter riding anybody is the whole reason these three exist
+      if (z.state === 'pin') s += 900;
+      else if (z.state === 'crouch' || z.state === 'pounce') s += 260;
+      else if (z.boss) s += 45;
+      const px = z.x - Player.x, pz = z.z - Player.z, pd2 = px * px + pz * pz;
+      if (pd2 < 16) s += 220;                                  // anything in the player's face
+      if (!Player.alive && pd2 < 36) s += 200;                  // clear space around a downed player
+      // LOS is the expensive test, so only pay for it on a zombie that would actually win
+      if (s <= bestScore) continue;
+      if (!World.los(b.x, b.z, z.x, z.z)) continue;
+      bestScore = s; best = z;
+    }
+    return best;
+  },
+  shoot(b, z, dt) {
+    const def = b.def;
+    const tx = z.x, ty = z.y + z.height * 0.62, tz = z.z;
+    b.ry = Math.atan2(-(tx - b.x), -(tz - b.z));
+    b.cool -= dt;
+    if (b.cool > 0) return;
+    b.cool = 1 / def.rate;
+    const my = 1.35, spread = def.spread * Math.PI / 180;
+    for (let p = 0; p < def.pellets; p++) {
+      let dx = tx - b.x, dy = ty - my, dz = tz - b.z;
+      let L = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1; dx /= L; dy /= L; dz /= L;
+      dx += (Math.random() + Math.random() - 1) * spread;
+      dy += (Math.random() + Math.random() - 1) * spread * 0.5;
+      dz += (Math.random() + Math.random() - 1) * spread;
+      L = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      Bullets.fire(b.x, my, b.z, dx / L, dy / L, dz / L, 170, def.dmg, def.range + 10, def.kind, null, b);
+    }
+    Audio.botShot(def.kind, b.x, b.z);
+    b.flashT = 0.05;
+  },
+  moveTo(b, tx, tz, dt, mul) {
+    let dx = tx - b.x, dz = tz - b.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.35) { b.gait = lerp(b.gait, 0, Math.min(1, dt * 8)); b.vx *= 0.7; b.vz *= 0.7; return; }
+    dx /= d; dz /= d;
+    // the horde's flow field is already aimed at the player, so a bot heading home can ride it
+    // around cover for free rather than grinding along a wall
+    if (d > 3 && !World.los(b.x, b.z, tx, tz) && World.flowTarget(b.x, b.z, this._t)) {
+      const fx = this._t.x - b.x, fz = this._t.z - b.z, fl = Math.sqrt(fx * fx + fz * fz);
+      if (fl > 0.001) { dx = fx / fl; dz = fz / fl; }
+    }
+    // stay out of each other's and the player's pockets
+    let sx = 0, sz = 0;
+    for (const o of this.list) {
+      if (o === b || o.out) continue;
+      const ox = b.x - o.x, oz = b.z - o.z, o2 = ox * ox + oz * oz;
+      if (o2 < 2.25 && o2 > 1e-6) { const od = Math.sqrt(o2); sx += ox / od * (1.5 - od) / 1.5; sz += oz / od * (1.5 - od) / 1.5; }
+    }
+    const px = b.x - Player.x, pz = b.z - Player.z, p2 = px * px + pz * pz;
+    if (p2 < 1.69 && p2 > 1e-6) { const pdd = Math.sqrt(p2); sx += px / pdd * (1.3 - pdd) / 1.3 * 1.4; sz += pz / pdd * (1.3 - pdd) / 1.3 * 1.4; }
+    const sp = b.def.speed * (mul || 1), k = Math.min(1, dt * 8);
+    b.vx += (dx * sp + sx * 3.2 - b.vx) * k; b.vz += (dz * sp + sz * 3.2 - b.vz) * k;
+    b.x += b.vx * dt; b.z += b.vz * dt;
+    World.collide(b, 0.42);
+    // and out of the horde, the same way the player is pushed clear
+    const zs = Zombies.pool;
+    for (let i = 0; i < zs.length; i++) {
+      const zb = zs[i]; if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
+      const zx = b.x - zb.x, zz = b.z - zb.z, rr = 0.42 + zb.radius, z2 = zx * zx + zz * zz;
+      if (z2 < rr * rr && z2 > 1e-6) { const zd = Math.sqrt(z2); b.x = zb.x + zx / zd * rr; b.z = zb.z + zz / zd * rr; }
+    }
+    const sp2 = Math.sqrt(b.vx * b.vx + b.vz * b.vz);
+    b.gait = lerp(b.gait, Math.min(1, sp2 / 4), Math.min(1, dt * 8));
+    if (!b.target && sp2 > 0.6) b.ry = Math.atan2(-b.vx, -b.vz);
+  },
+
+  /* ---------------- damage, down, out ---------------- */
+  hurtBot(b, amount) {
+    if (b.down || b.out || Game.state !== 'playing') return;
+    b.hp -= amount; b.lastHurt = Game.time;
+    if (b.hp > 0) return;
+    b.hp = 0; b.down = true; b.alive = false; b.downT = CFG.downTime; b.target = null; b.reviveT = 0;
+    Particles.blood(b.x, 1.1, b.z, 14, 0, 0, true);
+    HUD.toast(b.name + ' IS DOWN', 2.6);
+  },
+  reviveBot(b) {
+    b.down = false; b.alive = true; b.downT = 0; b.hp = Math.round(b.maxHp * CFG.reviveHp); b.lastHurt = Game.time;
+  },
+  bleedOut(b) {
+    b.down = false; b.out = true; b.alive = false; b.downT = 0; b.reviveOn = null;
+    HUD.toast(b.name + ' BLED OUT — BACK NEXT WAVE', 3);
+  },
+  // the player's half of the pickup: stand over a downed squadmate and hold still
+  updatePlayerRevive(dt) {
+    if (Net.on()) return;
+    if (!Player.alive) { this.revTarget = null; this.revT = 0; DOM.revive.classList.remove('show'); return; }
+    let best = null, bd = CFG.reviveRange * CFG.reviveRange;
+    for (const b of this.list) {
+      if (!b.down) continue;
+      const dx = b.x - Player.x, dz = b.z - Player.z, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = b; }
+    }
+    if (!best) { this.revTarget = null; this.revT = 0; DOM.revive.classList.remove('show'); return; }
+    if (this.revTarget !== best) { this.revTarget = best; this.revT = 0; }
+    this.revT += dt;
+    DOM.revive.classList.add('show');
+    DOM.reviveText.textContent = 'REVIVING ' + best.name;
+    DOM.reviveBar.style.transform = 'scaleX(' + Math.min(1, this.revT / CFG.reviveTime).toFixed(3) + ')';
+    if (this.revT >= CFG.reviveTime) {
+      this.revT = 0; this.revTarget = null; DOM.revive.classList.remove('show');
+      this.reviveBot(best); Audio.ding(); HUD.toast('REVIVED ' + best.name, 2.4);
+    }
+  },
+
+  /* ---------------- presentation ---------------- */
+  draw(b, dt) {
+    const v = b.vis, show = !b.out;
+    v.g.visible = show; b.shadow.visible = show; b.label.visible = show;
+    if (!show) return;
+    b.anim += dt * (1.6 + b.gait * 7);
+    v.g.position.set(b.x, 0, b.z);
+    v.g.rotation.y = b.ry;
+    b.shadow.position.set(b.x, 0.014, b.z);
+    b.label.position.set(b.x, b.down ? 1.1 : 2.35, b.z);
+    poseSurvivor(v, b.anim, b.gait, b.down, 0);
+    if (b.flashT > 0) { b.flashT -= dt; v.flash.visible = true; v.flash.material.rotation = Math.random() * TAU; }
+    else v.flash.visible = false;
+  },
+  // same strip coop uses, and it can never fight with coop over it: bots only exist when Net is off
+  renderHud() {
+    const el = DOM.coop; if (!el) return;
+    el.classList.add('show');
+    // the roster never changes, so the key is built once at build() time — this runs every frame
+    // and the 60fps floor does not have room for an array and a join in it
+    if (el._ids !== this.ids) {
+      el._ids = this.ids;
+      el.innerHTML = this.list.map(function () { return '<div class="mate"><div class="mn"></div><div class="mb"><i></i></div></div>'; }).join('');
+    }
+    const nodes = el.children;
+    for (let i = 0; i < this.list.length && i < nodes.length; i++) {
+      const b = this.list[i], n = nodes[i];
+      n.classList.toggle('down', b.down); n.classList.toggle('gone', b.out);
+      const txt = b.name + (b.down ? ' — DOWN' : (b.out ? ' — OUT' : (b.pinnedBy ? ' — PINNED' : '')));
+      if (n._t !== txt) { n._t = txt; n.children[0].textContent = txt; }
+      const kk = b.out ? 0 : Math.max(0, Math.min(1, b.hp / b.maxHp));
+      n.children[1].firstChild.style.transform = 'scaleX(' + kk.toFixed(3) + ')';
+    }
+  },
+  scoreRows() {
+    return this.list.map(function (b) { return { n: b.name, k: b.kills, me: false }; });
   }
 };
 
@@ -3358,11 +3757,12 @@ const Director = {
 const Game = {
   state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0, insta: 0, dbl: 0, timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
-  autoFire: false, voice: true, sound: true, charId: 'male', camMode: 'fp',
+  autoFire: false, voice: true, sound: true, charId: 'male', camMode: 'fp', squad: true,
   best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
   fpsAcc: 0, fpsN: 0, fpsAvg: 16.7, fpsT: 0, resT: 0, chain: [], realDt: 0.016, newBest: false, _pt: { x: 0, z: 0 },
   init() {
     try { const cm = localStorage.getItem('dnd_cam'); if (cm === 'tp' || cm === 'fp') this.camMode = cm; } catch (e) { }
+    try { const sq = localStorage.getItem('dnd_squad'); if (sq === '0' || sq === '1') this.squad = sq === '1'; } catch (e) { }
     HUD.init(); HUD.refreshOptions();
     drawPortrait($('portraitMale'), 'male'); drawPortrait($('portraitFemale'), 'female');
     const self = this;
@@ -3391,6 +3791,7 @@ const Game = {
     const optToggle = (els, fn) => els.forEach(e => e.addEventListener('click', () => { fn(); HUD.refreshOptions(); }));
     optToggle([DOM.optAuto, DOM.pOptAuto], () => self.autoFire = !self.autoFire);
     optToggle([DOM.optCam, DOM.pOptCam], () => self.setCamMode(self.camMode === 'tp' ? 'fp' : 'tp'));
+    optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquad(!self.squad));
     optToggle([DOM.optVoice, DOM.pOptVoice], () => self.voice = !self.voice);
     optToggle([DOM.optSound, DOM.pOptSound], () => { self.sound = !self.sound; Audio.setEnabled(self.sound); });
     [DOM.optSens, DOM.pOptSens].forEach(e => e.addEventListener('input', () => { Input.sens = parseFloat(e.value) || 1; HUD.refreshOptions(); }));
@@ -3411,6 +3812,14 @@ const Game = {
     if (this.camMode === 'fp' && Player.body) { Player.body.g.visible = false; Player.body.shadow.visible = false; }
     HUD.refreshOptions();
   },
+  // Toggling mid-run takes effect immediately, because waiting for the next run to find out
+  // whether you have a squad is a worse answer than the squad just appearing or leaving.
+  setSquad(v) {
+    this.squad = !!v;
+    try { localStorage.setItem('dnd_squad', this.squad ? '1' : '0'); } catch (e) { }
+    if (this.state === 'playing' || this.state === 'paused') { if (this.squad && Net.mode === 'off') Bots.spawn(); else Bots.clear(); }
+    HUD.refreshOptions();
+  },
   selectChar(id) {
     this.charId = id; document.body.classList.toggle('char-female', id === 'female'); document.body.classList.toggle('char-male', id === 'male');
     $('cardMale').classList.toggle('sel', id === 'male'); $('cardFemale').classList.toggle('sel', id === 'female');
@@ -3426,9 +3835,10 @@ const Game = {
     Player.reset(char); Input.reset();
     this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0; this.insta = 0; this.dbl = 0; this.timeScale = 1;
     this.toSpawn = 0; this.waveActive = false; this.streak = 0; this.sayT = -99; this.deathK = 0; this.deathRoll = 0; this.chain.length = 0; this.pickupT = 15;
-    Director.reset();
+    Director.reset(); Bots.spawn();
     HUD.last = {}; HUD.dirty = true; HUD.showScreen(null); HUD.showHud(true); HUD.refreshOptions();
     DOM.joyHint.classList.toggle('hide', !('ontouchstart' in window)); DOM.dmg.style.opacity = '0'; DOM.lowhp.classList.remove('on');
+    DOM.downed.classList.remove('show'); DOM.revive.classList.remove('show'); DOM.pinned.classList.remove('show'); DOM.boss.classList.remove('show');
     this.interT = 4; HUD.banner('GET READY', 'THE SAND IS HUNGRY', false);
     this.say('start', true); World.computeFlow(0, 0);
     if (!Input.touchSeen && $('c').requestPointerLock && !Input.pointerLocked) { try { $('c').requestPointerLock(); } catch (e) { } }
@@ -3454,8 +3864,8 @@ const Game = {
     Net.leave(); this.coopMenu = false;
     this.state = 'menu'; HUD.showScreen('menu'); HUD.showHud(false); Input.reset(); HUD.refreshOptions();
     Zombies.clear(); Bullets.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
-    Director.reset(); Player.pinnedBy = null; Player.escape = 0;
-    DOM.boss.classList.remove('show'); DOM.pinned.classList.remove('show');
+    Director.reset(); Bots.clear(); Player.pinnedBy = null; Player.escape = 0;
+    DOM.boss.classList.remove('show'); DOM.pinned.classList.remove('show'); DOM.revive.classList.remove('show');
     if (Player.body) { Player.body.g.visible = false; Player.body.shadow.visible = false; }
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
     try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { }
@@ -3483,6 +3893,7 @@ const Game = {
     Audio.horn(); this.say('wave');
     // let the wave banner land before the director drops a special on top of it
     Director.tankT = Math.max(Director.tankT, 12); Director.hunterT = Math.max(Director.hunterT, 7);
+    if (w > 1) Bots.regroup();
     // Weapons unlock at their wave milestone, or earlier if the player has banked
     // enough points — that is what points buy.
     WEAPONS.forEach((def, i) => {
@@ -3639,9 +4050,16 @@ const Game = {
     const m = Math.floor(this.matchTime / 60), s = Math.floor(this.matchTime % 60); DOM.goTime.textContent = m + ':' + (s < 10 ? '0' : '') + s;
     DOM.goBest.textContent = (this.newBest ? 'NEW BEST RUN! ' : 'BEST RUN: ') + 'WAVE ' + this.best.wave + ' · ' + fmt(this.best.points) + ' PTS';
     DOM.goTag.textContent = Player.char.id === 'male' ? 'THE DESERT KEEPS ITS DEAD' : 'OPERATOR DOWN. MISSION FAILED.';
-    const coop = Net.mode !== 'off';
-    DOM.goRoom.textContent = coop ? 'SQUAD RUN · ROOM ' + Net.code : '';
-    if (coop) {
+    const coop = Net.mode !== 'off', squad = !coop && Bots.on;
+    DOM.goRoom.textContent = coop ? 'SQUAD RUN · ROOM ' + Net.code : (squad ? 'SQUAD RUN · WITH BOTS' : '');
+    if (squad) {
+      const rows = [{ n: Net.displayName(), k: Player.stats.kills, me: true }].concat(Bots.scoreRows());
+      rows.sort(function (a, b) { return b.k - a.k; });
+      DOM.goCoop.innerHTML = rows.map(function (r) {
+        return '<div class="pent' + (r.me ? ' me' : '') + '"><span class="dot"></span><span class="pn">' +
+          Net.esc(r.n) + '</span><span class="pr">' + r.k + (r.k === 1 ? ' KILL' : ' KILLS') + '</span></div>';
+      }).join('');
+    } else if (coop) {
       const rows = [{ n: Net.displayName(), k: Player.stats.kills, me: true }];
       for (const pk in Net.peers) rows.push({ n: Net.peers[pk].name, k: Net.peers[pk].kills, me: false });
       rows.sort(function (a, b) { return b.k - a.k; });
@@ -3650,7 +4068,8 @@ const Game = {
           Net.esc(r.n) + '</span><span class="pr">' + r.k + (r.k === 1 ? ' KILL' : ' KILLS') + '</span></div>';
       }).join('');
     } else DOM.goCoop.innerHTML = '';
-    Board.submit(Net.displayName(), this.points, this.wave, this.kills, coop);
+    // three guns on your side is not the same run as one, so the board says which it was
+    Board.submit(Net.displayName(), this.points, this.wave, this.kills, coop ? 1 : (squad ? 2 : 0));
     HUD.showHud(false); HUD.showScreen('gameover');
   },
   update(dt) {
@@ -3688,6 +4107,7 @@ const Game = {
     if (Net.isHost()) { const fp = Net.flowPoint(this._fp); World.updateFlow(fp.x, fp.z, dt); }
     else World.updateFlow(P.x, P.z, dt);
     P.update(dt);
+    Bots.update(dt);          // after the player, so a bot's pickup text wins the downed line
     Zombies.update(dt); Bullets.update(dt); Pickups.update(dt); Explosions.update(dt); Particles.update(dt); Floaties.update(dt);
     Dust.update(dt, P.x, P.z);
     HUD.update(dt);
@@ -4578,11 +4998,13 @@ const Board = {
     if (this.open_) this.render();
   },
   // called at the end of every run; only a personal best is worth publishing
-  submit(name, pts, wave, kills, coop) {
+  // `mode`: 0 solo, 1 coop, 2 squad-with-bots. Older entries only ever stored 0 or 1, so the
+  // renderer still reads those correctly.
+  submit(name, pts, wave, kills, mode) {
     if (!(pts > 0)) return;
     const prev = this.best;
     if (prev && prev.pts >= pts) return;
-    const e = { n: (name || 'SURVIVOR').toUpperCase().slice(0, 14), pts: Math.round(pts), w: wave, k: kills, c: coop ? 1 : 0, t: Date.now() };
+    const e = { n: (name || 'SURVIVOR').toUpperCase().slice(0, 14), pts: Math.round(pts), w: wave, k: kills, c: mode | 0, t: Date.now() };
     this.best = e;
     try { localStorage.setItem('dnd_best', JSON.stringify(e)); } catch (e2) { }
     this.entries[Net.pid] = Object.assign({ pid: Net.pid }, e);
@@ -4619,7 +5041,7 @@ const Board = {
       html += '<div class="' + cls + '">' +
         '<span class="rk">' + (i + 1) + '</span>' +
         '<span class="ln">' + Net.esc(e.n || 'SURVIVOR') + '</span>' +
-        '<span class="lm">' + (e.c ? 'COOP' : 'SOLO') + '</span>' +
+        '<span class="lm">' + (e.c === 2 ? 'SQUAD' : (e.c ? 'COOP' : 'SOLO')) + '</span>' +
         '<span class="lw">WAVE ' + (e.w || 1) + '</span>' +
         '<span class="lp">' + fmt(e.pts) + '</span></div>';
     });
@@ -4704,7 +5126,7 @@ function boot() {
   // exposed for debugging / automated testing
   window.DND = { Game: Game, Player: Player, Zombies: Zombies, World: World, Bullets: Bullets, Pickups: Pickups, Audio: Audio, Input: Input,
     R: R, Explosions: Explosions, Particles: Particles, Floaties: Floaties, Decals: Decals, Dust: Dust, FX: FX, HUD: HUD, CFG: CFG, WEAPONS: WEAPONS,
-    Net: Net, Board: Board, Mqtt: Mqtt, Director: Director, ZTYPES: ZTYPES, version: GAME_VERSION };
+    Net: Net, Board: Board, Mqtt: Mqtt, Director: Director, Bots: Bots, ZTYPES: ZTYPES, version: GAME_VERSION };
   requestAnimationFrame(function (t) { lastFrame = t; requestAnimationFrame(loop); });
 }
 boot();
