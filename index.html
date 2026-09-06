@@ -599,7 +599,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.7.0';
+const GAME_VERSION = 'v1.7.1';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -690,14 +690,17 @@ const AVATAR_GLB_GZ_B64 = {
 /* ------------------------------------------------------------------ champion avatars
    Every playable body is one of these seven imported champions — four male, three female. Gender
    only decides which CHARS stat/voice block a champion inherits (Player.reset merges the two); the
-   model itself is unique per champion. Two (rhino, mage) have their native weapon as a separate
-   node and get it hidden outright; corsair never had one; the other four (cloud, chopper,
-   dragonlord, barbarian) ship with their weapon welded into one fused body mesh with no separate
-   material group, so it cannot be removed without vertex-level surgery — it stays visible on those. */
+   model itself is unique per champion. Three (cloud, rhino, mage) have their native weapon as a
+   separate mesh/node and get it hidden outright; corsair never had one. Chopper and barbarian each
+   ship as a single fused skinned mesh with one material and no material groups, so their weapon is
+   welded into the same geometry as the body and can't be removed without vertex-level surgery — it
+   stays visible on those. Dragonlord has 4 separate meshes but none is identifiably just a weapon
+   (one is plausibly her wings at a wildly different bind-pose scale) — nothing hidden there rather
+   than risk hiding the wrong part of her. */
 const AVATARS = {
-  cloud: { id: 'cloud', gender: 'male', key: 'cloud', short: 'CLOUD', label: 'CLOUD', cls: 'BLADE FOR HIRE',
-    desc: "Ex-soldier who won't talk about the company he used to keep. Steady, fast, and handy with anything that has an edge.",
-    accent: 0x3fa9d6, hide: [] },
+  cloud: { id: 'cloud', gender: 'male', key: 'cloud', short: 'CLOUD', label: 'CLOUD', cls: 'EX-SOLDIER',
+    desc: "Ex-soldier who won't talk about the company he used to keep. Left the sword at home — out here it is just him, his boots, and a rifle.",
+    accent: 0x3fa9d6, hide: ['Object_58'] },
   rhino: { id: 'rhino', gender: 'male', key: 'rhino', short: 'RHINO', label: 'GREEN RHINO RANGER', cls: 'FIELD RANGER',
     desc: 'A scout who packs light and moves lighter. Left the boomerangs at home — out here it is just him, his boots, and a rifle.',
     accent: 0x4caf50, hide: ['boomerang_l_gr', 'boomerang_r_gr'] },
