@@ -3513,8 +3513,10 @@ const Net = {
   },
   checkTeamWipe() {
     if (this.mode !== 'host' || !this.started || this.wipeSent) return;
-    if (Player.alive || Player.downed) return;
-    for (const k in this.peers) if (this.peers[k].st !== 2) return;
+    // The run is over the moment nobody is left standing: a squad of downed players can never
+    // revive each other, so waiting out their bleed-out timers would just stall everyone.
+    if (Player.alive) return;
+    for (const k in this.peers) if (this.peers[k].st === 0) return;
     this.wipeSent = true;
     this.send({ k: 'over', wv: Game.wave, pts: Math.round(Game.points), kl: Game.kills, roster: this.roster() });
     Game.endRun();
