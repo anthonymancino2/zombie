@@ -231,6 +231,9 @@ h1.title em{font-style:normal;color:var(--accent2);}
 }
 @media (max-width:560px) and (orientation:portrait){
   .hudtc{top:calc(58px + var(--sat));}
+  /* portrait is narrow: stack AUTO under PAUSE so the score column stops crowding the wave text */
+  #btnAuto{right:calc(10px + var(--sar));top:calc(58px + var(--sat));}
+  .hudtr{right:calc(58px + var(--sar));}
   #hpBar{width:34vw;} #hpNum{font-size:18px;} #points{font-size:22px;} #waveNum{font-size:22px;} #zLeft{font-size:10px;}
   #subtitle{bottom:calc(272px + var(--sab));max-width:86vw;font-size:13px;}
   #toast{top:calc(120px + var(--sat));}
