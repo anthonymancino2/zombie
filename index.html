@@ -221,7 +221,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnFire{width:78px;height:78px;bottom:calc(12px + var(--sab));right:calc(14px + var(--sar));}
   #btnReload{width:50px;height:50px;right:calc(116px + var(--sar));bottom:calc(16px + var(--sab));}
   #btnSwitch{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(112px + var(--sab));}
-  #btnAuto{width:40px;height:40px;right:calc(56px + var(--sar));top:calc(10px + var(--sat));}
+  #btnAuto{width:40px;height:40px;right:calc(64px + var(--sar));top:calc(10px + var(--sat));}
   #btnSprint{width:56px;height:56px;left:calc(42px + var(--sal));bottom:calc(158px + var(--sab));}
   #joyHint{left:calc(42px + var(--sal));bottom:calc(42px + var(--sab));width:104px;height:104px;}
   #layoutBar{top:calc(56px + var(--sat));}
@@ -232,7 +232,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
 @media (max-width:560px) and (orientation:portrait){
   .hudtc{top:calc(58px + var(--sat));}
   /* portrait is narrow: stack AUTO under PAUSE so the score column stops crowding the wave text */
-  #btnAuto{right:calc(10px + var(--sar));top:calc(58px + var(--sat));}
+  #btnAuto{right:calc(10px + var(--sar));top:calc(64px + var(--sat));}
   .hudtr{right:calc(68px + var(--sar));}
   #hpBar{width:34vw;} #hpNum{font-size:18px;} #points{font-size:22px;} #waveNum{font-size:22px;} #zLeft{font-size:10px;}
   #subtitle{bottom:calc(272px + var(--sab));max-width:86vw;font-size:13px;}
@@ -585,7 +585,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.3.2';
+const GAME_VERSION = 'v1.3.3';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
