@@ -622,7 +622,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.12.0';
+const GAME_VERSION = 'v1.12.1';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -749,7 +749,7 @@ const AVATARS = {
     subclipRanges: { Idle: [0, 55], Run: [58, 77] }, subclipFps: 30 },
   chopper: { id: 'chopper', gender: 'male', key: 'chopper', short: 'CHOPPER', label: 'CHOPPER', cls: 'OLD SALT',
     desc: 'A sailor who has buried more crews than he can count. The desert is just a different flavor of ocean to him.',
-    accent: 0xc68a5a, hide: [] },
+    accent: 0xc68a5a, hide: [], statsFrom: 'mage' },
   corsair: { id: 'corsair', gender: 'male', key: 'corsair', short: 'DUDU', label: 'DUDU THE PENGUIN', cls: 'COLD-BLOODED',
     desc: "Nobody asked how a penguin ended up out here. He's just fast — faster than anyone else in the sand, and gone before you ask why.",
     accent: 0x5dffe0, hide: [], speedMul: 2.3, heightOverride: 1.365 }, // fastest in the whole roster by a wide margin; 75% of the standard height
@@ -4142,9 +4142,13 @@ const Game = {
   buildCharCards() {
     const build = (wrapId, gender) => {
       const wrap = $(wrapId); wrap.innerHTML = '';
-      const bars = this.GENDER_BARS[gender], stat = CHARS[gender];
       for (const id of AVATAR_ORDER[gender]) {
         const av = AVATARS[id];
+        // statsFrom borrows another champion's stat block wholesale (Chopper plays identically to
+        // the Fox) — the card must show THOSE bars, not the ones for his own card column, or the
+        // menu would promise different numbers than the run actually gives him
+        const statGender = av.statsFrom ? AVATARS[av.statsFrom].gender : gender;
+        const bars = this.GENDER_BARS[statGender], stat = CHARS[statGender];
         const hex = '#' + ('000000' + av.accent.toString(16)).slice(-6);
         const card = document.createElement('div');
         card.className = 'card ' + gender; card.id = 'card_' + id; card.dataset.char = id;
@@ -4169,13 +4173,21 @@ const Game = {
     const gender = AVATARS[id].gender;
     document.body.classList.toggle('char-female', gender === 'female'); document.body.classList.toggle('char-male', gender === 'male');
     document.querySelectorAll('.card').forEach(c => c.classList.toggle('sel', c.dataset.char === id));
-    DOM.hpLabel.textContent = CHARS[gender].hpLabel;
+    const av = AVATARS[id];
+    DOM.hpLabel.textContent = CHARS[av.statsFrom ? AVATARS[av.statsFrom].gender : gender].hpLabel;
   },
   // merges the chosen champion's identity onto its gender's stat/voice block — this merged object
   // is what Player.char holds for the whole run
   charFor(id) {
     const av = AVATARS[id] || AVATARS.cloud;
-    const base = CHARS[av.gender];
+    let base = CHARS[av.gender];
+    // av.statsFrom borrows another champion's hp/speed/hpLabel/reloadMul wholesale (Chopper wants
+    // to play identically to the Fox) while keeping this champion's own voice lines/pitch — a
+    // straight gender swap would also hand him her dialogue, which isn't what "same stats" means.
+    if (av.statsFrom) {
+      const src = CHARS[AVATARS[av.statsFrom].gender];
+      base = Object.assign({}, base, { hp: src.hp, speed: src.speed, reloadMul: src.reloadMul, hpLabel: src.hpLabel });
+    }
     return Object.assign({}, base, { id: av.id, short: av.short, name: av.label, accent: av.accent, speed: base.speed * (av.speedMul || 1) });
   },
   start(seed) {
