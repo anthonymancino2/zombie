@@ -738,7 +738,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.29.0';
+const GAME_VERSION = 'v1.30.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -767,6 +767,11 @@ const CFG = {
   zombieBaseHp: 60, zombieBaseSpeed: 2.35, countBase: 6,
   countMul: 1.25, speedMul: 1.05, hpMul: 1.15,
   ptsHit: 10, ptsKill: 100, ptsHead: 25,
+  // individual score (see Game.awardScore) is separate from the pooled team points above — a
+  // kill's full value goes to whoever landed it, a smaller "shared kill" cut goes to anyone else
+  // who damaged that same zombie first (see Zombie.dmgBy), and a landed-but-not-lethal hit is
+  // worth a little on its own too
+  scoreAssistMul: 0.35,
   instaTime: 15, dblTime: 30,
   // later-wave power-ups (wave >= powerupWave only) — personal buffs, not squad-wide like
   // insta/double, since reload/ammo/rate-of-fire/speed only mean anything for whoever grabbed them
@@ -2756,6 +2761,9 @@ class Zombie {
     // specials: the hunter's leap and the pin it lands, plus the boss flag the HUD reads
     this.boss = false; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pinA = 0; this.pinHitT = -99;
     this.pvx = 0; this.pvy = 0; this.pvz = 0; this.netY = 0;
+    // who's damaged this one and how much (attacker key -> damage) — for splitting individual
+    // score across everyone who hit it, not just whoever landed the kill (see Game.onZombieKilled)
+    this.dmgBy = {};
     const g = new THREE.Group(); this.group = g;
     this.skinMat = new THREE.MeshLambertMaterial({ map: TEX.skin[0] }); this.clothMat = new THREE.MeshLambertMaterial({ map: TEX.cloth[0] });
     this.legL = new THREE.Mesh(ZG.leg, this.clothMat); this.legL.position.set(-0.15, 1.04, 0);
@@ -2783,6 +2791,7 @@ class Zombie {
     this.radius = T.radius; this.height = T.height; this.dmg = T.dmg; this.big = T.big;
     const wm = Math.pow(T.hpWave || CFG.hpMul, wave - 1), sm = Math.pow(CFG.speedMul, wave - 1);
     this.boss = !!T.boss; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pinHitT = -99; this.pvx = this.pvy = this.pvz = 0;
+    this.dmgBy = {};
     this.maxHp = this.hp = Math.round(CFG.zombieBaseHp * wm * T.hpMul);
     this.speed = Math.min(7.6, CFG.zombieBaseSpeed * sm * T.speedMul) * rnd(0.92, 1.08);
     this.variant = Math.floor(Math.random() * TEX.skin.length);
@@ -3494,7 +3503,7 @@ const Player = {
   stamina: 1, sprintOn: false, sprinting: false, staminaHold: 0,
   weapons: [], cur: 0, cooldown: 0, reloading: false, reloadT: 0, reloadTotal: 1, switchT: 0, bloom: 0,
   bobT: 0, stepD: 0, moveMag: 0, lastHurt: -99, recoil: 0, swayX: 0, swayY: 0, lastLookX: 0, lastLookY: 0,
-  stats: { shots: 0, hits: 0, kills: 0, head: 0 },
+  stats: { shots: 0, hits: 0, kills: 0, head: 0, score: 0 },
   vm: { root: null, models: [], flash: null, flashT: 0 },
   body: null, bodyAnim: 0, _bodyGen: 0,
   autoTarget: null, lowSaid: false,
@@ -3540,7 +3549,7 @@ const Player = {
     if (Net.mode !== 'off') { const a = rnd(0, TAU); this.x = Math.cos(a) * 2.6; this.z = Math.sin(a) * 2.6; }
     this.weapons = WEAPONS.map((def, i) => ({ def: def, owned: i === 0, mag: def.mag, reserve: def.reserve }));
     this.cur = 0; this.cooldown = 0; this.reloading = false; this.reloadT = 0; this.switchT = 0; this.bloom = 0; this.bobT = 0; this.stepD = 0; this.lastHurt = -99; this.recoil = 0;
-    this.stats = { shots: 0, hits: 0, kills: 0, head: 0 }; this.autoTarget = null; this.lowSaid = false;
+    this.stats = { shots: 0, hits: 0, kills: 0, head: 0, score: 0 }; this.autoTarget = null; this.lowSaid = false;
     this.vm.models.forEach((m, i) => m.visible = i === 0);
   },
   // downed-aware so the ammo HUD (the only other caller) reflects whichever sidearm is actually
@@ -4450,7 +4459,7 @@ const Bots = {
         x: 0, z: 0, ry: 0, vx: 0, vz: 0, hp: def.hp, maxHp: def.hp,
         maxShield: Math.round(def.hp * CFG.shieldMul), shield: Math.round(def.hp * CFG.shieldMul), shieldRegenT: 0,
         alive: true, down: false, out: false, downT: 0, pinnedBy: null,
-        kills: 0, head: 0, cool: 0, anim: 0, gait: 0, flashT: 0, lastHurt: -99,
+        kills: 0, head: 0, score: 0, cool: 0, anim: 0, gait: 0, flashT: 0, lastHurt: -99,
         target: null, aimT: 0, reviveT: 0, reviveOn: null,
         vis: { kind: 'gltf', g: g, mixer: null, actions: {}, current: 'idle', flash: flash },
         avatarId: null, squadActive: false, shadow: shadow, label: label,
@@ -4496,7 +4505,7 @@ const Bots = {
         this.assignAvatar(b, avatars[b.id]);
         b.squadActive = true;
         b.hp = b.maxHp; b.shield = b.maxShield; b.shieldRegenT = 0; b.alive = true; b.down = false; b.out = false; b.downT = 0; b.pinnedBy = null;
-        b.kills = 0; b.head = 0; b.cool = rnd(0, 0.4); b.anim = rnd(0, 6); b.gait = 0; b.flashT = 0;
+        b.kills = 0; b.head = 0; b.score = 0; b.cool = rnd(0, 0.4); b.anim = rnd(0, 6); b.gait = 0; b.flashT = 0;
         b.lastHurt = -99; b.target = null; b.aimT = 0; b.reviveT = 0; b.reviveOn = null;
         b.x = Player.x + Math.cos(a) * 2.4; b.z = Player.z + Math.sin(a) * 2.4; b.vx = b.vz = 0; b.ry = Player.yaw;
         World.collide(b, 0.42);
@@ -4543,7 +4552,7 @@ const Bots = {
       this.assignAvatar(b, avatars[b.id]);
       b.squadActive = true;
       b.hp = b.maxHp; b.shield = b.maxShield; b.shieldRegenT = 0; b.alive = true; b.down = false; b.out = false; b.downT = 0; b.pinnedBy = null;
-      b.kills = 0; b.head = 0; b.cool = rnd(0, 0.4); b.anim = rnd(0, 6); b.gait = 0; b.flashT = 0;
+      b.kills = 0; b.head = 0; b.score = 0; b.cool = rnd(0, 0.4); b.anim = rnd(0, 6); b.gait = 0; b.flashT = 0;
       b.lastHurt = -99; b.target = null; b.aimT = 0; b.reviveT = 0; b.reviveOn = null;
       b.x = Player.x + Math.cos(a) * 2.4; b.z = Player.z + Math.sin(a) * 2.4; b.vx = b.vz = 0; b.ry = Player.yaw;
       World.collide(b, 0.42);
@@ -4866,7 +4875,9 @@ const Bots = {
     }
   },
   scoreRows() {
-    return this.list.map(function (b) { return { n: b.name, k: b.kills, me: false }; });
+    // only the ones actually in the squad — the other slots sit at kills:0/score:0 forever and
+    // would otherwise pad the results grid with empty cards nobody was ever playing
+    return this.list.filter(function (b) { return b.squadActive; }).map(function (b) { return { n: b.name, k: b.kills, s: b.score, me: false }; });
   }
 };
 
@@ -5287,15 +5298,32 @@ const Game = {
       return;
     }
     this._by = by || null;
+    // individual score is tracked separately from the pooled team points below (see
+    // Game.awardScore) — dmgBy remembers who's actually put damage into this zombie, so a kill
+    // it doesn't die to yet still counts toward a "shared kill" cut for whoever finishes it off
+    const attackerKey = by ? by.id : Net.id;
+    z.dmgBy[attackerKey] = (z.dmgBy[attackerKey] || 0) + d;
     const killed = z.hit(d, hx, hy, hz, head, dirx, dirz, false);
     this._by = null;
     if (!killed) {
       let pts = CFG.ptsHit; if (this.dbl > 0) pts *= 2; this.points += pts;
+      this.awardScore(attackerKey, pts);
       Floaties.accumulate(z, 'p', pts, hx, hy + 0.42, hz, '+', '#ffffff', 15, 0.95);
       Floaties.accumulate(z, 'd', d, hx, hy, hz, '', head ? '#ff7a1a' : '#ffd8a0', head ? 17 : 13, 0.85);
       if (!by) Audio.hitmark();
     }
     if (!by) FX.hit(killed);
+  },
+  // individual score, split between whoever landed the killing blow (full credit) and anyone
+  // else who'd already put damage into the same zombie (a smaller "shared kill" cut) — separate
+  // from the pooled team points (this.points/addPoints), which everyone draws weapon purchases
+  // from together and is unaffected by any of this.
+  awardScore(key, amount) {
+    if (!amount) return;
+    if (key === Net.id) { Player.stats.score += amount; return; }
+    const peer = Net.peers[key]; if (peer) { peer.score = (peer.score || 0) + amount; return; }
+    const bot = Bots.list.find(function (b) { return b.id === key; });
+    if (bot) bot.score = (bot.score || 0) + amount;
   },
   onZombieKilled(z, head) {
     const by = this._by;
@@ -5309,6 +5337,9 @@ const Game = {
     let pts = CFG.ptsKill * (z.type.pts || 1);
     if (head) { pts += CFG.ptsHead; if (by) by.head++; else Player.stats.head++; Floaties.spawn(z.x, z.y + z.height + 0.5, z.z, 'HEADSHOT', '#ff4a2a', 18, 1.1); }
     this.addPoints(pts, z.x, z.y + z.height + 0.15, z.z, '#ffd83b', 20);
+    const killerKey = by ? by.id : Net.id;
+    this.awardScore(killerKey, pts);
+    for (const k in z.dmgBy) { if (k !== killerKey) this.awardScore(k, Math.round(pts * CFG.scoreAssistMul)); }
     if (z.boss) {
       // a boss is worth a breather as well as the points, so it always leaves a medkit behind
       HUD.banner('TANK DOWN', 'THE SAND TAKES IT BACK', false);
@@ -5437,23 +5468,23 @@ const Game = {
   },
   // shared by the game-over screen and the between-wave breather (see beginWave/showMidScores)
   // — everyone who fought (real player, real peer, or a filler bot standing in for an empty
-  // slot), each with their own kill count. null for solo: nothing to show against.
+  // slot), each with their own kill count AND their own individual score (see Game.awardScore —
+  // not the pooled team points everyone draws weapon purchases from). null for solo: nothing to
+  // show against.
   gatherResultRows() {
     const coop = Net.mode !== 'off', squad = !coop && Bots.on;
-    if (squad) return [{ n: Net.displayName(), k: Player.stats.kills, me: true }].concat(Bots.scoreRows());
+    if (squad) return [{ n: Net.displayName(), k: Player.stats.kills, s: Player.stats.score, me: true }].concat(Bots.scoreRows());
     if (coop) {
-      const rows = [{ n: Net.displayName(), k: Player.stats.kills, me: true }];
-      for (const pk in Net.peers) rows.push({ n: Net.peers[pk].name, k: Net.peers[pk].kills, me: false });
+      const rows = [{ n: Net.displayName(), k: Player.stats.kills, s: Player.stats.score, me: true }];
+      for (const pk in Net.peers) { const p = Net.peers[pk]; rows.push({ n: p.name, k: p.kills, s: p.score || 0, me: false }); }
       // the host's own bots aren't in Net.peers (see Net.roster) — a client already gets them
       // for free there, since they arrive over the wire indistinguishable from a real peer
-      if (Net.mode === 'host') for (const b of Bots.list) if (b.squadActive) rows.push({ n: b.name, k: b.kills, me: false });
+      if (Net.mode === 'host') for (const b of Bots.list) if (b.squadActive) rows.push({ n: b.name, k: b.kills, s: b.score, me: false });
       return rows;
     }
     return null;
   },
-  // up to 4 quadrants (NET.MAX and the squad cap both top out at 4 total), most kills first.
-  // SCORE is the run's shared/team total (points are pooled, not tracked per player) shown the
-  // same in every quadrant, since that's the only "score" concept this game actually has.
+  // up to 4 quadrants (NET.MAX and the squad cap both top out at 4 total), most kills first
   renderResultsGrid(rows, el) {
     if (!rows) { el.innerHTML = ''; return; }
     rows.sort(function (a, b) { return b.k - a.k; });
@@ -5461,7 +5492,7 @@ const Game = {
       '<div class="qcard' + (r.me ? ' me' : '') + '"><div class="qname">' + Net.esc(r.n) + '</div>' +
       '<div class="qstats">' +
       '<div class="qstat"><span class="qv">' + r.k + '</span><span class="qk">' + (r.k === 1 ? 'KILL' : 'KILLS') + '</span></div>' +
-      '<div class="qstat"><span class="qv">' + fmt(this.points) + '</span><span class="qk">SCORE</span></div>' +
+      '<div class="qstat"><span class="qv">' + fmt(r.s || 0) + '</span><span class="qk">SCORE</span></div>' +
       '</div></div>'
     )).join('');
   },
@@ -5923,7 +5954,7 @@ const Net = {
       // peer's avatar silently collapsed to whatever Avatars.spawn() falls back to. Validate
       // against the real roster instead, so what a peer actually picked is what everyone sees.
       char: (ch && AVATARS[ch]) ? ch : 'cloud',
-      x: 0, z: 0, ry: 0, hp: 100, maxHp: 100, st: 0, w: 0, fire: 0, kills: 0, head: 0, afk: 0, pinnedBy: null,
+      x: 0, z: 0, ry: 0, hp: 100, maxHp: 100, st: 0, w: 0, fire: 0, kills: 0, head: 0, score: 0, afk: 0, pinnedBy: null,
       tx: 0, tz: 0, tRy: 0, vis: null, walk: 0, flashT: 0, last: Net.clock,
       get alive() { return this.st === 0; },
       hurt: function (amount, fx, fz) { self.damagePeer(this, amount); }
@@ -6112,12 +6143,13 @@ const Net = {
   },
 
   /* ---------------- per-player state exchange ---------------- */
-  setPeer(peer, x, z, ry, hp, maxHp, st, w, kills, fire, head, afk) {
+  setPeer(peer, x, z, ry, hp, maxHp, st, w, kills, fire, head, afk, score) {
     if (peer.vis === null) { peer.x = x; peer.z = z; peer.ry = ry; }
     peer.tx = x; peer.tz = z; peer.tRy = ry;
     peer.hp = hp; peer.maxHp = maxHp || 100; peer.st = st | 0; peer.w = w | 0;
     if (kills != null) peer.kills = kills | 0;
     if (head != null) peer.head = head | 0;
+    if (score != null) peer.score = score | 0;
     if (fire) peer.flashT = 0.06;
     if (afk != null) {
       const was = peer.afk;
@@ -6284,17 +6316,17 @@ const Net = {
     for (let i = 0; i < Pickups.pool.length; i++) { const p = Pickups.pool[i]; if (p.on) us.push([i, PU_LIST.indexOf(p.type), r2(p.x), r2(p.z)]); }
     const pl = [[this.id, r2(Player.x), r2(Player.z), r2(Player.yaw), Math.round(Player.hp), Player.maxHp,
       Player.alive ? 0 : (Player.downed ? 1 : 2), Player.cur, Player.stats.kills, Player.vm.flashT > 0 ? 1 : 0, Player.stats.head,
-      Game.coopMenu ? 1 : 0]];
+      Game.coopMenu ? 1 : 0, Math.round(Player.stats.score)]];
     for (const k in this.peers) {
       const p = this.peers[k];
-      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head, p.afk]);
+      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head, p.afk, Math.round(p.score || 0)]);
     }
     // filler bots reported in the same row shape as a real peer (see roster() above) — weapon
     // index is always 0 (pistol) since bots don't track one of their own; everything else is
     // their real live state, so a downed/revived bot reads correctly on every other machine too.
     for (const b of Bots.list) {
       if (!b.squadActive) continue;
-      pl.push([b.id, r2(b.x), r2(b.z), r2(b.ry), Math.round(b.hp), b.maxHp, b.out ? 2 : (b.down ? 1 : 0), 0, b.kills, 0, b.head, 0]);
+      pl.push([b.id, r2(b.x), r2(b.z), r2(b.ry), Math.round(b.hp), b.maxHp, b.out ? 2 : (b.down ? 1 : 0), 0, b.kills, 0, b.head, 0, Math.round(b.score || 0)]);
     }
     this.send({
       k: 's', wv: Game.wave, wa: Game.waveActive ? 1 : 0, ts: Game.toSpawn, pts: Math.round(Game.points),
@@ -6353,15 +6385,17 @@ const Net = {
     const keep = {};
     for (const e of (m.pl || [])) {
       const id = e[0];
-      // our own row carries the kill tally the host resolved on our behalf
-      if (id === this.id) { Player.stats.kills = e[8] | 0; Player.stats.head = e[10] | 0; continue; }
+      // our own row carries the kill tally (and individual score) the host resolved on our
+      // behalf — Game.awardScore only ever runs host-side, so this snapshot is the only way our
+      // own machine learns what its own score actually is when we're a client
+      if (id === this.id) { Player.stats.kills = e[8] | 0; Player.stats.head = e[10] | 0; if (e.length > 12) Player.stats.score = e[12] | 0; continue; }
       keep[id] = 1;
       let peer = this.peers[id];
       // shouldn't normally happen (the periodic roster re-broadcast above is what's supposed to
       // catch a dropped 'roster' packet) but this is the fallback of the fallback: better a
       // placeholder body than silently dropping their every position update on the floor
       if (!peer) { peer = this.mkPeer(id, 'SURVIVOR', 'cloud'); this.peers[id] = peer; }
-      this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null);
+      this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null, e.length > 12 ? e[12] : null);
     }
     for (const k in this.peers) if (!keep[k]) { this.killAvatar(this.peers[k]); delete this.peers[k]; }
   },
