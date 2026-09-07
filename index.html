@@ -782,7 +782,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.48.0';
+const GAME_VERSION = 'v1.49.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -807,7 +807,7 @@ const CFG = {
   // tied to arenaR0/arenaRMax — the map now grows ~17x in area (29→120) but the requested
   // wave-30 zombie count (~300) stays pinned to the old ~4.28x-from-58 density curve, or wave 30
   // would try to field over a thousand zombies.
-  maxZombies: 300, bullets: 96, grenades: 8, chainFx: 12, particles: 1800, floaties: 48, pickups: 14, decals: 40, explosions: 5,
+  maxZombies: 300, bullets: 96, grenades: 8, chainFx: 12, particles: 1800, floaties: 48, pickups: 24, decals: 40, explosions: 5,
   zombieBaseHp: 60, zombieBaseSpeed: 2.35, countBase: 6,
   countMul: 1.25, speedMul: 1.05, hpMul: 1.15,
   ptsHit: 10, ptsKill: 100, ptsHead: 25,
@@ -828,6 +828,9 @@ const CFG = {
   // pool cap with health/ammo, so specials all but vanished whenever the ground had ammo/health
   // sitting on it. This ticks and caps completely independently (see Game.spawnPowerup/
   // powerupCount) so a special shows up on a short, predictable clock no matter what else is out.
+  // Min/Max here are the WAVE-1 baseline only — Game.powerupRateMul divides this interval down
+  // (5x faster by wave 10, 30x by wave 30) and powerupCapForWave scales the base cap below to
+  // match, so abundance ramps hard with wave instead of staying flat all run.
   powerupSpawnMin: 7, powerupSpawnMax: 12, powerupCap: 4,
   // coop: how long you bleed out on the sand, and what it costs a teammate to pick you back up
   downTime: 45, reviveTime: 3.5, reviveRange: 2.4, reviveHp: 0.4,
@@ -5747,6 +5750,18 @@ const Game = {
   // CFG.powerupSpawnMin/Max/powerupCap), always a power-up, never health/ammo, ticked and capped
   // on its own so it can't get crowded out by whatever health/ammo happens to be on the ground
   powerupCount() { let n = 0; for (const p of Pickups.pool) if (p.on && this.POWER_POOL_LATE.includes(p.type)) n++; return n; },
+  // abundance ramps hard with wave: the dedicated stream's spawn RATE is 5x baseline by wave 10
+  // and 30x by wave 30 (then holds), two linear segments through those two exact anchor points.
+  // This is what actually delivers "N times more show up over a run" — the concurrent on-ground
+  // cap (below) only gets a modest bump on top of it, since ballooning that by the same 30x would
+  // put 100+ animated pickups on screen at once and tank the frame rate on a phone.
+  powerupRateMul(wave) {
+    const w = Math.max(1, wave);
+    if (w <= 10) return lerp(1, 5, (w - 1) / 9);
+    if (w <= 30) return lerp(5, 30, (w - 10) / 20);
+    return 30;
+  },
+  powerupCapForWave() { return clamp(Math.round(CFG.powerupCap * Math.sqrt(this.powerupRateMul(this.wave))), CFG.powerupCap, 16); },
   spawnPowerup() {
     const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
     const type = this.nextPowerType(pool);
@@ -6027,7 +6042,7 @@ const Game = {
           if (World.coverPoint(P.x, P.z, this._pt)) Pickups.spawn(Math.random() < 0.6 ? 'health' : (Math.random() < 0.5 ? 'insta' : 'double'), this._pt.x, this._pt.z);
         }
         this.pickupT -= dt; if (this.pickupT <= 0) { this.pickupT = this.pickupInterval(); if (Pickups.count() < this.pickupCap()) this.spawnPickup(); }
-        this.powerupT -= dt; if (this.powerupT <= 0) { this.powerupT = rnd(CFG.powerupSpawnMin, CFG.powerupSpawnMax); if (this.powerupCount() < CFG.powerupCap) this.spawnPowerup(); }
+        this.powerupT -= dt; if (this.powerupT <= 0) { this.powerupT = rnd(CFG.powerupSpawnMin, CFG.powerupSpawnMax) / this.powerupRateMul(this.wave); if (this.powerupCount() < this.powerupCapForWave()) this.spawnPowerup(); }
       }
       // heartbeat when low
       if (P.hp < P.maxHp * 0.3) { this.heartT -= dt; if (this.heartT <= 0) { this.heartT = 1.1; Audio.heartbeat(); } }
