@@ -78,6 +78,13 @@ button{font-family:inherit;color:inherit;}
 #shieldFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
   background:linear-gradient(90deg,#39e6ff,#0ea5e0);box-shadow:0 0 8px rgba(57,230,255,.7);transition:transform .12s linear;}
 #shieldFill.recharging{opacity:.55;}
+/* ultimate meter — sits below the shield/HP readout, lights up gold once full and ready */
+#ultBar{width:min(42vw,220px);height:8px;border:2px solid #ffd83b;background:rgba(0,0,0,.45);border-radius:3px;
+  box-shadow:0 0 10px rgba(255,216,59,.35),inset 0 0 6px rgba(0,0,0,.6);margin-top:5px;overflow:hidden;position:relative;}
+#ultFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
+  background:linear-gradient(90deg,#8a5cff,#c04bff);box-shadow:0 0 8px rgba(180,80,255,.6);transition:transform .12s linear;}
+#ultFill.ready{background:linear-gradient(90deg,#ffd83b,#ff9a1a);box-shadow:0 0 12px rgba(255,216,59,.85);animation:ultpulse 1s ease-in-out infinite;}
+@keyframes ultpulse{0%,100%{opacity:1;}50%{opacity:.6;}}
 #hpNum{font-size:22px;line-height:1;margin-top:4px;text-shadow:0 0 10px var(--glow),0 2px 2px #000;}
 #matchClock{font-family:var(--hud-font);font-size:13px;letter-spacing:.1em;color:var(--sand);margin-top:5px;text-shadow:0 0 8px rgba(0,0,0,.6);}
 #hpNum span{font-size:12px;color:var(--sand);letter-spacing:.1em;}
@@ -147,6 +154,11 @@ button{font-family:inherit;color:inherit;}
 #btnFire .ring{position:absolute;inset:-9px;border-radius:50%;border:2px solid rgba(255,255,255,.18);pointer-events:none;}
 #btnReload{width:58px;height:58px;right:calc(134px + var(--sar));bottom:calc(26px + var(--sab));font-size:12px;}
 #btnSwitch{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(136px + var(--sab));font-size:12px;}
+/* ultimate-move button, stacked above SWAP WEAPON in the same right-edge column — high enough to
+   clear .hudbr (the ammo/weapon-name text block, right-anchored at the same bottom:202 the old
+   heavy-weapon-swap button used to share that slot with) */
+#btnUlt{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(268px + var(--sab));font-size:11px;border-color:#8a5cff;}
+#btnUlt.ready{border-color:#ffd83b;box-shadow:0 0 18px rgba(255,216,59,.85);animation:ultpulse 1s ease-in-out infinite;}
 /* AUTO lives up in the corner beside PAUSE: it is a toggle you touch between waves, and down in
    the thumb cluster it kept getting hit by accident while firing. */
 #btnAuto{width:44px;height:44px;right:calc(60px + var(--sar));top:calc(10px + var(--sat));font-size:10px;border-color:rgba(255,255,255,.35);box-shadow:none;}
@@ -271,6 +283,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnFire{width:78px;height:78px;bottom:calc(12px + var(--sab));right:calc(14px + var(--sar));}
   #btnReload{width:50px;height:50px;right:calc(116px + var(--sar));bottom:calc(16px + var(--sab));}
   #btnSwitch{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(112px + var(--sab));}
+  #btnUlt{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(220px + var(--sab));}
   #btnAuto{width:40px;height:40px;right:calc(64px + var(--sar));top:calc(10px + var(--sat));}
   #btnCam{width:38px;height:38px;right:calc(64px + var(--sar));top:calc(58px + var(--sat));}
   #btnSprint{width:50px;height:50px;right:calc(88px + var(--sar));bottom:calc(100px + var(--sab));}
@@ -336,6 +349,11 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .qstat{display:flex;flex-direction:column;align-items:center;flex:1 1 0;min-width:0;}
 .qv{font-family:var(--hud-font);font-size:19px;color:var(--accent2);text-shadow:0 0 8px var(--glow);}
 .qk{font-size:9px;letter-spacing:.14em;color:var(--dim);margin-top:2px;}
+/* same quadrant cards, shown briefly between waves too (not just at the very end of a run) */
+#midScores{position:absolute;left:50%;top:54%;transform:translate(-50%,-50%);display:none;
+  grid-template-columns:1fr 1fr;gap:8px;width:min(84vw,420px);pointer-events:none;}
+#midScores.show{display:grid;}
+#midScores .qcard{background:rgba(12,6,3,.78);}
 .codebig{font-family:var(--hud-font);font-size:clamp(30px,8vw,54px);letter-spacing:.34em;color:var(--accent2);text-shadow:0 0 24px var(--glow);margin:2px 0 0;padding-left:.34em;}
 #lobbyTimer{color:#ffd83b;text-shadow:0 0 8px rgba(255,216,59,.5);}
 #btnLobbyStart:disabled{opacity:.4;filter:grayscale(.5);cursor:default;box-shadow:none;}
@@ -460,6 +478,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <div id="btnSwitch" class="tbtn">SWAP<small>WEAPON</small></div>
     <div id="btnReload" class="tbtn">RELOAD</div>
     <div id="btnSprint" class="tbtn"><span class="meter"></span>SPRINT</div>
+    <div id="btnUlt" class="tbtn"><span class="meter"></span>MOVE</div>
     <div id="btnFire" class="tbtn"><span class="ring"></span>FIRE</div>
     <div id="layoutBar">DRAG THE BUTTONS<button id="btnLayoutReset">RESET</button><button id="btnLayoutDone" class="go">DONE</button></div>
   </div>
@@ -471,6 +490,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div id="shieldBar"><div id="shieldFill"></div></div>
       <div id="hpBar"><div id="hpFill"></div></div>
       <div id="hpNum">100 <span>/ 100</span></div>
+      <div id="ultBar"><div id="ultFill"></div></div>
       <div id="matchClock">0:00</div>
     </div>
     <div class="hudtc">
@@ -504,6 +524,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     </div>
     <div id="subtitle"><b id="subName">HANK</b><span id="subText"></span></div>
     <div id="banner"><div id="bannerTitle">WAVE 1</div><div id="bannerSub">THEY'RE COMING</div></div>
+    <div id="midScores"></div>
     <div id="toast"></div>
     <div id="coop"></div>
     <div id="downed"><div class="dt">YOU ARE DOWN</div><div class="ds" id="downedSub">HOLD ON — A TEAMMATE CAN REVIVE YOU</div><div class="dbar"><i id="downedBar"></i></div></div>
@@ -717,7 +738,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.27.0';
+const GAME_VERSION = 'v1.28.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -767,6 +788,24 @@ const CFG = {
     { at: 0.30, dmg: 1.50, reload: 1.50 },
     { at: 0.50, dmg: 1.25, reload: 1.25 }
   ],
+  // per-character ultimate (see Player.tryUltimate / Game.ult*): meter fills off kills, a button
+  // fires it once full, and every version shares the same "1/4 damage for a few seconds after"
+  // comedown — the cooldown floor is what actually scales with wave (a full meter earlier than
+  // that just has to wait), so the move can't be chained back-to-back into the late game trivially.
+  ultDuration: 3, ultPostBuffTime: 5, ultPostBuffMul: 0.25,
+  ultMeterPerKill: 5, ultMeterPerHeadshot: 8, ultMeterPerSpecialKill: 18,
+  ultCooldownBase: 15, ultCooldownPerWave: 2.2, ultCooldownMax: 90,
+  // Cloud (whirlwind) / Fox (gravity prison): same underlying pull-then-kill, different dressing
+  ultPullRadius: 26, ultPullSpeed: 14, ultKillRange: 2.4,
+  // Green Ranger (titan): scale factor, contact instakill uses this to grow the collision radius;
+  // 20ft ~= 6.1m for the stun shockwave at activation
+  ultTitanScale: 5, ultTitanStunFt: 20, ultTitanStunSec: 3,
+  // Chopper (powder keg): thrown, not instant — arcs like a grenade, no immunity while it's in
+  // flight (only the standard post-move damage reduction once it lands)
+  ultKegInstaR: 12, ultKegStunFt: 10, ultKegStunSec: 3, ultKegBossDmg: 900, ultKegMax: 16, ultKegSpeed: 20, ultKegGravity: 11,
+  // Dudu (clone swarm): orbiting decoys, each an instakill hitbox on contact — no HP of their own
+  // (see Game.ultDudu), so nothing they run into can ever cost Dudu's own health
+  ultDuduCount: 5, ultDuduOrbitR: 2.0, ultDuduOrbitSpeed: 2.4, ultDuduHitR: 0.7,
   // sprint: a full meter buys ~4s of running, and refills in ~7s once you stop leaning on it
   sprintMul: 1.62, sprintDrain: 0.25, sprintRegen: 0.145, sprintHold: 0.7, sprintMin: 0.12,
   // third-person boom: behind and over the right shoulder, camera axis parallel to the aim ray.
@@ -1580,11 +1619,11 @@ const Input = {
   fireId: null, fireLX: 0, fireLY: 0,
   sens: 1.0, R: 58,
   touchSeen: false, pointerLocked: false, mouseDown: false,
-  on: { reload() { }, swap() { }, auto() { }, pause() { }, select() { }, sprint() { }, camera() { }, any() { } },
+  on: { reload() { }, swap() { }, auto() { }, pause() { }, select() { }, sprint() { }, camera() { }, ultimate() { }, any() { } },
   el: {},
   init() {
     const el = this.el;
-    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnPause', 'c'].forEach(id => el[id] = $(id));
+    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt', 'btnPause', 'c'].forEach(id => el[id] = $(id));
     const self = this, opt = { passive: false };
     const layer = el.touchLayer;
     layer.addEventListener('touchstart', function (e) { e.preventDefault(); self.touchSeen = true; self.on.any(); for (const t of e.changedTouches) self.touchBegin(t); }, opt);
@@ -1620,12 +1659,14 @@ const Input = {
     tap(el.btnAuto, () => self.on.auto());
     tap(el.btnCam, () => self.on.camera());
     tap(el.btnSprint, () => self.on.sprint());
+    tap(el.btnUlt, () => self.on.ultimate());
     tap(el.btnPause, () => self.on.pause());
     // Keyboard
     window.addEventListener('keydown', function (e) {
       if (e.repeat) return; self.keys[e.code] = true; self.on.any();
       if (e.code === 'KeyR') self.on.reload();
       else if (e.code === 'KeyQ' || e.code === 'KeyE') self.on.swap();
+      else if (e.code === 'KeyG') self.on.ultimate();
       else if (e.code === 'KeyT') self.on.auto();
       else if (e.code === 'KeyV') self.on.camera();
       else if (e.code === 'Escape' || e.code === 'KeyP') self.on.pause();
@@ -1707,7 +1748,7 @@ const Input = {
    button centre, which keeps them sane across a rotate or a different phone. */
 const Layout = {
   KEY: 'dnd_layout_v1',
-  ids: ['btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint'],
+  ids: ['btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt'],
   pos: {}, editing: false, drag: null, els: {}, bar: null,
   init() {
     for (const id of this.ids) this.els[id] = $(id);
@@ -3273,6 +3314,9 @@ const WEAPONS = [
   { id: 'sniper', name: 'SNIPER RIFLE', weightClass: 'heavy', dmg: 999999, rate: 0.85, mag: 5, reserve: 25, maxReserve: 40, reload: 2.6, spread: 0.15, bloom: 0, pellets: 1, speed: 400, range: 220, recoil: 2.0, unlock: 25, cost: 20000, buyWave: 23, falloff: null, instakill: true },
   { id: 'dualrifle', name: 'DUAL RIFLE', weightClass: 'heavy', dmg: 19, rate: 10, mag: 60, reserve: 300, maxReserve: 480, reload: 2.3, spread: 1.8, bloom: 3.0, pellets: 2, speed: 190, range: 142.5, recoil: 0.8, unlock: 28, cost: 24000, buyWave: 26, falloff: null }
 ];
+// a downed-but-not-dead player can still work a sidearm one-handed (see Player.downedWeaponIndex)
+// — the pistol always, the uzi too if that's what was already out and it's not dry
+const UZI_INDEX = WEAPONS.findIndex(w => w.id === 'uzi');
 const GUNMAT = {};
 function buildGunMaterials(char) {
   GUNMAT.metal = new THREE.MeshStandardMaterial({ color: 0x24242a, metalness: 0.35, roughness: 0.45 });
@@ -3487,6 +3531,8 @@ const Player = {
     if (this.char !== char) { this.char = char; this.buildModels(); this.buildBody(); }
     this.x = 0; this.z = 0; this.yaw = rnd(0, TAU); this.pitch = 0; this.maxHp = char.hp; this.hp = char.hp; this.alive = true; this.speed = char.speed;
     this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
+    this.ultCharge = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0;
+    this.ultImmune = false; this.ultPostBuffT = 0; Ultimates.cleanup(this);
     this.downed = false; this.downT = 0; this.spectating = false;
     this.pinnedBy = null; this.escape = 0; this.escSend = 0;
     this.stamina = 1; this.sprintOn = false; this.sprinting = false; this.staminaHold = 0;
@@ -3497,13 +3543,41 @@ const Player = {
     this.stats = { shots: 0, hits: 0, kills: 0, head: 0 }; this.autoTarget = null; this.lowSaid = false;
     this.vm.models.forEach((m, i) => m.visible = i === 0);
   },
-  weapon() { return this.weapons[this.cur]; },
+  // downed-aware so the ammo HUD (the only other caller) reflects whichever sidearm is actually
+  // about to fire — the first-person gun mesh itself still shows whatever was equipped standing
+  // (switchTo() controls that separately and isn't invoked for this), a cosmetic mismatch traded
+  // for not swapping viewmodels while flat on the ground
+  weapon() { return this.weapons[this.downed ? this.downedWeaponIndex() : this.cur]; },
+  // waiting to be revived doesn't mean unarmed: the pistol (infinite reserve) always works
+  // one-handed, and the uzi does too as long as it's what was already in hand and its mag isn't
+  // dry — no reloading while down, so reserve ammo doesn't help until a teammate picks you up
+  downedWeaponIndex() {
+    const uzi = this.weapons[UZI_INDEX];
+    if (this.cur === UZI_INDEX && uzi && uzi.owned && uzi.mag > 0) return UZI_INDEX;
+    return 0;
+  },
   buffMul() { return hpBuff(this.maxHp > 0 ? this.hp / this.maxHp : 1); },
   eyeDir(out) { const cp = Math.cos(this.pitch); out.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp); return out; },
-  eyeY() { if (this.downed) return 0.62; if (this.spectating) return 0.42; return CFG.eyeH + Math.sin(this.bobT) * 0.035 * this.moveMag; },
+  eyeY() {
+    if (this.downed) return 0.62; if (this.spectating) return 0.42;
+    const base = CFG.eyeH + Math.sin(this.bobT) * 0.035 * this.moveMag;
+    // Green Ranger's titan mode: 5x scale means a 5x-higher vantage point too, not just a bigger
+    // hitbox — otherwise the camera would stay at normal-person height while everything else
+    // (collision radius, third-person body scale) says giant
+    return (this.ultActive && this.char.id === 'rhino') ? base * CFG.ultTitanScale : base;
+  },
   update(dt) {
     const mv = Input.getMove(this._mv), lk = Input.consumeLook(this._lk);
     this.lastLookX = lk.x; this.lastLookY = lk.y;
+    // ultimate: cooldown/comedown tick regardless of alive state (so a move that finishes right
+    // as you go down still counts down toward ready again), the active effect only while alive
+    if (this.ultCooldownT > 0) this.ultCooldownT -= dt;
+    if (this.ultPostBuffT > 0) this.ultPostBuffT -= dt;
+    if (this.ultActive && this.alive) {
+      this.ultActiveT -= dt;
+      Ultimates.tick(this, dt);
+      if (this.ultActiveT <= 0) Ultimates.end(this);
+    }
     // never stay stuck to a hunter that died, got recycled, or stopped riding us
     if (this.pinnedBy && (!this.pinnedBy.on || this.pinnedBy.state !== 'pin')) { this.pinnedBy = null; this.escape = 0; }
     // a downed survivor keeps their head: they can look around and watch for help, nothing else
@@ -3516,6 +3590,20 @@ const Player = {
       if (DOM.downedBar) DOM.downedBar.style.transform = 'scaleX(' + Math.max(0, this.downT / CFG.downTime).toFixed(3) + ')';
       if (DOM.downedSub) DOM.downedSub.textContent = Math.ceil(Math.max(0, this.downT)) + 's — A TEAMMATE CAN STILL REACH YOU';
       if (this.downT <= 0) this.bleedOut();
+      // still armed on the ground: a light sidearm (pistol always, uzi if that's what's in hand
+      // and it's not dry) still fires while waiting on a revive — reusing tryFire() itself (via a
+      // temporary weapon-slot swap) rather than duplicating its aim/spread/bullet math, with the
+      // reload-triggering branch inside it avoided entirely by only calling in when mag > 0
+      if (this.cooldown > 0) this.cooldown -= dt;
+      const dwi = this.downedWeaponIndex(), dw = this.weapons[dwi];
+      if (Input.fire && dw.mag > 0) {
+        const savedCur = this.cur, savedReloading = this.reloading, savedSwitchT = this.switchT, savedAuto = this.autoTarget;
+        // no auto-aim from the ground — a stale target acquired before going down could be long
+        // gone or way off; just fire straight down the (still player-steerable) look direction
+        this.cur = dwi; this.reloading = false; this.switchT = 0; this.autoTarget = null;
+        this.tryFire();
+        this.cur = savedCur; this.reloading = savedReloading; this.switchT = savedSwitchT; this.autoTarget = savedAuto;
+      } else Input.consumeFireEdge();
     }
     if (this.alive && this.shield < this.maxShield) {
       if (this.shieldRegenT > 0) this.shieldRegenT -= dt;
@@ -3775,6 +3863,17 @@ const Player = {
   // owned-only, so a fresh spawn with just the pistol just re-selects the pistol instead of
   // cycling into a shotgun/rifle slot that hasn't unlocked yet.
   swapWeapon() { const n = this.weapons.length; for (let k = 1; k < n; k++) { const i = (this.cur + k) % n; if (this.weapons[i].owned) { this.switchTo(i); return; } } },
+  // meter fills off kills (see Game.onZombieKilled); the cooldown floor below is what actually
+  // scales with wave, not the meter itself, so a full meter earlier than that still has to wait
+  tryUltimate() {
+    if (!this.alive || this.ultActive || this.downed) { Audio.empty(); return; }
+    if (this.ultCharge < 100 || this.ultCooldownT > 0) { Audio.empty(); return; }
+    this.ultCharge = 0;
+    this.ultCooldownT = clamp(CFG.ultCooldownBase + Game.wave * CFG.ultCooldownPerWave, CFG.ultCooldownBase, CFG.ultCooldownMax);
+    this.ultActive = true; this.ultActiveT = CFG.ultDuration;
+    Ultimates.start(this);
+    HUD.dirty = true;
+  },
   unlock(i) { const w = this.weapons[i]; if (w.owned) return false; w.owned = true; w.mag = w.def.mag; w.reserve = w.def.reserve; this.switchTo(i); return true; },
   // between-wave resupply so the heavier guns stay usable without a lucky crate
   resupply(frac) {
@@ -3801,6 +3900,8 @@ const Player = {
   hurt(amount, fx, fz) {
     if (!this.alive || Game.state !== 'playing') return;
     if (Game.invincible > 0) return;
+    if (this.ultImmune) return;                    // Cloud/Ranger/Fox during their own move
+    if (this.ultPostBuffT > 0) amount *= CFG.ultPostBuffMul;  // everyone, for a few seconds after
     this.shieldRegenT = CFG.shieldRegenDelay;
     if (this.shield > 0) { const absorb = Math.min(this.shield, amount); this.shield -= absorb; amount -= absorb; }
     this.hp -= amount; this.lastHurt = Game.time; Game.shake = Math.max(Game.shake, 0.9);
@@ -3860,6 +3961,194 @@ const Player = {
       vm.flash.position.copy(this._v); vm.flash.visible = true; const s = (def.id === 'shotgun' ? 0.26 : 0.17) * rnd(0.8, 1.2); vm.flash.scale.set(s, s, 1); vm.flash.material.rotation = Math.random() * TAU;
     } else vm.flash.visible = false;
     R.flash.intensity = Math.max(0, R.flash.intensity - dt * 30);
+  }
+};
+
+/* ------------------------------------------------------------------ ultimates
+   One unique move per champion (Family Arena's own moves, reused here), gated behind a meter
+   that fills off kills (see Game.onZombieKilled) and a cooldown floor that scales with wave (see
+   Player.tryUltimate). Every version shares the same "1/4 damage for CFG.ultPostBuffTime seconds
+   after" comedown; Cloud/Ranger/Fox additionally grant full immunity for the move's own duration
+   — Chopper and Dudu don't (per the brief: only their post-move window is reduced damage).
+   Zombie-killing goes through applyAoeKillAuthoritative on the host or solo machine directly; a
+   coop CLIENT instead sends a dedicated 'ultKill' request and only applies a cosmetic-only local
+   kill (Zombie.hit's own client branch, silent=true) — reusing the normal bullet-hit report here
+   would clamp the damage to 400 (see Net.applyRemoteHit), nowhere near enough to instakill a
+   zombie whose HP has scaled up over 20+ waves, which would make the move quietly stop being an
+   "instakill" for anyone who isn't hosting. */
+const Ultimates = {
+  kegs: [],
+  start(P) {
+    const id = P.char.id;
+    if (id === 'cloud') this.startCloud(P);
+    else if (id === 'rhino') this.startRanger(P);
+    else if (id === 'chopper') this.startChopper(P);
+    else if (id === 'corsair') this.startDudu(P);
+    else if (id === 'mage') this.startFox(P);
+  },
+  tick(P, dt) {
+    const id = P.char.id;
+    if (id === 'cloud' || id === 'mage') this.tickPull(P, dt);
+    else if (id === 'rhino') this.tickRanger(P, dt);
+    else if (id === 'corsair') this.tickDudu(P, dt);
+    // chopper has nothing to tick — the keg pool (Ultimates.updateKegs) runs independently of
+    // whose move started it, same as any other projectile in the file
+  },
+  end(P) {
+    P.ultActive = false; P.ultImmune = false; P.ultPostBuffT = CFG.ultPostBuffTime;
+    this.cleanup(P);
+  },
+  cleanup(P) {
+    if (P._ultSword) { R.scene.remove(P._ultSword); P._ultSword.geometry.dispose(); P._ultSword.material.dispose(); P._ultSword = null; }
+    if (P._ultPrison) { R.scene.remove(P._ultPrison); P._ultPrison.geometry.dispose(); P._ultPrison.material.dispose(); P._ultPrison = null; }
+    if (P.body) P.body.g.scale.setScalar(1);
+    if (P._ultClones) { for (const c of P._ultClones) { R.scene.remove(c.g); c.g.geometry.dispose(); c.g.material.dispose(); } P._ultClones = null; }
+  },
+
+  /* ---------------- shared AoE kill ---------------- */
+  applyAoeKillAuthoritative(x, z, r, opts) {
+    for (const zb of Zombies.pool) {
+      if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
+      const dx = zb.x - x, dz = zb.z - z; if (dx * dx + dz * dz > r * r) continue;
+      if (zb.boss) {
+        if (opts.bossDamage) Game.onBulletHit(zb, opts.bossDamage, zb.x, zb.y + zb.height * 0.6, zb.z, false, 0, 0, null);
+        if (opts.stunSec) zb.stunT = Math.max(zb.stunT, opts.stunSec);
+        continue;
+      }
+      if (opts.stunSec) zb.stunT = Math.max(zb.stunT, opts.stunSec);
+      Game.onBulletHit(zb, zb.hp + 1, zb.x, zb.y + zb.height * 0.6, zb.z, false, 0, 0, null);
+    }
+  },
+  applyAoeKillCosmetic(x, z, r) {
+    for (const zb of Zombies.pool) {
+      if (!zb.on || zb.state === 'dead' || zb.state === 'emerge' || zb.boss) continue;
+      const dx = zb.x - x, dz = zb.z - z; if (dx * dx + dz * dz > r * r) continue;
+      zb.hit(zb.hp + 1, zb.x, zb.y + zb.height * 0.6, zb.z, false, 0, 0, true);
+    }
+  },
+  aoeKill(x, z, r, opts) {
+    opts = opts || {};
+    if (Net.isHost() || !Net.on()) this.applyAoeKillAuthoritative(x, z, r, opts);
+    else if (Net.isClient()) {
+      Net.send({ k: 'ultKill', x: r2(x), z: r2(z), r: r2(r), bossDmg: Math.round(opts.bossDamage || 0), stun: opts.stunSec || 0 });
+      this.applyAoeKillCosmetic(x, z, r);
+    }
+  },
+
+  /* ---------------- Cloud: defensive whirlwind / Fox: astral gravity prison ----------------
+     Same underlying mechanic — pull everything in close, then kill it — dressed differently:
+     Cloud carries a glowing energy blade, Fox stands inside a slow-turning ring of light. Both
+     grant full immunity for the move's duration. */
+  startCloud(P) {
+    P.ultImmune = true; this._makeSword(P);
+    Particles.sparks(P.x, 1.2, P.z, 30); Audio.powerup();
+    HUD.toast('WHIRLWIND!', 1.8);
+  },
+  startFox(P) {
+    P.ultImmune = true; this._makePrison(P);
+    Particles.sparks(P.x, 1.4, P.z, 30); Audio.powerup();
+    HUD.toast('ASTRAL GRAVITY PRISON!', 1.8);
+  },
+  _sv: new THREE.Vector3(),
+  tickPull(P, dt) {
+    const r2v = CFG.ultPullRadius * CFG.ultPullRadius;
+    for (const zb of Zombies.pool) {
+      if (!zb.on || zb.state === 'dead' || zb.state === 'emerge' || zb.boss) continue;
+      const dx = P.x - zb.x, dz = P.z - zb.z, d2 = dx * dx + dz * dz;
+      if (d2 > r2v || d2 < 0.01) continue;
+      const d = Math.sqrt(d2), k = Math.min(1, dt * CFG.ultPullSpeed / d);
+      zb.x += dx * k; zb.z += dz * k;
+    }
+    this.aoeKill(P.x, P.z, CFG.ultKillRange, {});
+    if (P._ultSword) {
+      const dir = P.eyeDir(this._sv);
+      P._ultSword.position.set(P.x + dir.x * 0.7, P.eyeY() - 0.25, P.z + dir.z * 0.7);
+      P._ultSword.rotation.y = P.yaw; P._ultSword.rotation.z = Math.sin(Game.time * 10) * 0.35;
+    }
+    if (P._ultPrison) { P._ultPrison.position.set(P.x, 1.1, P.z); P._ultPrison.rotation.y += dt * 3; P._ultPrison.rotation.z += dt * 1.6; }
+  },
+  _makeSword(P) {
+    if (P._ultSword) return;
+    const geo = new THREE.BoxGeometry(0.1, 0.1, 1.5);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x2fd0ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    P._ultSword = new THREE.Mesh(geo, mat); R.scene.add(P._ultSword);
+  },
+  _makePrison(P) {
+    if (P._ultPrison) return;
+    const geo = new THREE.TorusGeometry(1.6, 0.05, 8, 24);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x9b59b6, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    P._ultPrison = new THREE.Mesh(geo, mat); P._ultPrison.rotation.x = Math.PI / 2; R.scene.add(P._ultPrison);
+  },
+
+  /* ---------------- Green Ranger: titan ----------------
+     Grows 5x, instakills on contact, takes no damage for the duration. The shockwave stun fires
+     once at activation (20ft ~= 6.1m), not every frame — the contact instakill IS every frame,
+     scaled to the same 5x collision radius. */
+  startRanger(P) {
+    P.ultImmune = true;
+    if (P.body) P.body.g.scale.setScalar(CFG.ultTitanScale);
+    this.aoeKill(P.x, P.z, CFG.ultTitanStunFt * 0.3048, { stunSec: CFG.ultTitanStunSec });
+    Particles.sparks(P.x, 1.2, P.z, 40); Game.shake = Math.max(Game.shake, 3); Audio.powerup();
+    HUD.toast('TITAN MODE!', 1.8);
+  },
+  tickRanger(P, dt) {
+    this.aoeKill(P.x, P.z, CFG.playerR * CFG.ultTitanScale, {});
+  },
+
+  /* ---------------- Chopper: powder keg toss ----------------
+     Thrown, not instant — arcs like a grenade and detonates on landing (or after 4s in the air,
+     whichever first). No immunity while it's in flight; only the standard post-move damage
+     reduction applies once it's down. */
+  _kegGeo: null, _kegMat: null,
+  startChopper(P) {
+    if (this.kegs.length >= CFG.ultKegMax) { HUD.toast('TOO MANY KEGS ALREADY OUT', 1.8); return; }
+    if (!this._kegGeo) { this._kegGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.5, 10); this._kegMat = new THREE.MeshLambertMaterial({ color: 0x8a5a2a }); }
+    const dir = P.eyeDir(this._sv);
+    const g = new THREE.Mesh(this._kegGeo, this._kegMat); R.scene.add(g);
+    this.kegs.push({ x: P.x, y: P.eyeY(), z: P.z, vx: dir.x * CFG.ultKegSpeed, vy: Math.max(2, dir.y * CFG.ultKegSpeed + 4), vz: dir.z * CFG.ultKegSpeed, t: 0, g: g });
+    HUD.toast('POWDER KEG!', 1.6); Audio.powerup();
+  },
+  updateKegs(dt) {
+    for (let i = this.kegs.length - 1; i >= 0; i--) {
+      const k = this.kegs[i];
+      k.t += dt; k.vy -= CFG.ultKegGravity * dt;
+      k.x += k.vx * dt; k.y += k.vy * dt; k.z += k.vz * dt;
+      k.g.position.set(k.x, k.y, k.z); k.g.rotation.x += dt * 6;
+      if (k.y <= 0 || k.t > 4) {
+        this.aoeKill(k.x, k.z, CFG.ultKegInstaR, { bossDamage: CFG.ultKegBossDmg, stunSec: CFG.ultKegStunSec });
+        Explosions.spawn(k.x, k.z); Audio.explosion(k.x, k.z);
+        R.scene.remove(k.g); this.kegs.splice(i, 1);
+      }
+    }
+  },
+  resetKegs() { for (const k of this.kegs) R.scene.remove(k.g); this.kegs.length = 0; },
+
+  /* ---------------- Dudu: clone swarm ----------------
+     Orbiting decoys with no HP of their own — nothing upstream ever targets or damages them (the
+     zombie AI only ever picks Player/peers/bots as a target, see Net.targetFor/Bots.targetFor),
+     so a clone can never cost Dudu's own health. They just carry an instakill hitbox while they
+     orbit, then despawn when the move ends (cleanup() removes them) — no immunity for Dudu
+     himself, only the standard post-move reduction. */
+  startDudu(P) {
+    const n = CFG.ultDuduCount, clones = [];
+    for (let i = 0; i < n; i++) {
+      const geo = new THREE.SphereGeometry(0.34, 10, 8);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x5dffe0, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+      const g = new THREE.Mesh(geo, mat); R.scene.add(g);
+      clones.push({ g: g, ang: (i / n) * TAU });
+    }
+    P._ultClones = clones;
+    Particles.sparks(P.x, 1.2, P.z, 30); Audio.powerup();
+    HUD.toast('CLONE SWARM!', 1.8);
+  },
+  tickDudu(P, dt) {
+    if (!P._ultClones) return;
+    for (const c of P._ultClones) {
+      c.ang += dt * CFG.ultDuduOrbitSpeed;
+      const cx = P.x + Math.cos(c.ang) * CFG.ultDuduOrbitR, cz = P.z + Math.sin(c.ang) * CFG.ultDuduOrbitR;
+      c.g.position.set(cx, 1.1, cz);
+      this.aoeKill(cx, cz, CFG.ultDuduHitR, {});
+    }
   }
 };
 
@@ -3955,7 +4244,7 @@ const DOM = {};
 const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
-    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'matchClock', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
+    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
@@ -3979,6 +4268,16 @@ const HUD = {
     if (this.last.shk !== shk) { this.last.shk = shk; DOM.shieldFill.style.transform = 'scaleX(' + shk.toFixed(3) + ')'; }
     const shRecharging = P.shieldRegenT > 0 && shk < 1;
     if (this.last.shRecharging !== shRecharging) { this.last.shRecharging = shRecharging; DOM.shieldFill.classList.toggle('recharging', shRecharging); }
+    // ultimate meter — "ready" (button lit, bar pulsing gold) needs BOTH a full meter and the
+    // wave-scaled cooldown to have actually elapsed (see Player.tryUltimate)
+    const uk = clamp(P.ultCharge / 100, 0, 1);
+    if (this.last.uk !== uk) { this.last.uk = uk; DOM.ultFill.style.transform = 'scaleX(' + uk.toFixed(3) + ')'; }
+    const ultReady = P.ultCharge >= 100 && P.ultCooldownT <= 0 && !P.ultActive;
+    if (this.last.ultReady !== ultReady) {
+      this.last.ultReady = ultReady;
+      DOM.ultFill.classList.toggle('ready', ultReady);
+      if (DOM.btnUlt) DOM.btnUlt.classList.toggle('ready', ultReady);
+    }
     this.set('hp', DOM.hpNum, Math.ceil(P.hp) + ' ');
     if (this.last.hpMax !== P.maxHp) { this.last.hpMax = P.maxHp; DOM.hpNum.innerHTML = Math.ceil(P.hp) + ' <span>/ ' + P.maxHp + '</span>'; this.last.hp = null; }
     else if (this.last.hpTxt !== Math.ceil(P.hp)) { this.last.hpTxt = Math.ceil(P.hp); DOM.hpNum.innerHTML = Math.ceil(P.hp) + ' <span>/ ' + P.maxHp + '</span>'; }
@@ -4652,6 +4951,7 @@ const Game = {
     Input.on.any = function () { if (!Audio.ready) Audio.unlock(); else Audio.resume(); };
     Input.on.reload = function () { if (self.state === 'playing') Player.reload(); };
     Input.on.swap = function () { if (self.state === 'playing') Player.swapWeapon(); };
+    Input.on.ultimate = function () { if (self.state === 'playing') Player.tryUltimate(); };
     Input.on.select = function (i) { if (self.state === 'playing') Player.switchTo(i); };
     Input.on.auto = function () { self.autoFire = !self.autoFire; HUD.refreshOptions(); HUD.toast('AUTO-FIRE ' + (self.autoFire ? 'ON' : 'OFF')); };
     Input.on.sprint = function () { if (self.state === 'playing') Player.toggleSprint(); };
@@ -4820,7 +5120,7 @@ const Game = {
     // pull the haze in to match — see fogForR: without this the wave-1 pen sits inside fog tuned
     // for the full-size map and everything past the fence is already in plain view
     applyDrawDistance(CFG.arenaR);
-    Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); Particles.clear(); Decals.clear();
+    Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); Particles.clear(); Decals.clear(); Ultimates.resetKegs();
     for (const e of Explosions.pool) { e.on = false; e.fire.visible = e.ring.visible = false; } for (const l of Explosions.lights) l.intensity = 0;
     Player.reset(char); Input.reset();
     this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0; this.insta = 0; this.dbl = 0;
@@ -4857,7 +5157,7 @@ const Game = {
     this.state = 'menu'; HUD.showScreen('menu'); HUD.showHud(false); Input.reset(); HUD.refreshOptions();
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
     Director.reset(); Bots.clear(); Player.pinnedBy = null; Player.escape = 0;
-    DOM.boss.classList.remove('show'); DOM.pinned.classList.remove('show'); DOM.revive.classList.remove('show');
+    DOM.boss.classList.remove('show'); DOM.pinned.classList.remove('show'); DOM.revive.classList.remove('show'); this.hideMidScores();
     if (Player.body) { Player.body.g.visible = false; Player.body.shadow.visible = false; }
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
     try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { }
@@ -4894,6 +5194,7 @@ const Game = {
     this.wave++; const w = this.wave;
     this.growArenaToWave(w);
     this.toSpawn = this.waveCount(w); this.waveActive = true; this.spawnT = 0.5;
+    this.hideMidScores();
     HUD.banner('WAVE ' + w, w === 1 ? "THEY'RE COMING" : this.toSpawn + ' UNDEAD INBOUND', false);
     Audio.horn(); this.say('wave');
     // let the wave banner land before the director drops a special on top of it
@@ -4939,6 +5240,16 @@ const Game = {
   ],
   POWER_POOL_EARLY: ['insta', 'double'],
   POWER_POOL_LATE: ['insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove'],
+  // pickups (power-ups included) were landing every 13-21s no matter how far a run had gone,
+  // which read as "too rare" once the later-wave power-ups actually entered the pool at wave
+  // CFG.powerupWave (6) — ramps the gap down to roughly half by wave 20 and lets one more sit on
+  // the ground at once, rather than changing drop ODDS (spawnPickup's own mix is untouched).
+  pickupInterval() {
+    if (this.wave < 5) return rnd(13, 21);
+    const t = clamp((this.wave - 5) / 15, 0, 1);
+    return rnd(lerp(13, 6, t), lerp(21, 10, t));
+  },
+  pickupCap() { return this.wave >= 5 ? 4 : 3; },
   spawnPickup() {
     let type; const r = Math.random(), hasGun = Player.weapons.some(w => w.owned && w.def.maxReserve !== Infinity);
     if (hasGun && Player.lowOnAmmo() && r < 0.5) type = 'ammo';
@@ -4977,6 +5288,11 @@ const Game = {
     const by = this._by;
     this.kills++; this.streak++;
     if (by) by.kills++; else Player.stats.kills++;
+    // ultimate meter: only for whoever's own kill this was, locally. A peer's kill is credited
+    // to *their* meter over the wire instead (see Net.showKill, the 'kill' message they already
+    // get) — onZombieKilled here only ever runs on the host/solo machine, which never sees the
+    // peer's own Player object to award it to directly.
+    if (!by) Player.ultCharge = Math.min(100, Player.ultCharge + (z.boss || z.type.special ? CFG.ultMeterPerSpecialKill : (head ? CFG.ultMeterPerHeadshot : CFG.ultMeterPerKill)));
     let pts = CFG.ptsKill * (z.type.pts || 1);
     if (head) { pts += CFG.ptsHead; if (by) by.head++; else Player.stats.head++; Floaties.spawn(z.x, z.y + z.height + 0.5, z.z, 'HEADSHOT', '#ff4a2a', 18, 1.1); }
     this.addPoints(pts, z.x, z.y + z.height + 0.15, z.z, '#ffd83b', 20);
@@ -5101,29 +5417,34 @@ const Game = {
     DOM.goTag.textContent = (AVATARS[Player.char.id] || AVATARS.cloud).gender === 'male' ? 'THE DESERT KEEPS ITS DEAD' : 'OPERATOR DOWN. MISSION FAILED.';
     const coop = Net.mode !== 'off', squad = !coop && Bots.on;
     DOM.goRoom.textContent = coop ? 'SQUAD RUN · ROOM ' + Net.code : (squad ? 'SQUAD RUN · WITH BOTS' : '');
-    // 2x2 results grid — everyone who fought (real player, real peer, or a filler bot standing
-    // in for an empty slot) gets their own quadrant with their own kill count; SCORE is the run's
-    // shared/team total (points are pooled, not tracked per player) shown the same in every
-    // quadrant, since that's the only "score" concept this game actually has.
-    if (squad) {
-      const rows = [{ n: Net.displayName(), k: Player.stats.kills, me: true }].concat(Bots.scoreRows());
-      this.renderResultsGrid(rows);
-    } else if (coop) {
+    this.renderResultsGrid(this.gatherResultRows(), DOM.goCoop);
+    // three guns on your side is not the same run as one, so the board says which it was
+    Board.submit(Net.displayName(), this.points, this.wave, this.kills, coop ? 1 : (squad ? 2 : 0), this.matchTime);
+    HUD.showHud(false); HUD.showScreen('gameover');
+  },
+  // shared by the game-over screen and the between-wave breather (see beginWave/showMidScores)
+  // — everyone who fought (real player, real peer, or a filler bot standing in for an empty
+  // slot), each with their own kill count. null for solo: nothing to show against.
+  gatherResultRows() {
+    const coop = Net.mode !== 'off', squad = !coop && Bots.on;
+    if (squad) return [{ n: Net.displayName(), k: Player.stats.kills, me: true }].concat(Bots.scoreRows());
+    if (coop) {
       const rows = [{ n: Net.displayName(), k: Player.stats.kills, me: true }];
       for (const pk in Net.peers) rows.push({ n: Net.peers[pk].name, k: Net.peers[pk].kills, me: false });
       // the host's own bots aren't in Net.peers (see Net.roster) — a client already gets them
       // for free there, since they arrive over the wire indistinguishable from a real peer
       if (Net.mode === 'host') for (const b of Bots.list) if (b.squadActive) rows.push({ n: b.name, k: b.kills, me: false });
-      this.renderResultsGrid(rows);
-    } else DOM.goCoop.innerHTML = '';
-    // three guns on your side is not the same run as one, so the board says which it was
-    Board.submit(Net.displayName(), this.points, this.wave, this.kills, coop ? 1 : (squad ? 2 : 0), this.matchTime);
-    HUD.showHud(false); HUD.showScreen('gameover');
+      return rows;
+    }
+    return null;
   },
-  // up to 4 quadrants (NET.MAX and the squad cap both top out at 4 total), most kills first
-  renderResultsGrid(rows) {
+  // up to 4 quadrants (NET.MAX and the squad cap both top out at 4 total), most kills first.
+  // SCORE is the run's shared/team total (points are pooled, not tracked per player) shown the
+  // same in every quadrant, since that's the only "score" concept this game actually has.
+  renderResultsGrid(rows, el) {
+    if (!rows) { el.innerHTML = ''; return; }
     rows.sort(function (a, b) { return b.k - a.k; });
-    DOM.goCoop.innerHTML = rows.slice(0, 4).map(r => (
+    el.innerHTML = rows.slice(0, 4).map(r => (
       '<div class="qcard' + (r.me ? ' me' : '') + '"><div class="qname">' + Net.esc(r.n) + '</div>' +
       '<div class="qstats">' +
       '<div class="qstat"><span class="qv">' + r.k + '</span><span class="qk">' + (r.k === 1 ? 'KILL' : 'KILLS') + '</span></div>' +
@@ -5131,6 +5452,16 @@ const Game = {
       '</div></div>'
     )).join('');
   },
+  // between-wave scoreboard — same 2x2 quadrant cards as the end-of-run screen, up for the same
+  // breather window as the "WAVE X CLEARED" banner (see the call site) rather than its own timer
+  showMidScores() {
+    if (!DOM.midScores) return;
+    const rows = this.gatherResultRows();
+    if (!rows) { DOM.midScores.classList.remove('show'); return; }
+    this.renderResultsGrid(rows, DOM.midScores);
+    DOM.midScores.classList.add('show');
+  },
+  hideMidScores() { if (DOM.midScores) DOM.midScores.classList.remove('show'); },
   update(dt) {
     this.time += dt; this.matchTime += dt;
     const P = Player;
@@ -5156,9 +5487,10 @@ const Game = {
         } else if (alive === 0 && !Zombies.pool.some(z => z.on)) {
           this.waveActive = false; this.interT = 6.5;
           HUD.banner('WAVE ' + this.wave + ' CLEARED', 'CATCH YOUR BREATH', false); Audio.cleared(); this.say('cleared');
+          this.showMidScores();
           if (World.coverPoint(P.x, P.z, this._pt)) Pickups.spawn(Math.random() < 0.6 ? 'health' : (Math.random() < 0.5 ? 'insta' : 'double'), this._pt.x, this._pt.z);
         }
-        this.pickupT -= dt; if (this.pickupT <= 0) { this.pickupT = rnd(13, 21); if (Pickups.count() < 3) this.spawnPickup(); }
+        this.pickupT -= dt; if (this.pickupT <= 0) { this.pickupT = this.pickupInterval(); if (Pickups.count() < this.pickupCap()) this.spawnPickup(); }
       }
       // heartbeat when low
       if (P.hp < P.maxHp * 0.3) { this.heartT -= dt; if (this.heartT <= 0) { this.heartT = 1.1; Audio.heartbeat(); } }
@@ -5169,6 +5501,7 @@ const Game = {
     if (Net.isHost()) { const fp = Net.flowPoint(this._fp); World.updateFlow(fp.x, fp.z, dt); }
     else World.updateFlow(P.x, P.z, dt);
     P.update(dt);
+    Ultimates.updateKegs(dt);
     Bots.update(dt);          // after the player, so a bot's pickup text wins the downed line
     Zombies.update(dt); Bullets.update(dt); Grenades.update(dt); ChainFX.update(dt); Pickups.update(dt); Explosions.update(dt); Particles.update(dt); Floaties.update(dt);
     Dust.update(dt, P.x, P.z);
@@ -5563,6 +5896,9 @@ const Net = {
     else if (m.k === 'brl') { const br = World.barrels[m.i]; if (br && br.alive) Game.explodeBarrel(br); }
     else if (m.k === 'reqStart') this.beginStartVote(id, peer.name);
     else if (m.k === 'startAck') this.onStartAck(id, !!m.ok);
+    // a peer's ultimate — resolved authoritatively here rather than through the normal (400-
+    // capped) hit report; see the note above Ultimates.aoeKill for why that path won't do
+    else if (m.k === 'ultKill') Ultimates.applyAoeKillAuthoritative(m.x, m.z, m.r, { bossDamage: m.bossDmg || 0, stunSec: m.stun || 0 });
   },
   mkPeer(id, name, ch) {
     const self = this;
@@ -5835,6 +6171,12 @@ const Net = {
     if (m.by !== this.id) return;                             // only the shooter gets the popup
     const zb = Zombies.pool[m.i | 0]; if (!zb) return;
     Floaties.spawn(zb.x, zb.y + zb.height + 0.15, zb.z, '+' + m.p, '#ffd83b', 20, 0.9);
+    // ultimate meter for a peer's own kill — the host resolves the kill itself (see
+    // Game.onZombieKilled), which has no way to reach back into this specific client's own
+    // Player object, so this notification (already shooter-only, see the guard above) is what
+    // credits it instead
+    const special = zb.boss || (zb.type && zb.type.special);
+    Player.ultCharge = Math.min(100, Player.ultCharge + (special ? CFG.ultMeterPerSpecialKill : (m.hd ? CFG.ultMeterPerHeadshot : CFG.ultMeterPerKill)));
     Audio.killmark();
   },
 
@@ -6486,7 +6828,7 @@ function boot() {
   // exposed for debugging / automated testing
   window.DND = { Game: Game, Player: Player, Zombies: Zombies, World: World, Bullets: Bullets, Pickups: Pickups, Audio: Audio, Input: Input,
     R: R, Explosions: Explosions, Particles: Particles, Floaties: Floaties, Decals: Decals, Dust: Dust, FX: FX, HUD: HUD, CFG: CFG, WEAPONS: WEAPONS,
-    Net: Net, Board: Board, Mqtt: Mqtt, Director: Director, Bots: Bots, ZTYPES: ZTYPES, Avatars: Avatars, AVATARS: AVATARS, version: GAME_VERSION };
+    Net: Net, Board: Board, Mqtt: Mqtt, Director: Director, Bots: Bots, ZTYPES: ZTYPES, Avatars: Avatars, AVATARS: AVATARS, Ultimates: Ultimates, version: GAME_VERSION };
   requestAnimationFrame(function (t) { lastFrame = t; requestAnimationFrame(loop); });
 }
 boot();
