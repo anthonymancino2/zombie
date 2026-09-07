@@ -738,7 +738,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.28.0';
+const GAME_VERSION = 'v1.29.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3549,11 +3549,12 @@ const Player = {
   // for not swapping viewmodels while flat on the ground
   weapon() { return this.weapons[this.downed ? this.downedWeaponIndex() : this.cur]; },
   // waiting to be revived doesn't mean unarmed: the pistol (infinite reserve) always works
-  // one-handed, and the uzi does too as long as it's what was already in hand and its mag isn't
-  // dry — no reloading while down, so reserve ammo doesn't help until a teammate picks you up
+  // one-handed, and the uzi does too as long as it's what was already in hand and isn't
+  // completely dry — an empty mag alone doesn't bump it back to the pistol, since reload() now
+  // works while downed too (just 25% slower); only actually running out everywhere does
   downedWeaponIndex() {
     const uzi = this.weapons[UZI_INDEX];
-    if (this.cur === UZI_INDEX && uzi && uzi.owned && uzi.mag > 0) return UZI_INDEX;
+    if (this.cur === UZI_INDEX && uzi && uzi.owned && (uzi.mag > 0 || uzi.reserve > 0)) return UZI_INDEX;
     return 0;
   },
   buffMul() { return hpBuff(this.maxHp > 0 ? this.hp / this.maxHp : 1); },
@@ -3590,20 +3591,18 @@ const Player = {
       if (DOM.downedBar) DOM.downedBar.style.transform = 'scaleX(' + Math.max(0, this.downT / CFG.downTime).toFixed(3) + ')';
       if (DOM.downedSub) DOM.downedSub.textContent = Math.ceil(Math.max(0, this.downT)) + 's — A TEAMMATE CAN STILL REACH YOU';
       if (this.downT <= 0) this.bleedOut();
-      // still armed on the ground: a light sidearm (pistol always, uzi if that's what's in hand
-      // and it's not dry) still fires while waiting on a revive — reusing tryFire() itself (via a
-      // temporary weapon-slot swap) rather than duplicating its aim/spread/bullet math, with the
-      // reload-triggering branch inside it avoided entirely by only calling in when mag > 0
+      // still armed on the ground: a light sidearm (pistol always, uzi if that's what's in hand)
+      // still fires while waiting on a revive, and CAN be reloaded — just slower, one-handed
+      // (see reload()'s own downed check for the actual multiplier). Reusing tryFire()/reload()
+      // themselves (via a temporary this.cur swap) rather than duplicating their aim/ammo math.
       if (this.cooldown > 0) this.cooldown -= dt;
-      const dwi = this.downedWeaponIndex(), dw = this.weapons[dwi];
-      if (Input.fire && dw.mag > 0) {
-        const savedCur = this.cur, savedReloading = this.reloading, savedSwitchT = this.switchT, savedAuto = this.autoTarget;
-        // no auto-aim from the ground — a stale target acquired before going down could be long
-        // gone or way off; just fire straight down the (still player-steerable) look direction
-        this.cur = dwi; this.reloading = false; this.switchT = 0; this.autoTarget = null;
-        this.tryFire();
-        this.cur = savedCur; this.reloading = savedReloading; this.switchT = savedSwitchT; this.autoTarget = savedAuto;
-      } else Input.consumeFireEdge();
+      if (this.reloading) { this.reloadT -= dt; if (this.reloadT <= 0) this.finishReload(); }
+      const dwi = this.downedWeaponIndex(), savedCur = this.cur, savedAuto = this.autoTarget;
+      // no auto-aim from the ground — a stale target acquired before going down could be long
+      // gone or way off; just fire straight down the (still player-steerable) look direction
+      this.cur = dwi; this.autoTarget = null;
+      if (Input.fire) this.tryFire(); else Input.consumeFireEdge();
+      this.cur = savedCur; this.autoTarget = savedAuto;
     }
     if (this.alive && this.shield < this.maxShield) {
       if (this.shieldRegenT > 0) this.shieldRegenT -= dt;
@@ -3836,7 +3835,9 @@ const Player = {
   reload() {
     const w = this.weapon(), def = w.def;
     const infAmmo = Game.infAmmo > 0;
-    if (this.reloading || this.switchT > 0 || w.mag >= def.mag || (w.reserve <= 0 && !infAmmo) || !this.alive) return;
+    // downed is now allowed alongside alive (not just alive) — waiting on a revive doesn't mean
+    // you can't work the slide one-handed, just slower (see the downedMul below)
+    if (this.reloading || this.switchT > 0 || w.mag >= def.mag || (w.reserve <= 0 && !infAmmo) || (!this.alive && !this.downed)) return;
     Audio.reload(def.id); HUD.dirty = true;
     if (Game.noReload > 0 || infAmmo) {
       // instant top-up: no animation, no timer — matches the "no reload" buff, and infinite ammo
@@ -3846,8 +3847,14 @@ const Player = {
       return;
     }
     // reload is a speed multiplier (bigger = faster), so it divides the reload time rather than
-    // multiplying it — same desperation buff as tryFire's damage bump, see CFG.hpBuffTiers
-    this.reloading = true; this.reloadTotal = def.reload * this.char.reloadMul / this.buffMul().reload; this.reloadT = this.reloadTotal;
+    // multiplying it — same desperation buff as tryFire's damage bump, see CFG.hpBuffTiers.
+    // Downed skips that buff entirely instead of stacking with it: HP reads as 0 while down,
+    // which would otherwise hit hpBuffTiers' most extreme (fastest) tier — reloading one-handed
+    // flat on the ground should never come out FASTER than standing. A flat 25% slower replaces
+    // it there instead.
+    const buffReload = this.downed ? 1 : this.buffMul().reload;
+    const downedMul = this.downed ? 1.25 : 1;
+    this.reloading = true; this.reloadTotal = (def.reload * this.char.reloadMul / buffReload) * downedMul; this.reloadT = this.reloadTotal;
   },
   finishReload() {
     const w = this.weapon(), def = w.def; this.reloading = false;
@@ -3912,7 +3919,13 @@ const Player = {
       this.hp = 0; this.alive = false;
       // you go down instead of dying as long as somebody is left standing to reach you —
       // a coop teammate, or one of your bots
-      if (Net.canRevive() || Bots.canRevive()) { this.downed = true; this.downT = CFG.downTime; Net.onSelfDowned(); }
+      if (Net.canRevive() || Bots.canRevive()) {
+        this.downed = true; this.downT = CFG.downTime; Net.onSelfDowned();
+        // switchT only ever ticks down inside the alive branch of update() — stuck mid-swap
+        // (switchT>0) at the exact instant you go down would otherwise leave it stuck forever,
+        // blocking the downed fire-and-reload fallback for the rest of the down timer
+        this.switchT = 0;
+      }
       else Game.onPlayerDeath();
     }
   },
