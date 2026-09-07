@@ -699,7 +699,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.24.0';
+const GAME_VERSION = 'v1.25.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -6063,7 +6063,15 @@ const Net = {
     };
     DOM.inpName.addEventListener('input', function () { onNameInput(DOM.inpName); });
     DOM.inpNameMenu.addEventListener('input', function () { onNameInput(DOM.inpNameMenu); });
-    DOM.btnOnline.addEventListener('click', function () { self.openOnline(); });
+    // Coop specifically forces the same cache-busted reload the SYNC button does (see btnSync)
+    // before ever showing the room browser — joining/hosting is the one place a stale build on
+    // one player's machine actually breaks the match for everyone else in it (different NET.VER,
+    // different game logic), so this path can't just trust whatever's already loaded. The reload
+    // carries a #coop marker (see boot(), right after Game.init()) so the fresh load lands
+    // straight on the room browser instead of stopping at the main menu.
+    DOM.btnOnline.addEventListener('click', function () {
+      location.href = location.pathname + '?v=' + Date.now() + '#coop';
+    });
     DOM.btnOnlineBack.addEventListener('click', function () { self.closeOnline(); });
     DOM.btnBackOnline.addEventListener('click', function () { self.closeOnline(); });
     DOM.btnBackLobby.addEventListener('click', function () { self.leave(); self.openOnline(); });
@@ -6293,6 +6301,14 @@ function boot() {
     console.error(e);
     const el = $('loadErr'); el.classList.add('show'); el.querySelector('h3').textContent = 'COULD NOT START THE ARENA'; el.querySelector('p').textContent = 'WebGL may be unavailable on this device. (' + (e && e.message ? e.message : e) + ')';
     return;
+  }
+  // COOP MODE forces a fresh reload before showing the room browser (see the btnOnline handler
+  // in Net.wireUI) — this is the other half: land the freshly-reloaded page straight on that
+  // screen instead of the main menu. The hash is stripped immediately so a manual refresh later
+  // (or hitting back into this same URL) doesn't keep bouncing back into the room browser.
+  if (location.hash === '#coop') {
+    history.replaceState(null, '', location.pathname + location.search);
+    Net.openOnline();
   }
   window.__resume = function (t) { lastFrame = t; requestAnimationFrame(loop); };
   // exposed for debugging / automated testing
