@@ -752,7 +752,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.33.0';
+const GAME_VERSION = 'v1.34.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -808,23 +808,31 @@ const CFG = {
     { at: 0.50, dmg: 1.25, reload: 1.25 }
   ],
   // per-character ultimate (see Player.tryUltimate / Game.ult*): meter fills off kills, a button
-  // fires it once full, and every version shares the same "1/4 damage for a few seconds after"
-  // comedown — the cooldown floor is what actually scales with wave (a full meter earlier than
-  // that just has to wait), so the move can't be chained back-to-back into the late game trivially.
-  ultDuration: 3, ultPostBuffTime: 5, ultPostBuffMul: 0.25,
+  // fires it once full. Every one of the 5 moves runs a flat 10s, and every one grants full
+  // immunity for 3s after it ends (ultImmuneT) — Cloud/Ranger/Fox ALSO get full immunity for the
+  // 10s itself (ultImmune), while Chopper/Dudu instead only take 1/4 damage during their own 10s
+  // (ultReduced), a tankier-not-invincible window per their brief. The cooldown floor scales with
+  // wave (a full meter earlier than that just has to wait), so the move can't be chained
+  // back-to-back into the late game trivially.
+  ultDuration: 10, ultImmunePostTime: 3, ultReducedMul: 0.25,
   ultMeterPerKill: 5, ultMeterPerHeadshot: 8, ultMeterPerSpecialKill: 18,
   ultCooldownBase: 15, ultCooldownPerWave: 2.2, ultCooldownMax: 90,
-  // Cloud (whirlwind) / Fox (gravity prison): same underlying pull-then-kill, different dressing
-  ultPullRadius: 26, ultPullSpeed: 14, ultKillRange: 2.4,
-  // Green Ranger (titan): scale factor, contact instakill uses this to grow the collision radius;
-  // 20ft ~= 6.1m for the stun shockwave at activation
-  ultTitanScale: 5, ultTitanStunFt: 20, ultTitanStunSec: 3,
-  // Chopper (powder keg): thrown, not instant — arcs like a grenade, no immunity while it's in
-  // flight (only the standard post-move damage reduction once it lands)
-  ultKegInstaR: 12, ultKegStunFt: 10, ultKegStunSec: 3, ultKegBossDmg: 900, ultKegMax: 16, ultKegSpeed: 20, ultKegGravity: 11,
-  // Dudu (clone swarm): orbiting decoys, each an instakill hitbox on contact — no HP of their own
-  // (see Game.ultDudu), so nothing they run into can ever cost Dudu's own health
-  ultDuduCount: 5, ultDuduOrbitR: 2.0, ultDuduOrbitSpeed: 2.4, ultDuduHitR: 0.7,
+  // Cloud: buster-sword combo — FIRE becomes a close-range melee swing instead of his gun for the
+  // move's duration (see Player.update's wantFire branch / Ultimates.swordSwing)
+  ultSwordRange: 2.8, ultSwordCooldown: 0.4,
+  // Green Ranger: 4x titan scale; FIRE becomes a gamma leap instead of shooting — a short forward
+  // dash that damages/stuns anything it passes through, plus a landing-site shockwave
+  ultTitanScale: 4,
+  ultLeapRange: 8, ultLeapHitR: 2.2, ultLeapLandFt: 10, ultLeapStunSec: 3, ultLeapCooldown: 1.0,
+  // Chopper & Dudu share one move: 8 clones orbit them, break off to attack anything that wanders
+  // within ultCloneSeekFt of one, and detonate (instakill, bosses take ultCloneBossDmg instead)
+  // the instant the move ends rather than just despawning quietly
+  ultCloneCount: 8, ultCloneOrbitR: 2.4, ultCloneSeekFt: 10, ultCloneSeekSpeed: 7.5,
+  ultCloneHitR: 0.7, ultCloneExplodeR: 3.2, ultCloneBossDmg: 900,
+  // Nine-Tail Fox: invisible to the horde's targeting (see Net.targetFor/Bots.targetFor) while 6
+  // flame familiars orbit her, darting out on their own 1.5s timer to freeze (stun) the nearest
+  // enemy in range and immediately reappear at her side (see Ultimates.tickFox)
+  ultFlameCount: 6, ultFlameInterval: 1.5, ultFlameRange: 16, ultFlameFreezeSec: 3, ultFlameOrbitR: 1.6,
   // sprint: a full meter buys ~4s of running, and refills in ~7s once you stop leaning on it
   sprintMul: 1.62, sprintDrain: 0.25, sprintRegen: 0.145, sprintHold: 0.7, sprintMin: 0.12,
   // third-person boom: behind and over the right shoulder, camera axis parallel to the aim ray.
@@ -1130,6 +1138,15 @@ const Avatars = {
     // buildGun() sizes/orients for the first-person viewmodel's own hand — a generic scale-down
     // keeps it from looking absurd in an arbitrary rig's hand without hand-tuning all five rigs.
     g.scale.setScalar(0.85);
+    m.gunSlot.add(g); m.gunMesh = g;
+  },
+  // Cloud's buster sword during his ultimate — not a real weapon slot, so it bypasses setGun's
+  // WEAPONS lookup entirely and just parks its own mesh in the same hand attachment
+  showSword(m) {
+    if (!m.gunSlot || m.gunKind === 'sword') return;
+    if (m.gunMesh) { m.gunSlot.remove(m.gunMesh); m.gunMesh = null; }
+    m.gunKind = 'sword';
+    const g = buildBusterSword(); g.scale.setScalar(0.85);
     m.gunSlot.add(g); m.gunMesh = g;
   },
   // walk-cycle crossfade + downed tilt, the GLTF-body equivalent of poseSurvivor
@@ -2794,6 +2811,9 @@ class Zombie {
     // who's damaged this one and how much (attacker key -> damage) — for splitting individual
     // score across everyone who hit it, not just whoever landed the kill (see Game.onZombieKilled)
     this.dmgBy = {};
+    // set by Nine-Tail Fox's flame familiars (see Ultimates.tickFox/_dmgStunAt) — whoever froze
+    // this also gets kill credit whenever it dies, on top of the real killer (see onZombieKilled)
+    this.foxFrozenBy = null;
     const g = new THREE.Group(); this.group = g;
     this.skinMat = new THREE.MeshLambertMaterial({ map: TEX.skin[0] }); this.clothMat = new THREE.MeshLambertMaterial({ map: TEX.cloth[0] });
     this.legL = new THREE.Mesh(ZG.leg, this.clothMat); this.legL.position.set(-0.15, 1.04, 0);
@@ -2821,7 +2841,7 @@ class Zombie {
     this.radius = T.radius; this.height = T.height; this.dmg = T.dmg; this.big = T.big;
     const wm = Math.pow(T.hpWave || CFG.hpMul, wave - 1), sm = Math.pow(CFG.speedMul, wave - 1);
     this.boss = !!T.boss; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pinHitT = -99; this.pvx = this.pvy = this.pvz = 0;
-    this.dmgBy = {};
+    this.dmgBy = {}; this.foxFrozenBy = null;
     this.maxHp = this.hp = Math.round(CFG.zombieBaseHp * wm * T.hpMul);
     this.speed = Math.min(7.6, CFG.zombieBaseSpeed * sm * T.speedMul) * rnd(0.92, 1.08);
     this.variant = Math.floor(Math.random() * TEX.skin.length);
@@ -3489,6 +3509,18 @@ function buildGun(def) {
   }
   return g;
 }
+// Cloud's ultimate swaps his gun for this — an oversized single-edge blade, no muzzle/pump
+// userData since it never fires a bullet (see Ultimates.swordSwing for the actual hit detection)
+function buildBusterSword() {
+  const g = new THREE.Group(); const M = GUNMAT;
+  g.add(box(0.05, 0.11, 1.15, M.metal, 0, 0.02, -0.7));
+  g.add(box(0.014, 0.13, 1.1, M.metal2, 0.028, 0.02, -0.7));
+  g.add(box(0.22, 0.05, 0.09, M.rust, 0, 0, -0.08));
+  g.add(cyl(0.028, 0.22, M.poly, 0, 0, 0.08));
+  g.add(box(0.07, 0.07, 0.03, M.metal, 0, 0, 0.2));
+  buildHand(g, 0.0, -0.02, 0.06, [0.3, 0, 0], false);
+  return g;
+}
 
 /* ------------------------------------------------------------------ survivor body
    The same blocky build serves a networked teammate and your own third-person body, so the
@@ -3578,7 +3610,9 @@ const Player = {
     this.x = 0; this.z = 0; this.yaw = rnd(0, TAU); this.pitch = 0; this.maxHp = char.hp; this.hp = char.hp; this.alive = true; this.speed = char.speed;
     this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
     this.ultCharge = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0;
-    this.ultImmune = false; this.ultPostBuffT = 0; Ultimates.cleanup(this);
+    this.ultImmune = false; this.ultImmuneT = 0; this.ultReduced = false; this.ultInvisible = false;
+    this.ultAtkCooldown = 0; this.ultPreCamMode = null;
+    Ultimates.cleanup(this);
     this.downed = false; this.downT = 0; this.spectating = false;
     this.pinnedBy = null; this.escape = 0; this.escSend = 0;
     this.stamina = 1; this.sprintOn = false; this.sprinting = false; this.staminaHold = 0;
@@ -3609,9 +3643,9 @@ const Player = {
   eyeY() {
     if (this.downed) return 0.62; if (this.spectating) return 0.42;
     const base = CFG.eyeH + Math.sin(this.bobT) * 0.035 * this.moveMag;
-    // Green Ranger's titan mode: 5x scale means a 5x-higher vantage point too, not just a bigger
-    // hitbox — otherwise the camera would stay at normal-person height while everything else
-    // (collision radius, third-person body scale) says giant
+    // Green Ranger's titan mode: 4x scale means a 4x-higher vantage point too, not just a bigger
+    // body — otherwise the camera would stay at normal-person height while everything else
+    // (third-person body scale) says giant
     return (this.ultActive && this.char.id === 'rhino') ? base * CFG.ultTitanScale : base;
   },
   update(dt) {
@@ -3620,7 +3654,8 @@ const Player = {
     // ultimate: cooldown/comedown tick regardless of alive state (so a move that finishes right
     // as you go down still counts down toward ready again), the active effect only while alive
     if (this.ultCooldownT > 0) this.ultCooldownT -= dt;
-    if (this.ultPostBuffT > 0) this.ultPostBuffT -= dt;
+    if (this.ultImmuneT > 0) this.ultImmuneT -= dt;
+    if (this.ultAtkCooldown > 0) this.ultAtkCooldown -= dt;
     if (this.ultActive && this.alive) {
       this.ultActiveT -= dt;
       Ultimates.tick(this, dt);
@@ -3685,7 +3720,13 @@ const Player = {
       if (this.switchT > 0) this.switchT -= dt;
       this.autoTarget = Game.autoFire ? this.findAutoTarget() : null;
       const wantFire = Input.fire || (this.autoTarget !== null);
-      if (wantFire) this.tryFire(); else Input.consumeFireEdge();
+      // Cloud's sword combo and Green Ranger's gamma leap commandeer the FIRE button while their
+      // own move is active — same input, a melee swing/leap instead of a gunshot (see
+      // Ultimates.swordSwing/gammaLeap, both on their own short cooldown rather than a weapon's
+      // rate-of-fire)
+      const meleeUlt = this.ultActive && (this.char.id === 'cloud' || this.char.id === 'rhino');
+      if (meleeUlt) { if (wantFire) this.ultMeleeAttack(); else Input.consumeFireEdge(); }
+      else if (wantFire) this.tryFire(); else Input.consumeFireEdge();
       }
     }
     this.recoil = Math.max(0, this.recoil - dt * 8);
@@ -3811,7 +3852,7 @@ const Player = {
     b.g.visible = show; b.shadow.visible = show;
     if (!show) return;
     this._setBodyAlpha(b, Game.camDist === 'close' ? CFG.tpCloseAlpha : 1);
-    if (b.kind === 'gltf') Avatars.setGun(b, this.weapon().def.id);
+    if (b.kind === 'gltf') { if (this.ultActive && this.char.id === 'cloud') Avatars.showSword(b); else Avatars.setGun(b, this.weapon().def.id); }
     const gait = Math.min(1, this.moveMag * (this.sprinting ? 1.5 : 1));
     this.bodyAnim += dt * (1.6 + this.moveMag * (this.sprinting ? 11 : 7));
     b.g.position.set(this.x, 0, this.z);
@@ -3924,9 +3965,17 @@ const Player = {
     if (this.ultCharge < 100 || this.ultCooldownT > 0) { Audio.empty(); return; }
     this.ultCharge = 0;
     this.ultCooldownT = clamp(CFG.ultCooldownBase + Game.wave * CFG.ultCooldownPerWave, CFG.ultCooldownBase, CFG.ultCooldownMax);
-    this.ultActive = true; this.ultActiveT = CFG.ultDuration;
+    this.ultActive = true; this.ultActiveT = CFG.ultDuration; this.ultAtkCooldown = 0;
     Ultimates.start(this);
     HUD.dirty = true;
+  },
+  // Cloud's sword swing and Green Ranger's leap share one gate: their own cooldown, not a weapon's
+  // rate-of-fire or magazine (see the meleeUlt branch in update())
+  ultMeleeAttack() {
+    if (this.ultAtkCooldown > 0) { Input.consumeFireEdge(); return; }
+    const id = this.char.id;
+    if (id === 'cloud') Ultimates.swordSwing(this);
+    else if (id === 'rhino') Ultimates.gammaLeap(this);
   },
   unlock(i) { const w = this.weapons[i]; if (w.owned) return false; w.owned = true; w.mag = w.def.mag; w.reserve = w.def.reserve; this.switchTo(i); return true; },
   // between-wave resupply so the heavier guns stay usable without a lucky crate
@@ -3954,8 +4003,8 @@ const Player = {
   hurt(amount, fx, fz) {
     if (!this.alive || Game.state !== 'playing') return;
     if (Game.invincible > 0) return;
-    if (this.ultImmune) return;                    // Cloud/Ranger/Fox during their own move
-    if (this.ultPostBuffT > 0) amount *= CFG.ultPostBuffMul;  // everyone, for a few seconds after
+    if (this.ultImmune || this.ultImmuneT > 0) return; // Cloud/Ranger/Fox's own move, or anyone's 3s after
+    if (this.ultReduced) amount *= CFG.ultReducedMul;   // Chopper/Dudu take 1/4 during their own move
     this.shieldRegenT = CFG.shieldRegenDelay;
     if (this.shield > 0) { const absorb = Math.min(this.shield, amount); this.shield -= absorb; amount -= absorb; }
     this.hp -= amount; this.lastHurt = Game.time; Game.shake = Math.max(Game.shake, 0.9);
@@ -4025,57 +4074,65 @@ const Player = {
 };
 
 /* ------------------------------------------------------------------ ultimates
-   One unique move per champion (Family Arena's own moves, reused here), gated behind a meter
-   that fills off kills (see Game.onZombieKilled) and a cooldown floor that scales with wave (see
-   Player.tryUltimate). Every version shares the same "1/4 damage for CFG.ultPostBuffTime seconds
-   after" comedown; Cloud/Ranger/Fox additionally grant full immunity for the move's own duration
-   — Chopper and Dudu don't (per the brief: only their post-move window is reduced damage).
-   Zombie-killing goes through applyAoeKillAuthoritative on the host or solo machine directly; a
+   One unique move per champion, gated behind a meter that fills off kills (see
+   Game.onZombieKilled) and a cooldown floor that scales with wave (see Player.tryUltimate).
+   Every move runs a flat 10s and grants full immunity for 3s after it ends (ultImmuneT) — Cloud/
+   Ranger/Fox ALSO get full immunity for the 10s itself (ultImmune), while Chopper/Dudu instead
+   only take 1/4 damage during their own 10s (ultReduced), per their own brief.
+   Instakill AoEs go through applyAoeKillAuthoritative on the host or solo machine directly; a
    coop CLIENT instead sends a dedicated 'ultKill' request and only applies a cosmetic-only local
    kill (Zombie.hit's own client branch, silent=true) — reusing the normal bullet-hit report here
    would clamp the damage to 400 (see Net.applyRemoteHit), nowhere near enough to instakill a
-   zombie whose HP has scaled up over 20+ waves, which would make the move quietly stop being an
-   "instakill" for anyone who isn't hosting. */
+   zombie whose HP has scaled up over 20+ waves. Non-instakill damage (the sword/leap/flames) goes
+   straight through Game.onBulletHit instead, which already has that same host/client split built
+   in, so _dmgStunAt below needs no separate network path of its own.
+   Known gap: every one of these moves is simulated purely on the caster's own machine (same as
+   the old Cloud/Fox/Dudu visuals always were) — another client never sees a peer's clones/flames/
+   sword, and a stun or Fox's freeze-kill-credit tag only actually lands when the caster IS the
+   host (or playing solo), since a client's own zombie objects aren't authoritative. Consistent
+   with the barrel-attribution gap already accepted elsewhere in this file, not a new regression. */
 const Ultimates = {
-  kegs: [],
+  RIFLE_DMG: null,
+  rifleDmg() { return this.RIFLE_DMG || (this.RIFLE_DMG = WEAPONS.find(w => w.id === 'rifle').dmg); },
   start(P) {
     const id = P.char.id;
     if (id === 'cloud') this.startCloud(P);
     else if (id === 'rhino') this.startRanger(P);
-    else if (id === 'chopper') this.startChopper(P);
-    else if (id === 'corsair') this.startDudu(P);
+    else if (id === 'chopper' || id === 'corsair') this.startCloneSwarm(P);
     else if (id === 'mage') this.startFox(P);
   },
   tick(P, dt) {
     const id = P.char.id;
-    if (id === 'cloud' || id === 'mage') this.tickPull(P, dt);
+    if (id === 'cloud') this.tickCloud(P, dt);
     else if (id === 'rhino') this.tickRanger(P, dt);
-    else if (id === 'corsair') this.tickDudu(P, dt);
-    // chopper has nothing to tick — the keg pool (Ultimates.updateKegs) runs independently of
-    // whose move started it, same as any other projectile in the file
+    else if (id === 'chopper' || id === 'corsair') this.tickCloneSwarm(P, dt);
+    else if (id === 'mage') this.tickFox(P, dt);
   },
   end(P) {
-    P.ultActive = false; P.ultImmune = false; P.ultPostBuffT = CFG.ultPostBuffTime;
+    P.ultActive = false; P.ultImmune = false; P.ultReduced = false; P.ultInvisible = false;
+    P.ultImmuneT = CFG.ultImmunePostTime;
+    if (P.ultPreCamMode) { Game.camMode = P.ultPreCamMode; P.ultPreCamMode = null; HUD.refreshOptions(); }
+    const id = P.char.id;
+    if (id === 'chopper' || id === 'corsair') this.detonateClones(P);
     this.cleanup(P);
   },
   cleanup(P) {
-    if (P._ultSword) { R.scene.remove(P._ultSword); P._ultSword.geometry.dispose(); P._ultSword.material.dispose(); P._ultSword = null; }
-    if (P._ultPrison) { R.scene.remove(P._ultPrison); P._ultPrison.geometry.dispose(); P._ultPrison.material.dispose(); P._ultPrison = null; }
+    // Cloud's sword is just b.gunMesh (see Player.updateBody/Avatars.showSword) — it clears itself
+    // the next frame once ultActive is false, nothing to dispose of here
     if (P.body) P.body.g.scale.setScalar(1);
     if (P._ultClones) { for (const c of P._ultClones) { R.scene.remove(c.g); c.g.geometry.dispose(); c.g.material.dispose(); } P._ultClones = null; }
+    if (P._ultFlames) { for (const f of P._ultFlames) { R.scene.remove(f.g); f.g.geometry.dispose(); f.g.material.dispose(); } P._ultFlames = null; }
   },
 
-  /* ---------------- shared AoE kill ---------------- */
+  /* ---------------- shared AoE instakill (Chopper/Dudu's clone detonation) ---------------- */
   applyAoeKillAuthoritative(x, z, r, opts) {
     for (const zb of Zombies.pool) {
       if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
       const dx = zb.x - x, dz = zb.z - z; if (dx * dx + dz * dz > r * r) continue;
       if (zb.boss) {
         if (opts.bossDamage) Game.onBulletHit(zb, opts.bossDamage, zb.x, zb.y + zb.height * 0.6, zb.z, false, 0, 0, null);
-        if (opts.stunSec) zb.stunT = Math.max(zb.stunT, opts.stunSec);
         continue;
       }
-      if (opts.stunSec) zb.stunT = Math.max(zb.stunT, opts.stunSec);
       Game.onBulletHit(zb, zb.hp + 1, zb.x, zb.y + zb.height * 0.6, zb.z, false, 0, 0, null);
     }
   },
@@ -4090,124 +4147,187 @@ const Ultimates = {
     opts = opts || {};
     if (Net.isHost() || !Net.on()) this.applyAoeKillAuthoritative(x, z, r, opts);
     else if (Net.isClient()) {
-      Net.send({ k: 'ultKill', x: r2(x), z: r2(z), r: r2(r), bossDmg: Math.round(opts.bossDamage || 0), stun: opts.stunSec || 0 });
+      Net.send({ k: 'ultKill', x: r2(x), z: r2(z), r: r2(r), bossDmg: Math.round(opts.bossDamage || 0) });
       this.applyAoeKillCosmetic(x, z, r);
     }
   },
-
-  /* ---------------- Cloud: defensive whirlwind / Fox: astral gravity prison ----------------
-     Same underlying mechanic — pull everything in close, then kill it — dressed differently:
-     Cloud carries a glowing energy blade, Fox stands inside a slow-turning ring of light. Both
-     grant full immunity for the move's duration. */
-  startCloud(P) {
-    P.ultImmune = true; this._makeSword(P);
-    Particles.sparks(P.x, 1.2, P.z, 30); Audio.powerup();
-    HUD.toast('WHIRLWIND!', 1.8);
-  },
-  startFox(P) {
-    P.ultImmune = true; this._makePrison(P);
-    Particles.sparks(P.x, 1.4, P.z, 30); Audio.powerup();
-    HUD.toast('ASTRAL GRAVITY PRISON!', 1.8);
-  },
-  _sv: new THREE.Vector3(),
-  tickPull(P, dt) {
-    const r2v = CFG.ultPullRadius * CFG.ultPullRadius;
+  // shared, non-instakill damage+stun helper — routes through Game.onBulletHit (which already has
+  // its own host/client split), so the sword swing, the leap, and Fox's flame darts all reuse it.
+  // `seen` (a Set, optional) keeps one swing/leap from double-hitting the same zombie across
+  // several overlapping radius checks; `freezeOwnerKey` (optional) tags the zombie for Fox's kill-
+  // credit passthrough (see Game.onZombieKilled)
+  _dmgStunAt(x, z, r, dmg, stunSec, seen, freezeOwnerKey) {
     for (const zb of Zombies.pool) {
-      if (!zb.on || zb.state === 'dead' || zb.state === 'emerge' || zb.boss) continue;
-      const dx = P.x - zb.x, dz = P.z - zb.z, d2 = dx * dx + dz * dz;
-      if (d2 > r2v || d2 < 0.01) continue;
-      const d = Math.sqrt(d2), k = Math.min(1, dt * CFG.ultPullSpeed / d);
-      zb.x += dx * k; zb.z += dz * k;
+      if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
+      if (seen && seen.has(zb)) continue;
+      const dx = zb.x - x, dz = zb.z - z; if (dx * dx + dz * dz > r * r) continue;
+      if (seen) seen.add(zb);
+      Game.onBulletHit(zb, dmg, zb.x, zb.y + zb.height * 0.6, zb.z, false, 0, 0, null);
+      if (stunSec) zb.stunT = Math.max(zb.stunT, stunSec);
+      if (freezeOwnerKey) zb.foxFrozenBy = freezeOwnerKey;
     }
-    this.aoeKill(P.x, P.z, CFG.ultKillRange, {});
-    if (P._ultSword) {
-      const dir = P.eyeDir(this._sv);
-      P._ultSword.position.set(P.x + dir.x * 0.7, P.eyeY() - 0.25, P.z + dir.z * 0.7);
-      P._ultSword.rotation.y = P.yaw; P._ultSword.rotation.z = Math.sin(Game.time * 10) * 0.35;
-    }
-    if (P._ultPrison) { P._ultPrison.position.set(P.x, 1.1, P.z); P._ultPrison.rotation.y += dt * 3; P._ultPrison.rotation.z += dt * 1.6; }
-  },
-  _makeSword(P) {
-    if (P._ultSword) return;
-    const geo = new THREE.BoxGeometry(0.1, 0.1, 1.5);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x2fd0ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
-    P._ultSword = new THREE.Mesh(geo, mat); R.scene.add(P._ultSword);
-  },
-  _makePrison(P) {
-    if (P._ultPrison) return;
-    const geo = new THREE.TorusGeometry(1.6, 0.05, 8, 24);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x9b59b6, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
-    P._ultPrison = new THREE.Mesh(geo, mat); P._ultPrison.rotation.x = Math.PI / 2; R.scene.add(P._ultPrison);
   },
 
-  /* ---------------- Green Ranger: titan ----------------
-     Grows 5x, instakills on contact, takes no damage for the duration. The shockwave stun fires
-     once at activation (20ft ~= 6.1m), not every frame — the contact instakill IS every frame,
-     scaled to the same 5x collision radius. */
+  /* ---------------- Cloud: buster sword combo ----------------
+     Forces third-person for the move's duration (see Player.tryUltimate's camera swap below) so
+     there's no first-person sword to fake — FIRE becomes a close-range swing instead of his gun
+     (see Player.ultMeleeAttack/swordSwing). Full immunity throughout; his whole job here is to
+     stand in the middle of the horde and tank it. */
+  startCloud(P) {
+    P.ultImmune = true;
+    P.ultPreCamMode = Game.camMode === 'fp' ? 'fp' : null;
+    if (P.ultPreCamMode) { Game.camMode = 'tp'; HUD.refreshOptions(); }
+    Particles.sparks(P.x, 1.2, P.z, 30); Audio.powerup();
+    HUD.toast('BUSTER SWORD!', 1.8);
+  },
+  tickCloud(P, dt) { /* the sword itself is a hand-attached mesh (Avatars.showSword) that just
+    follows the body's own animation — nothing extra to update here between swings */ },
+  swordSwing(P) {
+    P.ultAtkCooldown = CFG.ultSwordCooldown;
+    const dmg = this.rifleDmg(), fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+    let hits = 0;
+    for (const zb of Zombies.pool) {
+      if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
+      const dx = zb.x - P.x, dz = zb.z - P.z, d2 = dx * dx + dz * dz;
+      if (d2 > CFG.ultSwordRange * CFG.ultSwordRange) continue;
+      const d = Math.sqrt(d2) || 0.0001;
+      if ((dx * fx + dz * fz) / d < 0.3) continue; // ~145° frontal arc — a sweeping combo, not a pinprick
+      Game.onBulletHit(zb, dmg, zb.x, zb.y + zb.height * 0.6, zb.z, false, dx / d, dz / d, null);
+      hits++;
+    }
+    Audio.powerup();
+    Particles.sparks(P.x + fx * 1.4, 1.3, P.z + fz * 1.4, hits ? 20 : 8);
+    Game.shake = Math.max(Game.shake, hits ? 1.4 : 0.5);
+    FX.hit(hits > 0);
+  },
+
+  /* ---------------- Green Ranger: gamma titan ----------------
+     Grows 4x and takes no damage for the duration. FIRE is now a gamma leap — an instant forward
+     dash that deals rifle-equal damage and stuns everything it passes through, plus a 10ft
+     shockwave at the landing spot — rather than the old passive contact-instakill. */
   startRanger(P) {
     P.ultImmune = true;
     if (P.body) P.body.g.scale.setScalar(CFG.ultTitanScale);
-    this.aoeKill(P.x, P.z, CFG.ultTitanStunFt * 0.3048, { stunSec: CFG.ultTitanStunSec });
     Particles.sparks(P.x, 1.2, P.z, 40); Game.shake = Math.max(Game.shake, 3); Audio.powerup();
-    HUD.toast('TITAN MODE!', 1.8);
+    HUD.toast('GAMMA TITAN!', 1.8);
   },
-  tickRanger(P, dt) {
-    this.aoeKill(P.x, P.z, CFG.playerR * CFG.ultTitanScale, {});
-  },
-
-  /* ---------------- Chopper: powder keg toss ----------------
-     Thrown, not instant — arcs like a grenade and detonates on landing (or after 4s in the air,
-     whichever first). No immunity while it's in flight; only the standard post-move damage
-     reduction applies once it's down. */
-  _kegGeo: null, _kegMat: null,
-  startChopper(P) {
-    if (this.kegs.length >= CFG.ultKegMax) { HUD.toast('TOO MANY KEGS ALREADY OUT', 1.8); return; }
-    if (!this._kegGeo) { this._kegGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.5, 10); this._kegMat = new THREE.MeshLambertMaterial({ color: 0x8a5a2a }); }
-    const dir = P.eyeDir(this._sv);
-    const g = new THREE.Mesh(this._kegGeo, this._kegMat); R.scene.add(g);
-    this.kegs.push({ x: P.x, y: P.eyeY(), z: P.z, vx: dir.x * CFG.ultKegSpeed, vy: Math.max(2, dir.y * CFG.ultKegSpeed + 4), vz: dir.z * CFG.ultKegSpeed, t: 0, g: g });
-    HUD.toast('POWDER KEG!', 1.6); Audio.powerup();
-  },
-  updateKegs(dt) {
-    for (let i = this.kegs.length - 1; i >= 0; i--) {
-      const k = this.kegs[i];
-      k.t += dt; k.vy -= CFG.ultKegGravity * dt;
-      k.x += k.vx * dt; k.y += k.vy * dt; k.z += k.vz * dt;
-      k.g.position.set(k.x, k.y, k.z); k.g.rotation.x += dt * 6;
-      if (k.y <= 0 || k.t > 4) {
-        this.aoeKill(k.x, k.z, CFG.ultKegInstaR, { bossDamage: CFG.ultKegBossDmg, stunSec: CFG.ultKegStunSec });
-        Explosions.spawn(k.x, k.z); Audio.explosion(k.x, k.z);
-        R.scene.remove(k.g); this.kegs.splice(i, 1);
-      }
+  tickRanger(P, dt) { /* growth (eyeY/body scale) and the standard immune/reduced-damage handling
+    in Player.hurt are the only passive effects — all the offense is fire-triggered (gammaLeap) */ },
+  gammaLeap(P) {
+    P.ultAtkCooldown = CFG.ultLeapCooldown;
+    const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+    let dist = CFG.ultLeapRange;
+    const t = World.segHit(P.x, 1, P.z, P.x + fx * dist, 1, P.z + fz * dist);
+    if (t >= 0) dist = Math.max(1, dist * t * 0.9);
+    const dmg = this.rifleDmg(), seen = new Set(), steps = 6;
+    for (let i = 1; i <= steps; i++) {
+      const k = i / steps;
+      this._dmgStunAt(P.x + fx * dist * k, P.z + fz * dist * k, CFG.ultLeapHitR, dmg, CFG.ultLeapStunSec, seen);
     }
+    P.x += fx * dist; P.z += fz * dist;
+    World.collide(P, CFG.playerR * CFG.ultTitanScale);
+    this._dmgStunAt(P.x, P.z, CFG.ultLeapLandFt * 0.3048, dmg, CFG.ultLeapStunSec, seen);
+    Explosions.spawn(P.x, P.z); Audio.explosion(P.x, P.z);
+    Game.shake = Math.max(Game.shake, 2.4);
   },
-  resetKegs() { for (const k of this.kegs) R.scene.remove(k.g); this.kegs.length = 0; },
 
-  /* ---------------- Dudu: clone swarm ----------------
-     Orbiting decoys with no HP of their own — nothing upstream ever targets or damages them (the
-     zombie AI only ever picks Player/peers/bots as a target, see Net.targetFor/Bots.targetFor),
-     so a clone can never cost Dudu's own health. They just carry an instakill hitbox while they
-     orbit, then despawn when the move ends (cleanup() removes them) — no immunity for Dudu
-     himself, only the standard post-move reduction. */
-  startDudu(P) {
-    const n = CFG.ultDuduCount, clones = [];
+  /* ---------------- Chopper & Dudu: clone swarm ----------------
+     8 clones orbit, breaking off toward anything that wanders within ultCloneSeekFt and killing
+     it on contact — same instakill hitbox the old Dudu-only orbit had, bosses untouched by it
+     same as before. New: the instant the move ends, every clone detonates (instakill in
+     ultCloneExplodeR, bosses take ultCloneBossDmg instead) rather than just despawning quietly.
+     Only 1/4 damage taken during the 10s itself (ultReduced) — full immunity only kicks in for
+     the 3s after, same as the other three moves. */
+  startCloneSwarm(P) {
+    P.ultReduced = true;
+    const n = CFG.ultCloneCount, clones = [];
     for (let i = 0; i < n; i++) {
       const geo = new THREE.SphereGeometry(0.34, 10, 8);
       const mat = new THREE.MeshBasicMaterial({ color: 0x5dffe0, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
       const g = new THREE.Mesh(geo, mat); R.scene.add(g);
-      clones.push({ g: g, ang: (i / n) * TAU });
+      clones.push({ g: g, ang: (i / n) * TAU, x: P.x, z: P.z, target: null });
     }
     P._ultClones = clones;
     Particles.sparks(P.x, 1.2, P.z, 30); Audio.powerup();
     HUD.toast('CLONE SWARM!', 1.8);
   },
-  tickDudu(P, dt) {
+  tickCloneSwarm(P, dt) {
     if (!P._ultClones) return;
+    const seekR = CFG.ultCloneSeekFt * 0.3048, seekR2 = seekR * seekR;
     for (const c of P._ultClones) {
-      c.ang += dt * CFG.ultDuduOrbitSpeed;
-      const cx = P.x + Math.cos(c.ang) * CFG.ultDuduOrbitR, cz = P.z + Math.sin(c.ang) * CFG.ultDuduOrbitR;
-      c.g.position.set(cx, 1.1, cz);
-      this.aoeKill(cx, cz, CFG.ultDuduHitR, {});
+      c.ang += dt * 1.6;
+      const homeX = P.x + Math.cos(c.ang) * CFG.ultCloneOrbitR, homeZ = P.z + Math.sin(c.ang) * CFG.ultCloneOrbitR;
+      if (c.target && (!c.target.on || c.target.state === 'dead')) c.target = null;
+      if (c.target) { const dx = c.target.x - c.x, dz = c.target.z - c.z; if (dx * dx + dz * dz > seekR2 * 2.25) c.target = null; }
+      if (!c.target) {
+        let best = null, bd = seekR2;
+        for (const zb of Zombies.pool) {
+          if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
+          const dx = zb.x - c.x, dz = zb.z - c.z, d2 = dx * dx + dz * dz;
+          if (d2 < bd) { bd = d2; best = zb; }
+        }
+        c.target = best;
+      }
+      const tx = c.target ? c.target.x : homeX, tz = c.target ? c.target.z : homeZ;
+      const dx = tx - c.x, dz = tz - c.z, d = Math.sqrt(dx * dx + dz * dz);
+      if (d > 0.05) { const k = Math.min(1, dt * (c.target ? CFG.ultCloneSeekSpeed : 4) / d); c.x += dx * k; c.z += dz * k; }
+      c.g.position.set(c.x, 1.1, c.z); c.g.rotation.y += dt * 4;
+      if (c.target) this.aoeKill(c.x, c.z, CFG.ultCloneHitR, {});
+    }
+  },
+  detonateClones(P) {
+    if (!P._ultClones) return;
+    for (const c of P._ultClones) { this.aoeKill(c.x, c.z, CFG.ultCloneExplodeR, { bossDamage: CFG.ultCloneBossDmg }); Explosions.spawn(c.x, c.z); }
+    Audio.explosion(P.x, P.z);
+  },
+
+  /* ---------------- Nine-Tail Fox: astral veil ----------------
+     Invisible to the horde's targeting (see Net.targetFor/Bots.targetFor) and fully immune for
+     the duration. 6 flame familiars orbit her; each keeps its own 1.5s timer, darts to the
+     nearest enemy in range when it fires, freezes (stuns) it on contact, and immediately
+     reappears at her side. Kills on anything she's frozen also credit her kill count/score (see
+     Game.onZombieKilled), on top of whoever actually finished it off. */
+  startFox(P) {
+    P.ultImmune = true; P.ultInvisible = true;
+    const n = CFG.ultFlameCount, flames = [];
+    for (let i = 0; i < n; i++) {
+      const geo = new THREE.SphereGeometry(0.22, 8, 6);
+      const mat = new THREE.MeshBasicMaterial({ color: 0xff6a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+      const g = new THREE.Mesh(geo, mat); R.scene.add(g);
+      flames.push({ g: g, ang: (i / n) * TAU, x: P.x, z: P.z, cd: (i / n) * CFG.ultFlameInterval, dashT: 0, tx: 0, tz: 0 });
+    }
+    P._ultFlames = flames;
+    Particles.sparks(P.x, 1.4, P.z, 30); Audio.powerup();
+    HUD.toast('NINE-TAIL VEIL!', 1.8);
+  },
+  tickFox(P, dt) {
+    if (!P._ultFlames) return;
+    const dmg = this.rifleDmg(), ownerKey = Net.id;
+    for (const f of P._ultFlames) {
+      f.ang += dt * 1.2;
+      const homeX = P.x + Math.cos(f.ang) * CFG.ultFlameOrbitR, homeZ = P.z + Math.sin(f.ang) * CFG.ultFlameOrbitR;
+      if (f.dashT > 0) {
+        f.dashT -= dt;
+        const dx = f.tx - f.x, dz = f.tz - f.z, d = Math.sqrt(dx * dx + dz * dz);
+        if (d < 0.4 || f.dashT <= 0) {
+          this._dmgStunAt(f.tx, f.tz, 1.1, dmg, CFG.ultFlameFreezeSec, null, ownerKey);
+          f.x = homeX; f.z = homeZ; f.dashT = 0;
+        } else { const k = Math.min(1, dt * 18 / d); f.x += dx * k; f.z += dz * k; }
+      } else {
+        f.x = homeX; f.z = homeZ;
+        f.cd -= dt;
+        if (f.cd <= 0) {
+          let best = null, bd = CFG.ultFlameRange * CFG.ultFlameRange;
+          for (const zb of Zombies.pool) {
+            if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
+            const dx = zb.x - f.x, dz = zb.z - f.z, d2 = dx * dx + dz * dz;
+            if (d2 < bd) { bd = d2; best = zb; }
+          }
+          if (best) { f.tx = best.x; f.tz = best.z; f.dashT = 0.6; }
+          f.cd = CFG.ultFlameInterval;
+        }
+      }
+      f.g.position.set(f.x, 1.3, f.z);
     }
   }
 };
@@ -4644,7 +4764,7 @@ const Bots = {
 
   /* ---------------- who the horde goes for ---------------- */
   targetFor(zb) {
-    let best = Player.alive ? Player : null;
+    let best = (Player.alive && !Player.ultInvisible) ? Player : null;
     let bd = best ? (Player.x - zb.x) * (Player.x - zb.x) + (Player.z - zb.z) * (Player.z - zb.z) : Infinity;
     for (const b of this.list) {
       if (b.down || b.out) continue;
@@ -5190,7 +5310,7 @@ const Game = {
     // pull the haze in to match — see fogForR: without this the wave-1 pen sits inside fog tuned
     // for the full-size map and everything past the fence is already in plain view
     applyDrawDistance(CFG.arenaR);
-    Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); Particles.clear(); Decals.clear(); Ultimates.resetKegs();
+    Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); Particles.clear(); Decals.clear();
     for (const e of Explosions.pool) { e.on = false; e.fire.visible = e.ring.visible = false; } for (const l of Explosions.lights) l.intensity = 0;
     Player.reset(char); Input.reset();
     this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0;
@@ -5404,6 +5524,13 @@ const Game = {
     const killerKey = by ? by.id : Net.id;
     this.awardScore(killerKey, pts);
     for (const k in z.dmgBy) { if (k !== killerKey) this.awardScore(k, Math.round(pts * CFG.scoreAssistMul)); }
+    // Nine-Tail Fox: anything she froze still credits her kill count/score when it dies, even if
+    // someone (or something) else actually finished it off (see Ultimates.tickFox)
+    if (z.foxFrozenBy && z.foxFrozenBy !== killerKey) {
+      if (z.foxFrozenBy === Net.id) Player.stats.kills++;
+      else { const fp = Net.peers[z.foxFrozenBy]; if (fp) fp.kills++; }
+      this.awardScore(z.foxFrozenBy, pts);
+    }
     if (z.boss) {
       // a boss is worth a breather as well as the points, so it always leaves a medkit behind
       HUD.banner('TANK DOWN', 'THE SAND TAKES IT BACK', false);
@@ -5616,7 +5743,6 @@ const Game = {
     if (Net.isHost()) { const fp = Net.flowPoint(this._fp); World.updateFlow(fp.x, fp.z, dt); }
     else World.updateFlow(P.x, P.z, dt);
     P.update(dt);
-    Ultimates.updateKegs(dt);
     Bots.update(dt);          // after the player, so a bot's pickup text wins the downed line
     Zombies.update(dt); Bullets.update(dt); Grenades.update(dt); ChainFX.update(dt); Pickups.update(dt); Explosions.update(dt); Particles.update(dt); Floaties.update(dt);
     Dust.update(dt, P.x, P.z);
@@ -6013,7 +6139,7 @@ const Net = {
     else if (m.k === 'startAck') this.onStartAck(id, !!m.ok);
     // a peer's ultimate — resolved authoritatively here rather than through the normal (400-
     // capped) hit report; see the note above Ultimates.aoeKill for why that path won't do
-    else if (m.k === 'ultKill') Ultimates.applyAoeKillAuthoritative(m.x, m.z, m.r, { bossDamage: m.bossDmg || 0, stunSec: m.stun || 0 });
+    else if (m.k === 'ultKill') Ultimates.applyAoeKillAuthoritative(m.x, m.z, m.r, { bossDamage: m.bossDmg || 0 });
   },
   mkPeer(id, name, ch) {
     const self = this;
@@ -6029,6 +6155,9 @@ const Net = {
       // this peer's own insta-kill/double-points window (see Net.peerCollect) — never shared with
       // anyone else on the squad, ticked down host-side alongside Player's own copy (Game.update)
       insta: 0, dbl: 0,
+      // mirrors this peer's own Player.ultInvisible (see Net.sendSnapshot/applySnapshot) — lets
+      // the host's Net.targetFor skip them while they're using Nine-Tail Fox's move
+      ultInvisible: false,
       tx: 0, tz: 0, tRy: 0, vis: null, walk: 0, flashT: 0, last: Net.clock,
       get alive() { return this.st === 0; },
       hurt: function (amount, fx, fz) { self.damagePeer(this, amount); }
@@ -6217,13 +6346,14 @@ const Net = {
   },
 
   /* ---------------- per-player state exchange ---------------- */
-  setPeer(peer, x, z, ry, hp, maxHp, st, w, kills, fire, head, afk, score) {
+  setPeer(peer, x, z, ry, hp, maxHp, st, w, kills, fire, head, afk, score, inv) {
     if (peer.vis === null) { peer.x = x; peer.z = z; peer.ry = ry; }
     peer.tx = x; peer.tz = z; peer.tRy = ry;
     peer.hp = hp; peer.maxHp = maxHp || 100; peer.st = st | 0; peer.w = w | 0;
     if (kills != null) peer.kills = kills | 0;
     if (head != null) peer.head = head | 0;
     if (score != null) peer.score = score | 0;
+    if (inv != null) peer.ultInvisible = !!inv;
     if (fire) peer.flashT = 0.06;
     if (afk != null) {
       const was = peer.afk;
@@ -6390,17 +6520,17 @@ const Net = {
     for (let i = 0; i < Pickups.pool.length; i++) { const p = Pickups.pool[i]; if (p.on) us.push([i, PU_LIST.indexOf(p.type), r2(p.x), r2(p.z)]); }
     const pl = [[this.id, r2(Player.x), r2(Player.z), r2(Player.yaw), Math.round(Player.hp), Player.maxHp,
       Player.alive ? 0 : (Player.downed ? 1 : 2), Player.cur, Player.stats.kills, Player.vm.flashT > 0 ? 1 : 0, Player.stats.head,
-      Game.coopMenu ? 1 : 0, Math.round(Player.stats.score)]];
+      Game.coopMenu ? 1 : 0, Math.round(Player.stats.score), Player.ultInvisible ? 1 : 0]];
     for (const k in this.peers) {
       const p = this.peers[k];
-      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head, p.afk, Math.round(p.score || 0)]);
+      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head, p.afk, Math.round(p.score || 0), p.ultInvisible ? 1 : 0]);
     }
     // filler bots reported in the same row shape as a real peer (see roster() above) — weapon
     // index is always 0 (pistol) since bots don't track one of their own; everything else is
     // their real live state, so a downed/revived bot reads correctly on every other machine too.
     for (const b of Bots.list) {
       if (!b.squadActive) continue;
-      pl.push([b.id, r2(b.x), r2(b.z), r2(b.ry), Math.round(b.hp), b.maxHp, b.out ? 2 : (b.down ? 1 : 0), 0, b.kills, 0, b.head, 0, Math.round(b.score || 0)]);
+      pl.push([b.id, r2(b.x), r2(b.z), r2(b.ry), Math.round(b.hp), b.maxHp, b.out ? 2 : (b.down ? 1 : 0), 0, b.kills, 0, b.head, 0, Math.round(b.score || 0), 0]);
     }
     this.send({
       k: 's', wv: Game.wave, wa: Game.waveActive ? 1 : 0, ts: Game.toSpawn, pts: Math.round(Game.points),
@@ -6468,7 +6598,7 @@ const Net = {
       // catch a dropped 'roster' packet) but this is the fallback of the fallback: better a
       // placeholder body than silently dropping their every position update on the floor
       if (!peer) { peer = this.mkPeer(id, 'SURVIVOR', 'cloud'); this.peers[id] = peer; }
-      this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null, e.length > 12 ? e[12] : null);
+      this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null, e.length > 12 ? e[12] : null, e.length > 13 ? e[13] : null);
     }
     for (const k in this.peers) if (!keep[k]) { this.killAvatar(this.peers[k]); delete this.peers[k]; }
   },
@@ -6497,10 +6627,10 @@ const Net = {
   // to walk into them.
   targetFor(zb) {
     if (!this.isHost()) return Player;
-    let best = (Player.alive && !Game.coopMenu) ? Player : null;
+    let best = (Player.alive && !Game.coopMenu && !Player.ultInvisible) ? Player : null;
     let bd = best ? (Player.x - zb.x) * (Player.x - zb.x) + (Player.z - zb.z) * (Player.z - zb.z) : Infinity;
     for (const k in this.peers) {
-      const p = this.peers[k]; if (p.st !== 0 || p.afk) continue;
+      const p = this.peers[k]; if (p.st !== 0 || p.afk || p.ultInvisible) continue;
       const d = (p.x - zb.x) * (p.x - zb.x) + (p.z - zb.z) * (p.z - zb.z);
       if (d < bd) { bd = d; best = p; }
     }
