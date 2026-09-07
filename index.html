@@ -694,7 +694,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.19.0';
+const GAME_VERSION = 'v1.20.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -763,9 +763,9 @@ const CFG = {
 // Arena/enemy-density growth curves — pure functions of wave number, so host and coop clients
 // always agree without any network message (see Net.applySnapshot). Both linear in AREA (not
 // radius), both sharing the same wave timing (waveT), but with different endpoints: the arena
-// grows from arenaR0 to arenaRMax (a big ~17x-area jump now that arenaR0 is 29), while enemy
-// density intentionally grows by a much smaller ~4.28x — pinned to the historical R=58 baseline —
-// so the wave-30 zombie count lands near the requested ~300 instead of exploding with the map.
+// grows from arenaR0 (now 14.5) to arenaRMax (a huge ~68x-area jump), while enemy density
+// intentionally grows by a much smaller ~4.28x — pinned to the historical R=58 baseline — so the
+// wave-30 zombie count lands near the requested ~300 instead of exploding with the map.
 function waveT(w) { return clamp((w - 1) / (CFG.arenaGrowWaves - 1), 0, 1); }
 function areaRatioForWave(w) {
   const maxRatio = (CFG.arenaRMax / CFG.arenaR0) * (CFG.arenaRMax / CFG.arenaR0);
@@ -775,6 +775,29 @@ function arenaRForWave(w) { return CFG.arenaR0 * Math.sqrt(areaRatioForWave(w));
 function enemyDensityRatioForWave(w) {
   const maxRatio = (CFG.arenaRMax / 58) * (CFG.arenaRMax / 58);
   return lerp(1, maxRatio, waveT(w));
+}
+// Fog near/far scale with the CURRENT unlocked radius, not just the endgame one: the world is
+// fully built out to arenaRMax the moment a match starts (see Game.start), so without this the
+// wave-1 pen at arenaR0 would sit inside a haze tuned for a map 8x its radius — every wall, crate
+// and barrel out past the fence would already be in plain view, and the tiny starting area would
+// never actually read as small. Lerped by CURRENT arenaR (not by wave) so it also tracks
+// mid-transition if arenaR is ever nudged by something other than a whole wave. Endpoints: a tight
+// pen at arenaR0 (t=0) fading to the original tuned (92, 380) at arenaRMax (t=1, unchanged).
+function fogForR(r) {
+  const t = clamp((r - CFG.arenaR0) / (CFG.arenaRMax - CFG.arenaR0), 0, 1);
+  // wave-1 endpoint sits just past the fence (arenaR0=14.5 -> near 18, far 42, an 18-24 unit
+  // fade) so the rest of the already-fully-built map is actually hidden past it, not just
+  // tinted — a wide fade barely reads as haze against this warm tan palette. Fades out to the
+  // original tuned (92, 380) by the time the arena is fully grown.
+  return { near: lerp(18, 92, t), far: lerp(42, 380, t) };
+}
+// NOTE: the camera's far plane stays fixed (920, see R.init) rather than tightening with this —
+// the sky dome sits at a fixed radius-380 sphere centered on the camera (see R.init), so clipping
+// the far plane down anywhere near arenaR0's fog distance would cut the sky itself away and leave
+// the raw clear-colour showing through. Fog is the only thing allowed to hide distance here.
+function applyDrawDistance(r) {
+  const fg = fogForR(r);
+  R.scene.fog.near = fg.near; R.scene.fog.far = fg.far;
 }
 
 /* ------------------------------------------------------------------ characters */
@@ -1746,10 +1769,11 @@ const R = {
     r.setPixelRatio(this.pr);
 
     this.scene = new THREE.Scene();
-    // fog start/end and the camera far plane scale with the arena's radius (2x, matching the 4x
-    // area bump) so the haze creeps in at the same relative distance and nothing pops in/out at
-    // the new, farther rim
-    this.scene.fog = new THREE.Fog(0xd2a377, 92, 380);
+    // near/far are placeholders — Game.start()/growArenaToWave() rewrite them via
+    // applyDrawDistance() to match the currently-unlocked arena radius the moment a match starts.
+    // Camera far stays fixed (920): see the note above applyDrawDistance for why.
+    const fg0 = fogForR(CFG.arenaR);
+    this.scene.fog = new THREE.Fog(0xd2a377, fg0.near, fg0.far);
     this.camera = new THREE.PerspectiveCamera(75, 1, 0.08, 920); this.camera.rotation.order = 'YXZ';
     this.gunScene = new THREE.Scene();
     this.gunCam = new THREE.PerspectiveCamera(56, 1, 0.01, 12);
@@ -4669,6 +4693,9 @@ const Game = {
     World.generate(this.seed);
     CFG.arenaR = CFG.arenaR0;
     World.layoutBoundary(CFG.arenaR); World.rebuildGrid();
+    // pull the haze in to match — see fogForR: without this the wave-1 pen sits inside fog tuned
+    // for the full-size map and everything past the fence is already in plain view
+    applyDrawDistance(CFG.arenaR);
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); Particles.clear(); Decals.clear();
     for (const e of Explosions.pool) { e.on = false; e.fire.visible = e.ring.visible = false; } for (const l of Explosions.lights) l.intensity = 0;
     Player.reset(char); Input.reset();
@@ -4734,7 +4761,10 @@ const Game = {
   // (host) and Net.applySnapshot() (client) with zero network sync needed.
   growArenaToWave(w) {
     const r = arenaRForWave(w);
-    if (r > CFG.arenaR + 0.01) { CFG.arenaR = r; World.rebuildGrid(); World.layoutBoundary(r); }
+    if (r > CFG.arenaR + 0.01) {
+      CFG.arenaR = r; World.rebuildGrid(); World.layoutBoundary(r);
+      applyDrawDistance(r);
+    }
   },
   beginWave() {
     this.wave++; const w = this.wave;
