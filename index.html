@@ -782,7 +782,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.47.0';
+const GAME_VERSION = 'v1.48.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -864,7 +864,7 @@ const CFG = {
   // its own — see Ultimates.tickWhirlwind.
   ultWhirlwindPulse: 0.22, ultWhirlwindKnockback: 3.2,
   ultWhirlwindStun: 0.3, ultWhirlwindSpinSpeed: 10,
-  ultVortexPullWindow: 25, ultVortexPullSpeed: 3.5,
+  ultVortexPullWindow: 25, ultVortexPullSpeed: 9,
   // the giant energy weapon (blue sword for Cloud, green boomerang for Ranger) is what actually
   // lands hits every ultWhirlwindPulse seconds, not an aura centered on the caster — checked at
   // the weapon's own orbit position (ultWhirlwindOrbitR from the caster) with a wide reach of its
