@@ -26,10 +26,14 @@
   --danger:#ff3b3b;
   --hud-font:'Impact','Avenir Next Condensed','Roboto Condensed','Arial Narrow','Helvetica Neue',Arial,sans-serif;
   --body-font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
-  --sat:env(safe-area-inset-top,0px);
-  --sab:env(safe-area-inset-bottom,0px);
-  --sal:env(safe-area-inset-left,0px);
-  --sar:env(safe-area-inset-right,0px);
+  /* capped at a value comfortably above any real device's notch/Dynamic-Island/home-indicator
+     inset (largest known today is ~59px) — a webview or browser that misreports env() with an
+     inflated value can otherwise push every right-docked control (FIRE, RELOAD, SPRINT, AUTO,
+     VIEW...) straight off the edge of a narrow landscape screen like an iPhone's */
+  --sat:min(env(safe-area-inset-top,0px),60px);
+  --sab:min(env(safe-area-inset-bottom,0px),60px);
+  --sal:min(env(safe-area-inset-left,0px),60px);
+  --sar:min(env(safe-area-inset-right,0px),60px);
 }
 body.char-female{
   --accent:#21e6c1;
@@ -64,6 +68,8 @@ button{font-family:inherit;color:inherit;}
 #hud.show{display:block;}
 .hudtl{position:absolute;left:calc(12px + var(--sal));top:calc(10px + var(--sat));}
 .hudtc{position:absolute;left:50%;top:calc(8px + var(--sat));transform:translateX(-50%);text-align:center;}
+.hudtcRow{display:flex;align-items:center;justify-content:center;gap:10px;}
+.hudtcText{text-align:center;min-width:0;}
 .hudtr{position:absolute;right:calc(112px + var(--sar));top:calc(10px + var(--sat));text-align:right;}
 .hudbr{position:absolute;right:calc(14px + var(--sar));bottom:calc(202px + var(--sab));text-align:right;}
 .lbl{font-size:11px;letter-spacing:.18em;color:var(--accent2);text-shadow:0 0 8px var(--glow),0 1px 3px #000;opacity:.95;}
@@ -300,6 +306,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnAuto{right:calc(10px + var(--sar));top:calc(64px + var(--sat));}
   #btnCam{right:calc(10px + var(--sar));top:calc(118px + var(--sat));}
   .hudtr{right:calc(68px + var(--sar));}
+  .hudtcRow{gap:6px;} #radar{width:56px;height:56px;}
   #hpBar{width:34vw;} #hpNum{font-size:18px;} #points{font-size:22px;} #waveNum{font-size:22px;} #zLeft{font-size:10px;} #matchClock{font-size:11px;margin-top:3px;}
   #subtitle{bottom:calc(272px + var(--sab));max-width:86vw;font-size:13px;}
   #toast{top:calc(120px + var(--sat));}
@@ -383,8 +390,11 @@ h1.title em{font-style:normal;color:var(--accent2);}
 #netPill.show{display:inline-block;}
 /* enemy radar — rotates WITH the player, not a fixed compass: "up" is always wherever you're
    currently facing, so a dot near the top means "ahead of you", left/right mean exactly that
-   relative to your own view. See HUD.renderRadar for the forward/right projection math. */
-#radar{position:absolute;right:calc(14px + var(--sar));top:calc(112px + var(--sat));width:84px;height:84px;
+   relative to your own view. See HUD.renderRadar for the forward/right projection math.
+   Lives inline in .hudtcRow (next to the wave/zombies-left text) rather than pinned to a fixed
+   screen corner, so flexbox — not manual offsets — is what keeps it from ever overlapping the
+   title text even when that text gets long ("NEXT WAVE IN 12s" vs "GET READY"). */
+#radar{position:relative;flex:none;width:84px;height:84px;
   border-radius:50%;background:radial-gradient(circle,rgba(20,10,5,.5),rgba(8,4,2,.78));
   border:1px solid rgba(255,255,255,.28);box-shadow:0 0 10px rgba(0,0,0,.55),inset 0 0 14px rgba(0,0,0,.65);
   pointer-events:none;overflow:hidden;}
@@ -395,7 +405,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   background:#ff3b3b;box-shadow:0 0 5px rgba(255,59,59,.95);}
 .rdot.boss{width:11px;height:11px;margin:-5.5px 0 0 -5.5px;background:#ff8a00;box-shadow:0 0 7px #ff8a00;}
 .rdot.edge{opacity:.7;}
-@media (max-height:440px){ #radar{width:64px;height:64px;top:calc(100px + var(--sat));} }
+@media (max-height:440px){ #radar{width:64px;height:64px;} }
 #netPill.bad{color:var(--danger);border-color:rgba(255,59,59,.4);}
 
 /* downed / revive */
@@ -494,8 +504,13 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div id="matchClock">0:00</div>
     </div>
     <div class="hudtc">
-      <div id="waveNum">WAVE 1</div>
-      <div id="zLeft">GET READY</div>
+      <div class="hudtcRow">
+        <div class="hudtcText">
+          <div id="waveNum">WAVE 1</div>
+          <div id="zLeft">GET READY</div>
+        </div>
+        <div id="radar"><div id="radarSelf"></div></div>
+      </div>
       <div id="powerups">
         <div class="pill insta" id="pillInsta">INSTA-KILL 15s</div>
         <div class="pill dbl" id="pillDbl">2X POINTS 30s</div>
@@ -514,7 +529,6 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div id="netPill"></div>
     </div>
     <button id="btnPause" aria-label="Pause">II</button>
-    <div id="radar"><div id="radarSelf"></div></div>
     <div class="hudbr">
       <div id="reloadHint"></div>
       <div id="ammoMag">12</div>
@@ -553,7 +567,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt on" id="optSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="optVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="optSound">SOUND: <span>ON</span></div>
-        <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="0.4" max="2.2" step="0.1" value="1"><span id="sensVal">1.0</span></div>
+        <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="0.4" max="5" step="0.1" value="1"><span id="sensVal">1.0</span></div>
       </div>
       <div class="row">
         <button class="bigbtn" id="btnStart">ENTER THE ARENA</button>
@@ -584,7 +598,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt on" id="pOptSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="pOptVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="pOptSound">SOUND: <span>ON</span></div>
-        <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="0.4" max="2.2" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
+        <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="0.4" max="5" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
       </div>
       <div class="row">
         <button class="bigbtn" id="btnResume">RESUME</button>
@@ -738,7 +752,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.32.0';
+const GAME_VERSION = 'v1.33.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -823,11 +837,12 @@ const CFG = {
     veryfar: { dist: 8.5, side: 1.8, up: 1.4 }
   },
   tpCloseAlpha: 0.38,
-  // near-overhead, not a true 90° top-down — the camera still pitches slightly short of straight
-  // down and turns with the player's yaw, so there's still a "forward" to read instead of a flat
-  // radar view. height/back are world units above/behind the player; pitch overrides the normal
-  // look-with-your-mouse camera rotation entirely while this tier is active.
-  topDown: { height: 34, back: 7, pitch: -1.45 },
+  // genuinely near-vertical now (pitch is a hair off straight down, back is just enough offset to
+  // keep the player's own model from filling the lens) — it still turns with the player's yaw, so
+  // there's a "forward" to read, but it no longer reads as a tilted chase cam. height/back are
+  // world units above/behind the player; pitch overrides the normal look-with-your-mouse camera
+  // rotation entirely while this tier is active.
+  topDown: { height: 30, back: 2, pitch: -1.53 },
   // hunter: the coil, the leap, and how long it can ride you. pinMax is the safety valve — a solo
   // player with nobody to rescue them is never held down until they die.
   hunterMin: 5.5, hunterRange: 15, hunterWindup: 0.55, hunterCool: 9, pounceSpeed: 15.5, pounceUp: 5.2, pounceGrav: 14,
@@ -1795,7 +1810,19 @@ const Layout = {
     window.addEventListener('resize', function () { self.apply(); });
     window.addEventListener('orientationchange', function () { setTimeout(function () { self.apply(); }, 140); });
   },
-  load() { try { const raw = localStorage.getItem(this.KEY); this.pos = raw ? (JSON.parse(raw) || {}) : {}; } catch (e) { this.pos = {}; } },
+  // a bogus/out-of-range saved fraction (0..1 is the only legitimate range place() ever writes)
+  // would otherwise turn into an invalid "NaNpx"/negative left/top in applyOne(), which drops out
+  // of the CSS box model instead of falling back to the normal on-screen default position
+  load() {
+    try {
+      const raw = localStorage.getItem(this.KEY), parsed = raw ? JSON.parse(raw) : {};
+      this.pos = {};
+      for (const id of this.ids) {
+        const p = parsed && parsed[id];
+        if (p && Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1) this.pos[id] = p;
+      }
+    } catch (e) { this.pos = {}; }
+  },
   save() { try { localStorage.setItem(this.KEY, JSON.stringify(this.pos)); } catch (e) { } },
   place(id, cx, cy) {
     const el = this.els[id]; if (!el) return;
@@ -3076,8 +3103,12 @@ class Zombie {
     const odx = this.x - Player.x, odz = this.z - Player.z, odsq = odx * odx + odz * odz;
     this.outline.visible = odsq < 2025;
     // faded in past ~12m so it doesn't clutter a fight already in your face, but stays lit at any
-    // range beyond that — normal depth-tested, so cover still blocks it same as the body itself
+    // range beyond that — normal depth-tested, so cover still blocks it same as the body itself.
+    // The sprite's world-space size used to be fixed, so perspective still shrank it to a
+    // barely-there speck at real range; it now grows with distance so it holds a legible size on
+    // screen instead of just glowing at a size nobody can actually see.
     this.marker.visible = st !== 'dead' && odsq > 144;
+    if (this.marker.visible) { const s = clamp(0.5 + (Math.sqrt(odsq) - 12) * 0.028, 0.5, 2.4); this.marker.scale.set(s, s, 1); }
     g.position.set(this.x, this.y, this.z);
     this.shadow.position.set(this.x, 0.012, this.z);
     const a = this.animT, s = Math.sin(a), c = Math.cos(a);
@@ -4957,7 +4988,7 @@ const Director = {
 
 /* ------------------------------------------------------------------ game state, waves, economy, voice lines, main loop */
 const Game = {
-  state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0, insta: 0, dbl: 0,
+  state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0,
   noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0,
   timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
@@ -4970,6 +5001,10 @@ const Game = {
     try { const cd = localStorage.getItem('dnd_camdist'); if (this.CAM_TIERS.indexOf(cd) > 0) this.camDist = cd; } catch (e) { }
     try { const sq = localStorage.getItem('dnd_squad'); if (sq === '0' || sq === '1') this.squad = sq === '1'; } catch (e) { }
     try { const sc = localStorage.getItem('dnd_squadcount'); if (sc != null) this.squadCount = clamp(parseInt(sc, 10) || 0, 0, 3); } catch (e) { }
+    // auto-fire used to be the one option on this screen that didn't stick — every other toggle
+    // here was saved and reloaded except this one, so it silently reverted to OFF whenever iOS
+    // Safari reloaded the tab (backgrounding, low memory) even mid-session
+    try { const af = localStorage.getItem('dnd_autofire'); if (af === '0' || af === '1') this.autoFire = af === '1'; } catch (e) { }
     HUD.init(); HUD.refreshOptions();
     this.buildCharCards();
     const self = this;
@@ -4984,7 +5019,7 @@ const Game = {
     Input.on.swap = function () { if (self.state === 'playing') Player.swapWeapon(); };
     Input.on.ultimate = function () { if (self.state === 'playing') Player.tryUltimate(); };
     Input.on.select = function (i) { if (self.state === 'playing') Player.switchTo(i); };
-    Input.on.auto = function () { self.autoFire = !self.autoFire; HUD.refreshOptions(); HUD.toast('AUTO-FIRE ' + (self.autoFire ? 'ON' : 'OFF')); };
+    Input.on.auto = function () { self.setAutoFire(!self.autoFire); HUD.refreshOptions(); HUD.toast('AUTO-FIRE ' + (self.autoFire ? 'ON' : 'OFF')); };
     Input.on.sprint = function () { if (self.state === 'playing') Player.toggleSprint(); };
     Input.on.camera = function () { self.cycleCam(); };
     Input.on.pause = function () { if (Layout.editing) { Layout.end(); return; } if (self.coopMenu) self.resume(); else if (self.state === 'playing') self.pause(); else if (self.state === 'paused') self.resume(); };
@@ -5010,7 +5045,7 @@ const Game = {
     });
     $('btnMenu').addEventListener('click', () => self.toMenu());
     const optToggle = (els, fn) => els.forEach(e => e.addEventListener('click', () => { fn(); HUD.refreshOptions(); }));
-    optToggle([DOM.optAuto, DOM.pOptAuto], () => self.autoFire = !self.autoFire);
+    optToggle([DOM.optAuto, DOM.pOptAuto], () => self.setAutoFire(!self.autoFire));
     optToggle([DOM.optCam, DOM.pOptCam], () => self.cycleCam());
     optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquadCount((self.squadCount + 1) % 4));
     optToggle([DOM.optVoice, DOM.pOptVoice], () => self.voice = !self.voice);
@@ -5078,6 +5113,10 @@ const Game = {
     // fill-in bots must not be torn down just because someone clicked this option out of habit
     if ((this.state === 'playing' || this.state === 'paused') && Net.mode === 'off') Bots.spawn();
     HUD.refreshOptions();
+  },
+  setAutoFire(v) {
+    this.autoFire = v;
+    try { localStorage.setItem('dnd_autofire', v ? '1' : '0'); } catch (e) { }
   },
   // GRIT/VITALS, SPEED and RELOAD bars are per-gender (every champion of a gender shares that
   // gender's stat block), not per-champion — so there are only ever two distinct bar sets.
