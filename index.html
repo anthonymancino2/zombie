@@ -738,7 +738,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.31.0';
+const GAME_VERSION = 'v1.32.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -2535,7 +2535,7 @@ const Bullets = {
         if (b.instakill) dmg = bestZ.hp + 1; // guaranteed lethal regardless of wave-scaled HP, bosses included
         else if (b.falloff) { const d = b.dist + L * bestT; if (d > b.falloff.s) dmg *= Math.max(b.falloff.min, 1 - (d - b.falloff.s) / (b.falloff.e - b.falloff.s)); }
         Game.onBulletHit(bestZ, dmg, hx, hy, hz, head, ex / L, ez / L, b.by);
-        if (b.chain) Game.chainLightning(bestZ, dmg, hx, hy, hz, b.chain);
+        if (b.chain) Game.chainLightning(bestZ, dmg, hx, hy, hz, b.chain, b.by);
         b.on = false; b.by = null; b.chain = null; b.mesh.visible = false; continue;
       }
       if (wt >= 0) {
@@ -2591,7 +2591,10 @@ const Grenades = {
       if (!zb.on || zb.state === 'dead') continue;
       const dx = zb.x - x, dz = zb.z - z, d = Math.sqrt(dx * dx + dz * dz); if (d > cfg.radius) continue;
       const k = 1 - d / cfg.radius, was = zb.hp;
-      if (zb.hit(Math.round(cfg.dmg * k), zb.x, zb.y + zb.height * 0.6, zb.z, false, dx / (d || 1), dz / (d || 1), true)) kills++;
+      // grenades are always the local player's own throw, so it's their insta-kill window (if any)
+      // that applies here, never a squadmate's — same rule Game.onBulletHit enforces for gunfire
+      const hd = Player.insta > 0 ? zb.hp + 1 : Math.round(cfg.dmg * k);
+      if (zb.hit(hd, zb.x, zb.y + zb.height * 0.6, zb.z, false, dx / (d || 1), dz / (d || 1), true)) kills++;
       else Floaties.accumulate(zb, 'd', Math.round(Math.min(was, cfg.dmg * k)), zb.x, zb.y + zb.height * 0.7, zb.z, '', '#ffb040', 14, 0.8);
       if (!zb.on || zb.state === 'dead') continue;
       Game.addPoints(CFG.ptsHit, zb.x, zb.y + zb.height * 0.9, zb.z, '#ffffff', 13);
@@ -2899,7 +2902,6 @@ class Zombie {
       if (!silent) { Particles.blood(hx, hy, hz, head ? 10 : 6, dirx, dirz, false); Audio.fleshHit(this.x, this.z); }
       return false;
     }
-    if (Game.insta > 0) dmg = this.hp + 1;
     this.hp -= dmg; this.flashT = 0.09;
     this.skinMat.emissive.setRGB(0.55, 0.02, 0); this.clothMat.emissive.setRGB(0.4, 0.02, 0);
     if (!silent) { Particles.blood(hx, hy, hz, head ? 10 : 6, dirx, dirz, false); Audio.fleshHit(this.x, this.z); }
@@ -3503,6 +3505,10 @@ const Player = {
   stamina: 1, sprintOn: false, sprinting: false, staminaHold: 0,
   weapons: [], cur: 0, cooldown: 0, reloading: false, reloadT: 0, reloadTotal: 1, switchT: 0, bloom: 0,
   bobT: 0, stepD: 0, moveMag: 0, lastHurt: -99, recoil: 0, swayX: 0, swayY: 0, lastLookX: 0, lastLookY: 0,
+  // insta-kill/double-points are personal now — whoever grabbed the pickup is the only one who
+  // benefits (see Game.onBulletHit/awardScore/addPoints); noreload/infammo/invincible/rapidfire/
+  // fastmove already worked this way since they only ever get read inside Player's own methods
+  insta: 0, dbl: 0,
   stats: { shots: 0, hits: 0, kills: 0, head: 0, score: 0 },
   vm: { root: null, models: [], flash: null, flashT: 0 },
   body: null, bodyAnim: 0, _bodyGen: 0,
@@ -3545,6 +3551,7 @@ const Player = {
     this.downed = false; this.downT = 0; this.spectating = false;
     this.pinnedBy = null; this.escape = 0; this.escSend = 0;
     this.stamina = 1; this.sprintOn = false; this.sprinting = false; this.staminaHold = 0;
+    this.insta = 0; this.dbl = 0;
     // squadmates would otherwise all boot up inside each other at the origin
     if (Net.mode !== 'off') { const a = rnd(0, TAU); this.x = Math.cos(a) * 2.6; this.z = Math.sin(a) * 2.6; }
     this.weapons = WEAPONS.map((def, i) => ({ def: def, owned: i === 0, mag: def.mag, reserve: def.reserve }));
@@ -4312,10 +4319,10 @@ const HUD = {
     const left = G.toSpawn + Zombies.activeCount();
     this.set('left', DOM.zLeft, G.waveActive ? (left + (left === 1 ? ' ZOMBIE LEFT' : ' ZOMBIES LEFT')) : (G.wave === 0 ? 'GET READY' : 'NEXT WAVE IN ' + Math.ceil(G.interT) + 's'));
     // powerups
-    const ins = G.insta > 0; if (this.last.ins !== ins) { this.last.ins = ins; DOM.pillInsta.classList.toggle('on', ins); }
-    if (ins) this.set('insT', DOM.pillInsta, 'INSTA-KILL ' + Math.ceil(G.insta) + 's');
-    const dbl = G.dbl > 0; if (this.last.dbl !== dbl) { this.last.dbl = dbl; DOM.pillDbl.classList.toggle('on', dbl); DOM.mult.textContent = dbl ? '2X MULTIPLIER' : ''; }
-    if (dbl) this.set('dblT', DOM.pillDbl, '2X POINTS ' + Math.ceil(G.dbl) + 's');
+    const ins = P.insta > 0; if (this.last.ins !== ins) { this.last.ins = ins; DOM.pillInsta.classList.toggle('on', ins); }
+    if (ins) this.set('insT', DOM.pillInsta, 'INSTA-KILL ' + Math.ceil(P.insta) + 's');
+    const dbl = P.dbl > 0; if (this.last.dbl !== dbl) { this.last.dbl = dbl; DOM.pillDbl.classList.toggle('on', dbl); DOM.mult.textContent = dbl ? '2X MULTIPLIER' : ''; }
+    if (dbl) this.set('dblT', DOM.pillDbl, '2X POINTS ' + Math.ceil(P.dbl) + 's');
     // the 5 later-wave power-ups all follow the same on/off + countdown-text pattern as insta/dbl
     for (const p of Game.POWER_PILLS) {
       const on = G[p.key] > 0; if (this.last[p.key] !== on) { this.last[p.key] = on; DOM[p.dom].classList.toggle('on', on); }
@@ -5147,7 +5154,7 @@ const Game = {
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); Particles.clear(); Decals.clear(); Ultimates.resetKegs();
     for (const e of Explosions.pool) { e.on = false; e.fire.visible = e.ring.visible = false; } for (const l of Explosions.lights) l.intensity = 0;
     Player.reset(char); Input.reset();
-    this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0; this.insta = 0; this.dbl = 0;
+    this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0;
     this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0;
     this.timeScale = 1;
     this.toSpawn = 0; this.waveActive = false; this.streak = 0; this.sayT = -99; this.deathK = 0; this.deathRoll = 0; this.chain.length = 0; this.pickupT = 15;
@@ -5196,8 +5203,11 @@ const Game = {
       try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.pitch = char.voice.pitch; u.rate = char.voice.rate; u.volume = 0.9; u.lang = 'en-US'; speechSynthesis.speak(u); } catch (e) { }
     }
   },
-  addPoints(n, x, y, z, color, size) {
-    if (this.dbl > 0) n *= 2;
+  // `by` (a peer/bot, or omitted for the local player) says whose personal double-points buff
+  // applies — this pooled team total still only grows once, just by a different amount depending
+  // on whose buff was checked, same as onBulletHit's per-attacker dbl check above
+  addPoints(n, x, y, z, color, size, by) {
+    if ((by || Player).dbl > 0) n *= 2;
     if (!Net.isClient()) this.points += n;          // in coop the host owns the shared score
     Floaties.spawn(x, y, z, '+' + n, color || '#ffffff', size || 16, 0.9);
   },
@@ -5300,7 +5310,7 @@ const Game = {
   // so the host resolves the damage and score without replaying local feedback.
   onBulletHit(z, dmg, hx, hy, hz, head, dirx, dirz, by) {
     if (!by) Player.stats.hits++;
-    const d = Math.round(dmg * (head ? 2 : 1));
+    let d = Math.round(dmg * (head ? 2 : 1));
     if (Net.isClient()) {
       Net.reportHit(Zombies.pool.indexOf(z), z, dmg, hx, hy, hz, head, dirx, dirz);
       z.hit(d, hx, hy, hz, head, dirx, dirz, false);          // visual only, guarded inside hit()
@@ -5308,6 +5318,10 @@ const Game = {
       Audio.hitmark(); FX.hit(false);
       return;
     }
+    // insta-kill/double-points is whoever-landed-the-shot's own buff, never anyone else's on the
+    // squad — a bot or a teammate has to grab their own pickup to get it (see Player.insta/peer.insta)
+    const attacker = by || Player;
+    if (attacker.insta > 0) d = z.hp + 1;
     this._by = by || null;
     // individual score is tracked separately from the pooled team points below (see
     // Game.awardScore) — dmgBy remembers who's actually put damage into this zombie, so a kill
@@ -5317,7 +5331,7 @@ const Game = {
     const killed = z.hit(d, hx, hy, hz, head, dirx, dirz, false);
     this._by = null;
     if (!killed) {
-      let pts = CFG.ptsHit; if (this.dbl > 0) pts *= 2; this.points += pts;
+      let pts = CFG.ptsHit; if (attacker.dbl > 0) pts *= 2; this.points += pts;
       this.awardScore(attackerKey, pts);
       Floaties.accumulate(z, 'p', pts, hx, hy + 0.42, hz, '+', '#ffffff', 15, 0.95);
       Floaties.accumulate(z, 'd', d, hx, hy, hz, '', head ? '#ff7a1a' : '#ffd8a0', head ? 17 : 13, 0.85);
@@ -5347,7 +5361,7 @@ const Game = {
     if (!by) Player.ultCharge = Math.min(100, Player.ultCharge + (z.boss || z.type.special ? CFG.ultMeterPerSpecialKill : (head ? CFG.ultMeterPerHeadshot : CFG.ultMeterPerKill)));
     let pts = CFG.ptsKill * (z.type.pts || 1);
     if (head) { pts += CFG.ptsHead; if (by) by.head++; else Player.stats.head++; Floaties.spawn(z.x, z.y + z.height + 0.5, z.z, 'HEADSHOT', '#ff4a2a', 18, 1.1); }
-    this.addPoints(pts, z.x, z.y + z.height + 0.15, z.z, '#ffd83b', 20);
+    this.addPoints(pts, z.x, z.y + z.height + 0.15, z.z, '#ffd83b', 20, by);
     const killerKey = by ? by.id : Net.id;
     this.awardScore(killerKey, pts);
     for (const k in z.dmgBy) { if (k !== killerKey) this.awardScore(k, Math.round(pts * CFG.scoreAssistMul)); }
@@ -5358,7 +5372,7 @@ const Game = {
       if (World.coverPoint(z.x, z.z, this._pt)) Pickups.spawn('health', this._pt.x, this._pt.z);
     }
     if (!by) Audio.killmark();
-    if (Net.isHost()) Net.send({ k: 'kill', i: Zombies.pool.indexOf(z), hd: head ? 1 : 0, by: by ? by.id : Net.id, p: Math.round(pts * (this.dbl > 0 ? 2 : 1)) });
+    if (Net.isHost()) Net.send({ k: 'kill', i: Zombies.pool.indexOf(z), hd: head ? 1 : 0, by: by ? by.id : Net.id, p: Math.round(pts * ((by || Player).dbl > 0 ? 2 : 1)) });
     if (!by && this.streak % 8 === 0) this.say('streak');
     HUD.last.left = null;
   },
@@ -5368,17 +5382,17 @@ const Game = {
   // client this secondary damage is cosmetic-only (no real HP change on the host), same gap
   // explodeBarrel would have if barrels weren't specifically gated host-side. Low priority since
   // the primary hit (which already goes through onBulletHit/reportHit) still works correctly.
-  chainLightning(fromZ, primaryDmg, x, y, z, chain) {
-    const dmg = Math.round(primaryDmg * chain.mult);
+  chainLightning(fromZ, primaryDmg, x, y, z, chain, by) {
+    const dmg = Math.round(primaryDmg * chain.mult), attacker = by || Player;
     let hit = 0;
     for (const zb of Zombies.pool) {
       if (hit >= chain.count) break;
       if (!zb.on || zb.state === 'dead' || zb === fromZ) continue;
       const dx = zb.x - x, dz = zb.z - z, d = Math.sqrt(dx * dx + dz * dz); if (d > chain.radius) continue;
       ChainFX.spawn(x, y, z, zb.x, zb.y + zb.height * 0.6, zb.z);
-      const was = zb.hp;
-      if (!zb.hit(dmg, zb.x, zb.y + zb.height * 0.6, zb.z, false, dx / (d || 1), dz / (d || 1), true)) {
-        Floaties.accumulate(zb, 'd', Math.round(Math.min(was, dmg)), zb.x, zb.y + zb.height * 0.7, zb.z, '', '#7ad8ff', 14, 0.8);
+      const was = zb.hp, hd = attacker.insta > 0 ? zb.hp + 1 : dmg;
+      if (!zb.hit(hd, zb.x, zb.y + zb.height * 0.6, zb.z, false, dx / (d || 1), dz / (d || 1), true)) {
+        Floaties.accumulate(zb, 'd', Math.round(Math.min(was, hd)), zb.x, zb.y + zb.height * 0.7, zb.z, '', '#7ad8ff', 14, 0.8);
       }
       hit++;
     }
@@ -5406,7 +5420,11 @@ const Game = {
       const dx = z.x - br.x, dz = z.z - br.z, d = Math.sqrt(dx * dx + dz * dz);
       if (d > 5.8) continue;
       const k = 1 - d / 6.5, was = z.hp;
-      if (z.hit(Math.round(dmg * k), z.x, z.y + z.height * 0.6, z.z, false, dx / (d || 1), dz / (d || 1), true)) kills++;
+      // same rule as Grenades.detonate — this is the local player's own insta-kill window, not a
+      // squad-wide one (barrel attribution isn't plumbed through the network protocol, so a
+      // peer-triggered barrel falls back to the host's own status — a known, low-stakes gap)
+      const hd = Player.insta > 0 ? z.hp + 1 : Math.round(dmg * k);
+      if (z.hit(hd, z.x, z.y + z.height * 0.6, z.z, false, dx / (d || 1), dz / (d || 1), true)) kills++;
       else Floaties.accumulate(z, 'd', Math.round(Math.min(was, dmg * k)), z.x, z.y + z.height * 0.7, z.z, '', '#ffb040', 14, 0.8);
       if (!z.on || z.state === 'dead') continue;
       this.addPoints(CFG.ptsHit, z.x, z.y + z.height * 0.9, z.z, '#ffffff', 13);
@@ -5421,10 +5439,10 @@ const Game = {
     if (remote) { Particles.sparks(x, 1.2, z, 12); Floaties.spawn(x, 1.6, z, 'TAKEN', '#ffd8a0', 15, 1.0); return; }
     if (type === 'health') { P.hp = Math.min(P.maxHp, P.hp + 50); Floaties.spawn(x, 1.6, z, '+50 HP', '#5dff7a', 20, 1.2); this.say('health'); HUD.toast('HEALTH +50'); }
     else if (type === 'ammo') { P.refillAmmo(); Floaties.spawn(x, 1.6, z, 'AMMO REFILLED', '#ffb040', 20, 1.2); this.say('ammo'); HUD.toast('AMMO CRATE — RESERVE REFILLED'); }
-    else if (type === 'insta') { this.insta = CFG.instaTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'INSTA-KILL!', '#ff3a3a', 22, 1.3); this.say('insta', true); HUD.toast('INSTA-KILL — ONE SHOT, ONE KILL', 2.5); }
-    else if (type === 'double') { this.dbl = CFG.dblTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'DOUBLE POINTS!', '#ffe040', 22, 1.3); this.say('double', true); HUD.toast('DOUBLE POINTS — 30 SECONDS', 2.5); }
-    // the 5 later-wave power-ups below are personal, not squad-wide like insta/double above —
-    // reload/ammo/rate-of-fire/speed only mean anything for whoever actually picked it up
+    else if (type === 'insta') { P.insta = CFG.instaTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'INSTA-KILL!', '#ff3a3a', 22, 1.3); this.say('insta', true); HUD.toast('INSTA-KILL — ONE SHOT, ONE KILL', 2.5); }
+    else if (type === 'double') { P.dbl = CFG.dblTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'DOUBLE POINTS!', '#ffe040', 22, 1.3); this.say('double', true); HUD.toast('DOUBLE POINTS — 30 SECONDS', 2.5); }
+    // every power-up below (including insta/double above) is personal — only whoever actually
+    // picked it up gets the bonus, nobody else on the squad (see Game.onBulletHit/addPoints)
     else if (type === 'noreload') { this.noReload = CFG.noReloadTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'NO RELOAD!', '#40c4ff', 22, 1.3); HUD.toast('NO RELOAD — 15 SECONDS', 2.5); }
     else if (type === 'infammo') { this.infAmmo = CFG.infAmmoTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, '∞ AMMO!', '#40ff8a', 22, 1.3); HUD.toast('INFINITE AMMO — 15 SECONDS', 2.5); }
     else if (type === 'invincible') { this.invincible = CFG.invincibleTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'INVINCIBLE!', '#ffffff', 22, 1.3); HUD.toast('INVINCIBLE — 12 SECONDS', 2.5); }
@@ -5525,10 +5543,13 @@ const Game = {
       if (this.deathT > 2.4) { this.showGameOver(); return; }
     }
     this.shake = Math.max(0, this.shake - dt * 3.2);
-    if (this.insta > 0) this.insta -= dt; if (this.dbl > 0) this.dbl -= dt;
+    if (P.insta > 0) P.insta -= dt; if (P.dbl > 0) P.dbl -= dt;
     if (this.noReload > 0) this.noReload -= dt; if (this.infAmmo > 0) this.infAmmo -= dt;
     if (this.invincible > 0) this.invincible -= dt; if (this.rapidFire > 0) this.rapidFire -= dt;
     if (this.fastMove > 0) this.fastMove -= dt;
+    // real peers keep their own insta/dbl windows host-side, ticked down the same way — never
+    // shared with Player or with each other (see Net.peerCollect/Game.onBulletHit)
+    if (Net.isHost()) for (const k in Net.peers) { const p = Net.peers[k]; if (p.insta > 0) p.insta -= dt; if (p.dbl > 0) p.dbl -= dt; }
     // waves
     if (this.state === 'playing') {
       if (Net.isClient()) { /* the host owns waves, spawning and pickups — we just render them */ }
@@ -5966,6 +5987,9 @@ const Net = {
       // against the real roster instead, so what a peer actually picked is what everyone sees.
       char: (ch && AVATARS[ch]) ? ch : 'cloud',
       x: 0, z: 0, ry: 0, hp: 100, maxHp: 100, st: 0, w: 0, fire: 0, kills: 0, head: 0, score: 0, afk: 0, pinnedBy: null,
+      // this peer's own insta-kill/double-points window (see Net.peerCollect) — never shared with
+      // anyone else on the squad, ticked down host-side alongside Player's own copy (Game.update)
+      insta: 0, dbl: 0,
       tx: 0, tz: 0, tRy: 0, vis: null, walk: 0, flashT: 0, last: Net.clock,
       get alive() { return this.st === 0; },
       hurt: function (amount, fx, fz) { self.damagePeer(this, amount); }
@@ -6341,7 +6365,7 @@ const Net = {
     }
     this.send({
       k: 's', wv: Game.wave, wa: Game.waveActive ? 1 : 0, ts: Game.toSpawn, pts: Math.round(Game.points),
-      kl: Game.kills, it: r2(Game.interT), ik: r2(Math.max(0, Game.insta)), dp: r2(Math.max(0, Game.dbl)),
+      kl: Game.kills, it: r2(Game.interT),
       z: zs, u: us, pl: pl
     });
   },
@@ -6353,7 +6377,6 @@ const Net = {
     // too, independently, to keep both sides' pathfinding grid/boundary in sync.
     Game.growArenaToWave(Game.wave);
     Game.points = m.pts; Game.kills = m.kl | 0; Game.interT = m.it;
-    Game.insta = m.ik; Game.dbl = m.dp;
 
     // Zombies: the pool index doubles as the network id, so both sides address the same slot
     // and no id map is needed. `gen` catches a slot that was recycled between snapshots.
@@ -6482,8 +6505,10 @@ const Net = {
   },
   peerCollect(peer, type, x, z) {
     this.send({ k: 'pk', t: PU_LIST.indexOf(type), x: r2(x), z: r2(z), by: peer.id });
-    if (type === 'insta') { Game.insta = CFG.instaTime; Audio.powerup(); HUD.toast('INSTA-KILL — ' + peer.name + ' GRABBED IT', 2.5); }
-    else if (type === 'double') { Game.dbl = CFG.dblTime; Audio.powerup(); HUD.toast('DOUBLE POINTS — ' + peer.name + ' GRABBED IT', 2.5); }
+    // this peer's own window, checked against `by` in Game.onBulletHit/addPoints — never touches
+    // the host's own Player.insta/dbl or anyone else's, so only they get the bonus
+    if (type === 'insta') { peer.insta = CFG.instaTime; Audio.powerup(); HUD.toast('INSTA-KILL — ' + peer.name + ' GRABBED IT', 2.5); }
+    else if (type === 'double') { peer.dbl = CFG.dblTime; Audio.powerup(); HUD.toast('DOUBLE POINTS — ' + peer.name + ' GRABBED IT', 2.5); }
     Particles.sparks(x, 1.2, z, 12);
     Floaties.spawn(x, 1.7, z, peer.name, '#ffd8a0', 15, 1.0);
   },
