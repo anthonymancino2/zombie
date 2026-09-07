@@ -757,7 +757,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.43.0';
+const GAME_VERSION = 'v1.44.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -841,6 +841,10 @@ const CFG = {
   ultWhirlwindRadius: 3.5, ultWhirlwindPulse: 0.22, ultWhirlwindKnockback: 3.2,
   ultWhirlwindStun: 0.3, ultWhirlwindSpinSpeed: 10,
   ultVortexPullWindow: 25, ultVortexPullSpeed: 3.5,
+  // giant energy weapon (blue sword for Cloud, green boomerang for Ranger) orbiting at
+  // ultWhirlwindOrbitR, plus a ground ring roughly tracing the hit radius — purely cosmetic, see
+  // Ultimates._makeEnergySword/_makeEnergyBoomerang/_makeWhirlRing
+  ultWhirlwindOrbitR: 2.0,
   // Chopper & Dudu share one move: 8 clones orbit them, but now hunt aggressively — the seek
   // range covers the whole map (no more waiting for something to wander close) and they close in
   // fast once locked on. Still detonate (instakill, bosses take ultCloneBossDmg instead) the
@@ -4168,6 +4172,8 @@ const Ultimates = {
   cleanup(P) {
     if (P._ultClones) { for (const c of P._ultClones) { R.scene.remove(c.g); c.g.geometry.dispose(); c.g.material.dispose(); } P._ultClones = null; }
     if (P._ultFlames) { for (const f of P._ultFlames) { R.scene.remove(f.g); f.g.geometry.dispose(); f.g.material.dispose(); } P._ultFlames = null; }
+    if (P._whirlWeapon) { R.scene.remove(P._whirlWeapon); P._whirlWeapon.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } }); P._whirlWeapon = null; }
+    if (P._whirlRing) { R.scene.remove(P._whirlRing); P._whirlRing.geometry.dispose(); P._whirlRing.material.dispose(); P._whirlRing = null; }
   },
 
   /* ---------------- shared AoE instakill (Chopper/Dudu's clone detonation) ---------------- */
@@ -4234,14 +4240,49 @@ const Ultimates = {
      replaced). Fully automatic: no FIRE input involved at all, just a radial damage/knockback/
      stagger pulse every ultWhirlwindPulse seconds for the whole 30s, plus a continuous visible
      spin on the body itself (whirlSpinAngle, applied in Player.updateBody) so the attack is
-     unmistakable. Full immunity throughout, same as before. */
+     unmistakable. Full immunity throughout, same as before. A giant energy weapon (blue sword for
+     Cloud, green boomerang for Ranger) orbits at ultWhirlwindOrbitR in time with whirlSpinAngle,
+     plus a ground ring roughly tracing the hit radius — purely cosmetic, caster-only like every
+     other ultimate's visuals (see the class comment up top). */
+  _energyMat(color, opacity) {
+    return new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity == null ? 0.92 : opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+  },
+  _makeEnergySword(color) {
+    const M = this._energyMat(color), core = this._energyMat(0xf0f8ff, 1);
+    const g = new THREE.Group();
+    g.add(box(0.22, 0.08, 2.5, M, 0, 0, -1.0));      // wide glowing blade
+    g.add(box(0.05, 0.03, 2.6, core, 0, 0, -1.0));   // bright core running down the middle
+    g.add(box(0.7, 0.1, 0.14, M, 0, 0, 0.14));       // crossguard
+    g.add(cyl(0.07, 0.5, M, 0, 0, 0.5));             // hilt
+    R.scene.add(g); return g;
+  },
+  _makeEnergyBoomerang(color) {
+    const M = this._energyMat(color), core = this._energyMat(0xe4ffe9, 1);
+    const g = new THREE.Group();
+    for (const s of [1, -1]) {
+      const arm = new THREE.Group();
+      arm.add(box(0.16, 0.06, 1.6, M, 0, 0, -0.8), box(0.05, 0.03, 1.5, core, 0, 0, -0.8));
+      arm.rotation.y = s * 0.55;
+      g.add(arm);
+    }
+    R.scene.add(g); return g;
+  },
+  _makeWhirlRing(color) {
+    const inner = CFG.ultWhirlwindRadius - 0.4, outer = CFG.ultWhirlwindRadius + 0.15;
+    const geo = new THREE.RingGeometry(inner, outer, 40); geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const g = new THREE.Mesh(geo, mat); R.scene.add(g); return g;
+  },
   startWhirlwind(P) {
     P.ultImmune = true;
     P.ultPreCamMode = Game.camMode === 'fp' ? 'fp' : null;
     if (P.ultPreCamMode) { Game.camMode = 'tp'; HUD.refreshOptions(); }
     P.whirlPulseT = 0; P.whirlSpinAngle = 0;
+    const isCloud = P.char.id === 'cloud', color = isCloud ? 0x2a8cff : 0x2aff6a;
+    P._whirlWeapon = isCloud ? this._makeEnergySword(color) : this._makeEnergyBoomerang(color);
+    P._whirlRing = this._makeWhirlRing(color);
     Particles.sparks(P.x, 1.2, P.z, 30); Audio.powerup();
-    HUD.toast(P.char.id === 'cloud' ? 'BUSTER WHIRLWIND!' : 'GAMMA WHIRLWIND!', 1.8);
+    HUD.toast(isCloud ? 'BUSTER WHIRLWIND!' : 'GAMMA WHIRLWIND!', 1.8);
   },
   tickWhirlwind(P, dt) {
     // vortex pull: for the first ultVortexPullWindow seconds, every non-dead zombie on the map is
@@ -4262,6 +4303,15 @@ const Ultimates = {
       }
     }
     P.whirlSpinAngle += dt * CFG.ultWhirlwindSpinSpeed;
+    // orbiting weapon + ground ring: purely cosmetic, positioned off whirlSpinAngle so they stay
+    // in lockstep with the body's own visible spin (see Player.updateBody)
+    if (P._whirlWeapon) {
+      const a = P.whirlSpinAngle, R2 = CFG.ultWhirlwindOrbitR;
+      P._whirlWeapon.position.set(P.x + Math.cos(a) * R2, 1.15, P.z + Math.sin(a) * R2);
+      P._whirlWeapon.rotation.y = -a + Math.PI / 2;
+      P._whirlWeapon.rotation.x = a * 4;
+    }
+    if (P._whirlRing) P._whirlRing.position.set(P.x, 0.05, P.z);
     P.whirlPulseT -= dt;
     if (P.whirlPulseT > 0) return;
     P.whirlPulseT = CFG.ultWhirlwindPulse;
