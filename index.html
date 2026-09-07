@@ -374,6 +374,11 @@ h1.title em{font-style:normal;color:var(--accent2);}
   max-width:min(90vw,380px);text-align:center;box-shadow:0 0 30px rgba(0,0,0,.65);}
 .pvtitle{font-family:var(--hud-font);font-size:16px;letter-spacing:.08em;color:#fff;text-shadow:0 0 8px var(--glow);}
 .pvsub{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.4;}
+/* TEST MODE confirmation — top-level (not nested in a .screen) so it works from the main menu
+   or the pause menu alike; fixed + high z-index puts it above whichever screen is showing */
+#testModePopup{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(6,3,1,.78);z-index:1000;padding:16px;}
+#testModePopup.show{display:flex;}
 
 /* teammate strip in the HUD */
 #coop{position:absolute;left:calc(12px + var(--sal));top:calc(96px + var(--sat));display:none;flex-direction:column;gap:5px;pointer-events:none;}
@@ -451,6 +456,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .lbrow .lp{font-family:var(--hud-font);font-size:16px;letter-spacing:.06em;color:var(--accent2);flex:none;min-width:84px;text-align:right;}
 .lbrow .lm{font-family:var(--hud-font);font-size:9px;letter-spacing:.16em;color:var(--dim);flex:none;width:38px;}
 .subhead{font-family:var(--hud-font);font-size:11px;letter-spacing:.28em;color:var(--dim);margin:16px 0 6px;text-align:center;}
+.testnote{font-family:var(--hud-font);font-size:11px;letter-spacing:.12em;color:#ff8a00;text-shadow:0 0 8px rgba(255,138,0,.5);margin-top:8px;text-align:center;min-height:1px;}
 
 @media (max-height:440px){
   #coop{top:calc(86px + var(--sat));}
@@ -628,6 +634,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="stat"><div class="v" id="goTime">0:00</div><div class="k">TIME ALIVE</div></div>
       </div>
       <div class="best" id="goBest"></div>
+      <div id="goTestNote" class="testnote"></div>
       <div id="goRoom" class="subhead"></div>
       <div class="plist" id="goCoop"></div>
       <div class="row">
@@ -711,6 +718,19 @@ h1.title em{font-style:normal;color:var(--accent2);}
 
   <div id="rotateBlock"><div class="icon">📱</div><h3>ROTATE YOUR DEVICE</h3><p>DUST &amp; DEAD is landscape only — turn your phone sideways to keep playing.</p></div>
 
+  <!-- confirm before TEST MODE actually goes on — reachable from the main menu or the pause
+       menu, so this sits at the top level rather than nested inside either screen -->
+  <div id="testModePopup">
+    <div class="pvbox">
+      <div class="pvtitle">TURN ON TEST MODE?</div>
+      <div class="pvsub">Special gauge stays full with no cooldown, and every weapon is unlocked — good for trying things out. But your score will <b>not</b> be submitted to the leaderboard for this run, and it only works solo — coop plays as if it were off no matter what this says.</div>
+      <div class="row">
+        <button class="bigbtn" id="btnTestModeYes">TURN IT ON</button>
+        <button class="bigbtn secondary" id="btnTestModeNo">NEVER MIND</button>
+      </div>
+    </div>
+  </div>
+
   <div id="loadErr">
     <div><h3>3D ENGINE FAILED TO LOAD</h3>
       <p>The Three.js library could not be fetched. Check your connection and try again.</p>
@@ -732,6 +752,11 @@ const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : (v > b ? b : v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a, b) => a + Math.random() * (b - a);
+// per-(device, callsign) storage key: button layout and in-game options should follow the same
+// person on the same phone, not bleed across different names sharing one device. Falls back to
+// the bare key (old global behavior) when no name has been entered yet — Net.name is read live,
+// not captured at load time, since it can be blank the first time any of this runs.
+const playerPrefKey = (base) => { const n = (Net.name || '').trim().toUpperCase(); return n ? base + ':' + n : base; };
 const fmt = (n) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 const fmtClock = (t) => { t = Math.max(0, t); const m = Math.floor(t / 60), s = Math.floor(t % 60); return m + ':' + (s < 10 ? '0' : '') + s; };
 function mulberry32(seed) {
@@ -757,7 +782,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.46.0';
+const GAME_VERSION = 'v1.47.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1864,7 +1889,9 @@ const Input = {
    button can be dragged from the pause menu. Positions are stored as viewport fractions of the
    button centre, which keeps them sane across a rotate or a different phone. */
 const Layout = {
-  KEY: 'dnd_layout_v1',
+  // per-callsign now (see playerPrefKey) — a saved arrangement follows the same person on the
+  // same phone rather than whoever last typed a name into this browser
+  key() { return playerPrefKey('dnd_layout_v1'); },
   ids: ['btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt'],
   pos: {}, editing: false, drag: null, els: {}, bar: null,
   init() {
@@ -1912,7 +1939,7 @@ const Layout = {
   // of the CSS box model instead of falling back to the normal on-screen default position
   load() {
     try {
-      const raw = localStorage.getItem(this.KEY), parsed = raw ? JSON.parse(raw) : {};
+      const raw = localStorage.getItem(this.key()), parsed = raw ? JSON.parse(raw) : {};
       this.pos = {};
       for (const id of this.ids) {
         const p = parsed && parsed[id];
@@ -1920,7 +1947,7 @@ const Layout = {
       }
     } catch (e) { this.pos = {}; }
   },
-  save() { try { localStorage.setItem(this.KEY, JSON.stringify(this.pos)); } catch (e) { } },
+  save() { try { localStorage.setItem(this.key(), JSON.stringify(this.pos)); } catch (e) { } },
   place(id, cx, cy) {
     const el = this.els[id]; if (!el) return;
     const mx = el.offsetWidth / 2 + 6, my = el.offsetHeight / 2 + 6;
@@ -3690,8 +3717,8 @@ const Player = {
     this.insta = 0; this.dbl = 0;
     // squadmates would otherwise all boot up inside each other at the origin
     if (Net.mode !== 'off') { const a = rnd(0, TAU); this.x = Math.cos(a) * 2.6; this.z = Math.sin(a) * 2.6; }
-    this.weapons = WEAPONS.map((def, i) => ({ def: def, owned: i === 0 || Game.testMode, mag: def.mag, reserve: def.reserve }));
-    if (Game.testMode) this.ultCharge = 100;
+    this.weapons = WEAPONS.map((def, i) => ({ def: def, owned: i === 0 || Game.testModeActive(), mag: def.mag, reserve: def.reserve }));
+    if (Game.testModeActive()) this.ultCharge = 100;
     this.cur = 0; this.cooldown = 0; this.reloading = false; this.reloadT = 0; this.switchT = 0; this.bloom = 0; this.bobT = 0; this.stepD = 0; this.lastHurt = -99; this.recoil = 0;
     this.stats = { shots: 0, hits: 0, kills: 0, head: 0, score: 0 }; this.autoTarget = null; this.lowSaid = false;
     this.vm.models.forEach((m, i) => m.visible = i === 0);
@@ -3725,7 +3752,7 @@ const Player = {
     if (this.ultImmuneT > 0) this.ultImmuneT -= dt;
     // test mode: keep the gauge topped off and the cooldown clear every frame, so tryUltimate's
     // own gate (charge>=100 && cooldownT<=0) passes again the instant the previous move ends
-    if (Game.testMode) { this.ultCharge = 100; this.ultCooldownT = 0; }
+    if (Game.testModeActive()) { this.ultCharge = 100; this.ultCooldownT = 0; }
     if (this.ultActive && this.alive) {
       this.ultActiveT -= dt;
       Ultimates.tick(this, dt);
@@ -4598,11 +4625,12 @@ const HUD = {
     ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
+      'testModePopup', 'btnTestModeYes', 'btnTestModeNo',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
       'btnLeaders', 'btnLeadersBack', 'btnLobbyStart', 'btnLobbyLeave', 'lobbyCode', 'lobbyPlayers', 'lobbyStatus', 'lobbyHint', 'lobbyTimer',
       'startVotePopup', 'startVoteText', 'btnStartVoteYes', 'btnStartVoteNo',
       'btnBackPause', 'btnBackGameover', 'btnBackOnline', 'btnBackLobby', 'btnBackLeaders',
-      'coop', 'netPill', 'radar', 'downed', 'downedBar', 'downedSub', 'revive', 'reviveText', 'reviveBar', 'lbWrap', 'lbStatus', 'goCoop', 'goRoom',
+      'coop', 'netPill', 'radar', 'downed', 'downedBar', 'downedSub', 'revive', 'reviveText', 'reviveBar', 'lbWrap', 'lbStatus', 'goCoop', 'goRoom', 'goTestNote',
       'boss', 'bossName', 'bossBar', 'pinned', 'pinnedSub', 'pinnedBar'
     ].forEach(id => DOM[id] = $(id));
     DOM.lowhp.style.backgroundImage = 'url(' + TEX.lowhpUrl + ')';
@@ -4731,7 +4759,7 @@ const HUD = {
   refreshOptions() {
     const G = Game;
     [DOM.optAuto, DOM.pOptAuto].forEach(e => { e.classList.toggle('on', G.autoFire); e.querySelector('span').textContent = G.autoFire ? 'ON' : 'OFF'; });
-    [DOM.optTest, DOM.pOptTest].forEach(e => { e.classList.toggle('on', G.testMode); e.querySelector('span').textContent = G.testMode ? 'ON' : 'OFF'; });
+    [DOM.optTest, DOM.pOptTest].forEach(e => { e.classList.toggle('on', G.testMode); e.querySelector('span').textContent = G.testMode ? (Net.mode === 'off' ? 'ON' : 'ON, BUT COOP IGNORES IT') : 'OFF'; });
     [DOM.optCam, DOM.pOptCam].forEach(e => { e.classList.toggle('on', G.camMode === 'tp'); e.querySelector('span').textContent = G.camMode === 'tp' ? '3RD-' + G.CAM_DIST_ABBR[G.camDist] : '1ST'; });
     // in coop the squad is the people you are actually playing with, so the bot control steps
     // aside; solo cycles OFF/1/2/3 bots on a single click-through control
@@ -5288,7 +5316,7 @@ const Game = {
   noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0, phase: 0,
   timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, powerupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
-  autoFire: false, testMode: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
+  autoFire: false, testMode: false, testModeUsedThisRun: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
   CAM_TIERS: ['fp', 'close', 'medium', 'far', 'veryfar', 'topdown'],
   best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
   fpsAcc: 0, fpsN: 0, fpsAvg: 16.7, fpsT: 0, resT: 0, chain: [], realDt: 0.016, newBest: false, _pt: { x: 0, z: 0 },
@@ -5342,12 +5370,24 @@ const Game = {
     $('btnMenu').addEventListener('click', () => self.toMenu());
     const optToggle = (els, fn) => els.forEach(e => e.addEventListener('click', () => { fn(); HUD.refreshOptions(); }));
     optToggle([DOM.optAuto, DOM.pOptAuto], () => self.setAutoFire(!self.autoFire));
-    optToggle([DOM.optTest, DOM.pOptTest], () => { self.setTestMode(!self.testMode); HUD.toast('TEST MODE ' + (self.testMode ? 'ON — special always full, all weapons unlocked' : 'OFF'), 2.6); });
+    // turning it OFF needs no ceremony; turning it ON goes through the confirmation popup instead
+    // of flipping straight on (see btnTestModeYes/No below) — that's where the leaderboard/coop
+    // caveats actually get read, not in a toast that's gone in three seconds
+    optToggle([DOM.optTest, DOM.pOptTest], () => {
+      if (self.testMode) { self.setTestMode(false); HUD.toast('TEST MODE OFF', 2.2); }
+      else if (DOM.testModePopup) DOM.testModePopup.classList.add('show');
+    });
+    if (DOM.btnTestModeYes) DOM.btnTestModeYes.addEventListener('click', () => {
+      DOM.testModePopup.classList.remove('show');
+      self.setTestMode(true); HUD.refreshOptions();
+      HUD.toast('TEST MODE ON — special always full, all weapons unlocked', 2.6);
+    });
+    if (DOM.btnTestModeNo) DOM.btnTestModeNo.addEventListener('click', () => DOM.testModePopup.classList.remove('show'));
     optToggle([DOM.optCam, DOM.pOptCam], () => self.cycleCam());
     optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquadCount((self.squadCount + 1) % 4));
-    optToggle([DOM.optVoice, DOM.pOptVoice], () => self.voice = !self.voice);
-    optToggle([DOM.optSound, DOM.pOptSound], () => { self.sound = !self.sound; Audio.setEnabled(self.sound); });
-    [DOM.optSens, DOM.pOptSens].forEach(e => e.addEventListener('input', () => { Input.sens = parseFloat(e.value) || 1; HUD.refreshOptions(); }));
+    optToggle([DOM.optVoice, DOM.pOptVoice], () => self.setVoice(!self.voice));
+    optToggle([DOM.optSound, DOM.pOptSound], () => self.setSound(!self.sound));
+    [DOM.optSens, DOM.pOptSens].forEach(e => e.addEventListener('input', () => { self.setSens(parseFloat(e.value) || 1); HUD.refreshOptions(); }));
     // tabbing away must not pop the menu mid-coop: there is nothing to pause and it would just
     // hand the player a screen they did not ask for when they come back
     document.addEventListener('visibilitychange', () => { if (document.hidden) { if (self.state === 'playing' && !Net.on()) self.pause(); } else Audio.resume(); });
@@ -5357,6 +5397,10 @@ const Game = {
     World.generate(Math.floor(Math.random() * 1e9));
     this.selectChar('cloud');
     Net.init(); Board.init(); Mqtt.start();
+    // Net.name is only known now that Net.init() has run — re-check every option under a
+    // per-callsign key and override the plain-device defaults loaded above wherever this exact
+    // name has its own saved value (see playerPrefKey)
+    this.loadPlayerPrefs();
     const ver = $('verLine'); if (ver) ver.textContent = 'DUST & DEAD ' + GAME_VERSION;
   },
   // Landscape only, enforced rather than just suggested: iOS Safari has no orientation-lock API
@@ -5395,7 +5439,10 @@ const Game = {
   setCamMode(mode, dist) {
     this.camMode = mode === 'tp' ? 'tp' : 'fp';
     if (dist) this.camDist = dist;
-    try { localStorage.setItem('dnd_cam', this.camMode); localStorage.setItem('dnd_camdist', this.camDist); } catch (e) { }
+    try {
+      localStorage.setItem('dnd_cam', this.camMode); localStorage.setItem('dnd_camdist', this.camDist);
+      localStorage.setItem(playerPrefKey('dnd_cam'), this.camMode); localStorage.setItem(playerPrefKey('dnd_camdist'), this.camDist);
+    } catch (e) { }
     if (this.camMode === 'fp' && Player.body) { Player.body.g.visible = false; Player.body.shadow.visible = false; }
     HUD.refreshOptions();
   },
@@ -5404,7 +5451,10 @@ const Game = {
   // whether you have a squad is a worse answer than the squad just changing size on the spot.
   setSquadCount(n) {
     this.squadCount = clamp(n, 0, 3); this.squad = this.squadCount > 0;
-    try { localStorage.setItem('dnd_squadcount', String(this.squadCount)); localStorage.setItem('dnd_squad', this.squad ? '1' : '0'); } catch (e) { }
+    try {
+      localStorage.setItem('dnd_squadcount', String(this.squadCount)); localStorage.setItem('dnd_squad', this.squad ? '1' : '0');
+      localStorage.setItem(playerPrefKey('dnd_squadcount'), String(this.squadCount)); localStorage.setItem(playerPrefKey('dnd_squad'), this.squad ? '1' : '0');
+    } catch (e) { }
     // this option only means anything solo — in real coop the party is filled by
     // Bots.syncCoopFill() instead (see Net.hostRecv/dropPeer), not by this count, and those
     // fill-in bots must not be torn down just because someone clicked this option out of habit
@@ -5413,18 +5463,51 @@ const Game = {
   },
   setAutoFire(v) {
     this.autoFire = v;
-    try { localStorage.setItem('dnd_autofire', v ? '1' : '0'); } catch (e) { }
+    try { localStorage.setItem('dnd_autofire', v ? '1' : '0'); localStorage.setItem(playerPrefKey('dnd_autofire'), v ? '1' : '0'); } catch (e) { }
   },
-  // dev/QA toggle: keeps the SPECIAL gauge topped off with no cooldown and every weapon owned,
-  // so a move (or a weapon) can be tried out without grinding kills/waves for it first. Not
-  // persisted — always starts OFF so nobody ships a run with it on by accident.
+  setVoice(v) {
+    this.voice = v;
+    try { localStorage.setItem(playerPrefKey('dnd_voice'), v ? '1' : '0'); } catch (e) { }
+  },
+  setSound(v) {
+    this.sound = v; Audio.setEnabled(v);
+    try { localStorage.setItem(playerPrefKey('dnd_sound'), v ? '1' : '0'); } catch (e) { }
+  },
+  setSens(v) {
+    Input.sens = v;
+    try { localStorage.setItem(playerPrefKey('dnd_sens'), String(v)); } catch (e) { }
+  },
+  // re-applies every sticky option under THIS callsign's own key, called once Net.name is known
+  // (see init(), right before Net.init()). Layout isn't touched here — boot() calls Layout.init()
+  // immediately after Game.init() returns, and by then Net.name is already set, so Layout.load()
+  // picks up the right per-callsign key on its own first pass; calling it again here would just
+  // run before Layout.els is even populated.
+  loadPlayerPrefs() {
+    try { const cm = localStorage.getItem(playerPrefKey('dnd_cam')); if (cm === 'tp' || cm === 'fp') this.camMode = cm; } catch (e) { }
+    try { const cd = localStorage.getItem(playerPrefKey('dnd_camdist')); if (this.CAM_TIERS.indexOf(cd) > 0) this.camDist = cd; } catch (e) { }
+    try { const sq = localStorage.getItem(playerPrefKey('dnd_squad')); if (sq === '0' || sq === '1') this.squad = sq === '1'; } catch (e) { }
+    try { const sc = localStorage.getItem(playerPrefKey('dnd_squadcount')); if (sc != null) this.squadCount = clamp(parseInt(sc, 10) || 0, 0, 3); } catch (e) { }
+    try { const af = localStorage.getItem(playerPrefKey('dnd_autofire')); if (af === '0' || af === '1') this.autoFire = af === '1'; } catch (e) { }
+    try { const vc = localStorage.getItem(playerPrefKey('dnd_voice')); if (vc === '0' || vc === '1') this.voice = vc === '1'; } catch (e) { }
+    try { const sd = localStorage.getItem(playerPrefKey('dnd_sound')); if (sd === '0' || sd === '1') { this.sound = sd === '1'; Audio.setEnabled(this.sound); } } catch (e) { }
+    try { const se = localStorage.getItem(playerPrefKey('dnd_sens')); if (se != null) { const v = parseFloat(se); if (Number.isFinite(v)) Input.sens = clamp(v, 0.4, 5); } } catch (e) { }
+    HUD.refreshOptions();
+  },
+  // dev/QA toggle: keeps the SPECIAL gauge topped off with no cooldown and every weapon owned, so
+  // a move (or a weapon) can be tried out without grinding kills/waves for it first. Never
+  // persisted — always starts OFF so nobody ships a run with it on by accident. Solo only: see
+  // testModeActive(); coop always behaves as if this were off regardless of the flag, and turning
+  // it on taints the run so its score never reaches the leaderboard (see showGameOver).
   setTestMode(v) {
     this.testMode = v;
     if (v) {
-      Player.ultCharge = 100; Player.ultCooldownT = 0;
-      for (const w of Player.weapons) w.owned = true;
+      this.testModeUsedThisRun = true;
+      if (Net.mode === 'off') { Player.ultCharge = 100; Player.ultCooldownT = 0; for (const w of Player.weapons) w.owned = true; }
     }
   },
+  // the effective gate every gameplay check uses — the flag can stay ON while the player is in a
+  // coop session (so it's ready again the moment they go back solo), but it does nothing there
+  testModeActive() { return this.testMode && Net.mode === 'off'; },
   // GRIT/VITALS, SPEED and RELOAD bars are per-gender (every champion of a gender shares that
   // gender's stat block), not per-champion — so there are only ever two distinct bar sets.
   GENDER_BARS: { male: { hp: 92, speed: 60, reload: 62 }, female: { hp: 70, speed: 88, reload: 62 } },
@@ -5504,6 +5587,10 @@ const Game = {
     Player.reset(char); Input.reset();
     this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0;
     this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0; this.phase = 0;
+    // a fresh run starts clean unless test mode is already on when it begins (Player.reset() just
+    // above already benefited from it if so) — either way, this is what gates the leaderboard
+    // submit at the end of the run (see showGameOver)
+    this.testModeUsedThisRun = this.testModeActive();
     this.timeScale = 1;
     this.toSpawn = 0; this.waveActive = false; this.streak = 0; this.sayT = -99; this.deathK = 0; this.deathRoll = 0; this.chain.length = 0; this.pickupT = 15;
     this.powerupT = CFG.powerupSpawnMin;
@@ -5858,8 +5945,14 @@ const Game = {
     const coop = Net.mode !== 'off', squad = !coop && Bots.on;
     DOM.goRoom.textContent = coop ? 'SQUAD RUN · ROOM ' + Net.code : (squad ? 'SQUAD RUN · WITH BOTS' : '');
     this.renderResultsGrid(this.gatherResultRows(), DOM.goCoop);
-    // three guns on your side is not the same run as one, so the board says which it was
-    Board.submit(Net.displayName(), this.points, this.wave, this.kills, coop ? 1 : (squad ? 2 : 0), this.matchTime);
+    // test mode taints the whole run the moment it's used, even if it was only on for a second —
+    // no submit at all, not even a losing one, so it can never overwrite a legitimate best
+    if (this.testModeUsedThisRun) { if (DOM.goTestNote) DOM.goTestNote.textContent = 'TEST MODE WAS ON — SCORE NOT SUBMITTED TO THE LEADERBOARD'; }
+    else {
+      if (DOM.goTestNote) DOM.goTestNote.textContent = '';
+      // three guns on your side is not the same run as one, so the board says which it was
+      Board.submit(Net.displayName(), this.points, this.wave, this.kills, coop ? 1 : (squad ? 2 : 0), this.matchTime);
+    }
     HUD.showHud(false); HUD.showScreen('gameover');
   },
   // shared by the game-over screen and the between-wave breather (see beginWave/showMidScores)
