@@ -160,6 +160,11 @@ button{font-family:inherit;color:inherit;}
   border-width:3px;background:radial-gradient(circle at 40% 35%,rgba(255,255,255,.18),rgba(120,30,0,.55) 75%);}
 #btnFire .ring{position:absolute;inset:-9px;border-radius:50%;border:2px solid rgba(255,255,255,.18);pointer-events:none;}
 #btnReload{width:58px;height:58px;right:calc(134px + var(--sar));bottom:calc(26px + var(--sab));font-size:12px;}
+/* MEDKIT stacks directly above RELOAD in the same column — both draggable independently from the
+   pause menu's layout editor like every other button here. */
+#btnMedkit{width:52px;height:52px;right:calc(134px + var(--sar));bottom:calc(186px + var(--sab));font-size:9px;border-color:#ffd83b;}
+#btnMedkit small{font-size:13px;letter-spacing:0;margin-top:1px;font-weight:bold;}
+#btnMedkit.empty{opacity:.45;}
 #btnSwitch{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(136px + var(--sab));font-size:12px;}
 /* ultimate-move button, stacked above SWAP WEAPON in the same right-edge column — high enough to
    clear .hudbr (the ammo/weapon-name text block, right-anchored at the same bottom:202 the old
@@ -290,6 +295,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #powerups{max-width:56vw;margin-left:auto;margin-right:auto;}
   #btnFire{width:78px;height:78px;bottom:calc(12px + var(--sab));right:calc(14px + var(--sar));}
   #btnReload{width:50px;height:50px;right:calc(116px + var(--sar));bottom:calc(16px + var(--sab));}
+  #btnMedkit{width:44px;height:44px;right:calc(116px + var(--sar));bottom:calc(156px + var(--sab));}
   #btnSwitch{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(112px + var(--sab));}
   #btnUlt{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(220px + var(--sab));}
   #btnAuto{width:40px;height:40px;right:calc(64px + var(--sar));top:calc(10px + var(--sat));}
@@ -495,6 +501,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <div id="btnCam" class="tbtn">VIEW<small id="camState">1ST</small></div>
     <div id="btnSwitch" class="tbtn">SWAP<small>WEAPON</small></div>
     <div id="btnReload" class="tbtn">RELOAD</div>
+    <div id="btnMedkit" class="tbtn empty">MEDKIT<small id="medkitCount">0</small></div>
     <div id="btnSprint" class="tbtn"><span class="meter"></span>SPRINT</div>
     <div id="btnUlt" class="tbtn"><span class="meter"></span>SPECIAL<small id="ultTimer"></small></div>
     <div id="btnFire" class="tbtn"><span class="ring"></span>FIRE</div>
@@ -590,7 +597,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="best" id="bestLine"></div>
       <div class="help">
         <b>Touch:</b> left side = move (joystick) · right side = swipe to look · FIRE button (drag it to aim while shooting) · SPRINT for a burst of speed. Pause → MOVE BUTTONS to drag the controls where your thumbs want them.<br>
-        <b>Desktop:</b> WASD move · Shift sprint · mouse look · click fire · R reload · Q/E swap weapon · 1-2-3 weapons · V camera · Esc pause.<br>
+        <b>Desktop:</b> WASD move · Shift sprint · mouse look · click fire · R reload · H health kit · Q/E swap weapon · 1-2-3 weapons · V camera · Esc pause.<br>
         Shotgun unlocks at wave 3, assault rifle at wave 6. Shoot the red barrels. Grab the glowing drops.
       </div>
       <div class="help" id="verLine" style="opacity:.5"></div>
@@ -782,7 +789,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.50.0';
+const GAME_VERSION = 'v1.51.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -832,6 +839,12 @@ const CFG = {
   // (5x faster by wave 10, 30x by wave 30) and powerupCapForWave scales the base cap below to
   // match, so abundance ramps hard with wave instead of staying flat all run.
   powerupSpawnMin: 7, powerupSpawnMax: 12, powerupCap: 4,
+  // health kits: a THIRD independent pickup stream, separate from both the health/ammo roll and
+  // the power-up stream above — a stackable manual-use resource rather than a timed buff, so it
+  // gets its own clock/cap (see Game.spawnHealthKit/healthKitCount) instead of competing with
+  // either. Carried, not instant: picking one up banks it (up to healthKitMax) and pressing the
+  // MEDKIT button/H key spends one for an immediate heal (see Player.useHealthKit).
+  healthKitMax: 3, healthKitHeal: 50, healthKitSpawnMin: 20, healthKitSpawnMax: 35, healthKitCap: 2,
   // coop: how long you bleed out on the sand, and what it costs a teammate to pick you back up
   downTime: 45, reviveTime: 3.5, reviveRange: 2.4, reviveHp: 0.4,
   // shield: a regenerating buffer in front of HP, same idea for every survivor (player, peer, or
@@ -1394,7 +1407,8 @@ function genIcon(type) {
   g.clearRect(0, 0, S, S);
   const glow = {
     health: '#ff4040', ammo: '#ffb040', insta: '#ff2020', double: '#ffe040', noreload: '#40c4ff',
-    infammo: '#40ff8a', invincible: '#ffffff', rapidfire: '#ff8a00', fastmove: '#00e5ff', phase: '#b968ff'
+    infammo: '#40ff8a', invincible: '#ffffff', rapidfire: '#ff8a00', fastmove: '#00e5ff', phase: '#b968ff',
+    healthkit: '#ffd83b'
   }[type];
   g.shadowColor = glow; g.shadowBlur = 22;
   // shared badge backdrop for every power-up glyph below (double included) — a dark disc with a
@@ -1459,15 +1473,22 @@ function genIcon(type) {
     g.fillStyle = glow;
     for (let i = 0; i < 2; i++) { const ox = i * 26; g.beginPath(); g.moveTo(30 + ox, 34); g.lineTo(58 + ox, 64); g.lineTo(30 + ox, 94); g.lineTo(42 + ox, 64); g.closePath(); g.fill(); }
     ring();
-  } else {
-    // phase: a dashed "wall" outline with a solid glyph clipping straight through it, standing in
-    // for "everything else is solid, you aren't"
+  } else if (type === 'phase') {
+    // a dashed "wall" outline with a solid glyph clipping straight through it, standing in for
+    // "everything else is solid, you aren't"
     badge();
     g.strokeStyle = '#8a5cff'; g.lineWidth = 8; g.setLineDash([9, 7]);
     g.strokeRect(24, 30, 80, 68); g.setLineDash([]);
     g.fillStyle = glow; g.globalAlpha = 0.9;
     g.beginPath(); g.moveTo(40, 100); g.lineTo(64, 20); g.lineTo(88, 100); g.lineTo(64, 80); g.closePath(); g.fill();
     g.globalAlpha = 1;
+    ring();
+  } else {
+    // healthkit: a bold gold cross, same silhouette as the red health icon but unmistakably a
+    // different (carried, stackable) item at a glance thanks to the yellow badge/ring
+    badge();
+    g.fillStyle = glow; roundRect(g, 22, 22, 84, 84, 16); g.fill();
+    g.shadowBlur = 0; g.fillStyle = '#1a1200'; g.fillRect(52, 34, 24, 60); g.fillRect(34, 52, 60, 24);
     ring();
   }
   return c;
@@ -1520,7 +1541,7 @@ function buildTextures() {
   TEX.glow = mkTex(genRadial(64, [[0, 'rgba(255,255,255,1)'], [.35, 'rgba(255,255,255,.55)'], [1, 'rgba(255,255,255,0)']]), 0);
   TEX.shadow = mkTex(genRadial(64, [[0, 'rgba(0,0,0,.55)'], [.6, 'rgba(0,0,0,.3)'], [1, 'rgba(0,0,0,0)']]), 0);
   TEX.icons = {};
-  for (const t of ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase']) TEX.icons[t] = mkTex(genIcon(t), 0);
+  for (const t of ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase', 'healthkit']) TEX.icons[t] = mkTex(genIcon(t), 0);
   TEX.lowhpUrl = genLowHpOverlay();
 }
 
@@ -1768,7 +1789,7 @@ const Input = {
   el: {},
   init() {
     const el = this.el;
-    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt', 'btnPause', 'c'].forEach(id => el[id] = $(id));
+    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt', 'btnMedkit', 'btnPause', 'c'].forEach(id => el[id] = $(id));
     const self = this, opt = { passive: false };
     const layer = el.touchLayer;
     layer.addEventListener('touchstart', function (e) { e.preventDefault(); self.touchSeen = true; self.on.any(); for (const t of e.changedTouches) self.touchBegin(t); }, opt);
@@ -1800,6 +1821,7 @@ const Input = {
       b.addEventListener('click', function (e) { e.preventDefault(); if (Layout.editing) return; self.on.any(); fn(); });
     };
     tap(el.btnReload, () => self.on.reload());
+    tap(el.btnMedkit, () => self.on.medkit());
     tap(el.btnSwitch, () => self.on.swap());
     tap(el.btnAuto, () => self.on.auto());
     tap(el.btnCam, () => self.on.camera());
@@ -1810,6 +1832,7 @@ const Input = {
     window.addEventListener('keydown', function (e) {
       if (e.repeat) return; self.keys[e.code] = true; self.on.any();
       if (e.code === 'KeyR') self.on.reload();
+      else if (e.code === 'KeyH') self.on.medkit();
       else if (e.code === 'KeyQ' || e.code === 'KeyE') self.on.swap();
       else if (e.code === 'KeyG') self.on.ultimate();
       else if (e.code === 'KeyT') self.on.auto();
@@ -1895,7 +1918,7 @@ const Layout = {
   // per-callsign now (see playerPrefKey) — a saved arrangement follows the same person on the
   // same phone rather than whoever last typed a name into this browser
   key() { return playerPrefKey('dnd_layout_v1'); },
-  ids: ['btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt'],
+  ids: ['btnFire', 'btnReload', 'btnMedkit', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt'],
   pos: {}, editing: false, drag: null, els: {}, bar: null,
   init() {
     for (const id of this.ids) this.els[id] = $(id);
@@ -3353,7 +3376,8 @@ const PICKUP_DEFS = {
   // later-wave only (CFG.powerupWave+) — see Game.spawnPickup
   noreload: { color: 0x40c4ff, label: 'NO RELOAD' }, infammo: { color: 0x40ff8a, label: '∞ AMMO' },
   invincible: { color: 0xffffff, label: 'INVINCIBLE' }, rapidfire: { color: 0xff8a00, label: 'RAPID FIRE' },
-  fastmove: { color: 0x00e5ff, label: 'SPEED BOOST' }, phase: { color: 0xb968ff, label: 'WALL PHASE' }
+  fastmove: { color: 0x00e5ff, label: 'SPEED BOOST' }, phase: { color: 0xb968ff, label: 'WALL PHASE' },
+  healthkit: { color: 0xffd83b, label: 'HEALTH KIT' }
 };
 const Pickups = {
   pool: [],
@@ -4117,6 +4141,19 @@ const Player = {
       else Game.onPlayerDeath();
     }
   },
+  // manual-use consumable — see Game.collect's 'healthkit' branch for how the stack fills up.
+  // Refuses at full HP so a stacked kit never gets burned for nothing, and refuses while downed/
+  // dead the same way reload does (nothing to spend it on until you're back on your feet).
+  useHealthKit() {
+    if (!this.alive || this.downed) { Audio.empty(); return; }
+    if (Game.healthKits <= 0) { Audio.empty(); HUD.toast('NO HEALTH KITS', 1.8); return; }
+    if (this.hp >= this.maxHp) { Audio.empty(); HUD.toast('ALREADY AT FULL HEALTH', 1.8); return; }
+    Game.healthKits--;
+    this.hp = Math.min(this.maxHp, this.hp + CFG.healthKitHeal);
+    Audio.powerup(); HUD.toast('HEALTH KIT USED — ' + Game.healthKits + '/' + CFG.healthKitMax + ' LEFT', 2.0);
+    Floaties.spawn(this.x, 1.6, this.z, '+' + CFG.healthKitHeal + ' HP', '#ffd83b', 20, 1.2);
+    HUD.dirty = true;
+  },
   revive() {
     if (!this.downed) return;
     this.downed = false; this.downT = 0; this.alive = true;
@@ -4626,7 +4663,7 @@ const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
     ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
-      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateBlock',
+      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'btnMedkit', 'medkitCount', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'testModePopup', 'btnTestModeYes', 'btnTestModeNo',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
@@ -4685,6 +4722,11 @@ const HUD = {
       const on = G[p.key] > 0; if (this.last[p.key] !== on) { this.last[p.key] = on; DOM[p.dom].classList.toggle('on', on); }
       if (on) this.set(p.key + 'T', DOM[p.dom], p.label + ' ' + Math.ceil(G[p.key]) + 's');
     }
+    // health kit count — carried across the whole run, not a timed buff, so it just mirrors
+    // G.healthKits directly rather than going through POWER_PILLS' on/off + countdown shape
+    this.set('medkits', DOM.medkitCount, String(G.healthKits));
+    const kitsEmpty = G.healthKits <= 0;
+    if (this.last.kitsEmpty !== kitsEmpty) { this.last.kitsEmpty = kitsEmpty; DOM.btnMedkit.classList.toggle('empty', kitsEmpty); }
     // score
     this.set('pts', DOM.points, fmt(G.points));
     this.set('kills', DOM.kills, G.kills + (G.kills === 1 ? ' KILL' : ' KILLS'));
@@ -5383,9 +5425,9 @@ const Director = {
 /* ------------------------------------------------------------------ game state, waves, economy, voice lines, main loop */
 const Game = {
   state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0,
-  noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0, phase: 0,
+  noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0, phase: 0, healthKits: 0,
   timeScale: 1, matchTime: 0,
-  toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, powerupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
+  toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, powerupT: 0, healthKitT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, testMode: false, testModeUsedThisRun: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
   CAM_TIERS: ['fp', 'close', 'medium', 'far', 'veryfar', 'topdown'],
   best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
@@ -5410,6 +5452,7 @@ const Game = {
     ['touchstart', 'mousedown'].forEach(ev => document.addEventListener(ev, lockOnce, { passive: true }));
     Input.on.any = function () { if (!Audio.ready) Audio.unlock(); else Audio.resume(); };
     Input.on.reload = function () { if (self.state === 'playing') Player.reload(); };
+    Input.on.medkit = function () { if (self.state === 'playing') Player.useHealthKit(); };
     Input.on.swap = function () { if (self.state === 'playing') Player.swapWeapon(); };
     Input.on.ultimate = function () { if (self.state === 'playing') Player.tryUltimate(); };
     Input.on.select = function (i) { if (self.state === 'playing') Player.switchTo(i); };
@@ -5656,7 +5699,7 @@ const Game = {
     for (const e of Explosions.pool) { e.on = false; e.fire.visible = e.ring.visible = false; } for (const l of Explosions.lights) l.intensity = 0;
     Player.reset(char); Input.reset();
     this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0;
-    this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0; this.phase = 0;
+    this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0; this.phase = 0; this.healthKits = 0;
     // a fresh run starts clean unless test mode is already on when it begins (Player.reset() just
     // above already benefited from it if so) — either way, this is what gates the leaderboard
     // submit at the end of the run (see showGameOver)
@@ -5664,6 +5707,7 @@ const Game = {
     this.timeScale = 1;
     this.toSpawn = 0; this.waveActive = false; this.streak = 0; this.sayT = -99; this.deathK = 0; this.deathRoll = 0; this.chain.length = 0; this.pickupT = 15;
     this.powerupT = CFG.powerupSpawnMin;
+    this.healthKitT = rnd(CFG.healthKitSpawnMin, CFG.healthKitSpawnMax);
     this.powerBag.length = 0; this.powerBagPool = null;
     Director.reset(); Bots.spawn();
     HUD.last = {}; HUD.dirty = true; HUD.showScreen(null); HUD.showHud(true); HUD.refreshOptions();
@@ -5834,6 +5878,11 @@ const Game = {
     const type = this.nextPowerType(pool);
     if (World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn(type, this._pt.x, this._pt.z);
   },
+  // health kits: a third stream again, independent of both of the above — see CFG.healthKitMax
+  healthKitCount() { let n = 0; for (const p of Pickups.pool) if (p.on && p.type === 'healthkit') n++; return n; },
+  spawnHealthKit() {
+    if (World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn('healthkit', this._pt.x, this._pt.z);
+  },
   // `by` is set when a coop teammate landed the shot — their client already drew the impact,
   // so the host resolves the damage and score without replaying local feedback.
   onBulletHit(z, dmg, hx, hy, hz, head, dirx, dirz, by) {
@@ -5984,6 +6033,12 @@ const Game = {
     else if (type === 'rapidfire') { this.rapidFire = CFG.rapidFireTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'RAPID FIRE!', '#ff8a00', 22, 1.3); HUD.toast('RAPID FIRE — 15 SECONDS', 2.5); }
     else if (type === 'fastmove') { this.fastMove = CFG.fastMoveTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'SPEED BOOST!', '#00e5ff', 22, 1.3); HUD.toast('SPEED BOOST — 15 SECONDS', 2.5); }
     else if (type === 'phase') { this.phase = CFG.phaseTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'WALL PHASE!', '#b968ff', 22, 1.3); HUD.toast('WALL PHASE — WALK THROUGH ANYTHING, 15 SECONDS', 2.5); }
+    // carried, not instant — banks up to healthKitMax for a manual heal later (see
+    // Player.useHealthKit); a kit picked up at the cap is wasted rather than lost silently, so say so
+    else if (type === 'healthkit') {
+      if (this.healthKits < CFG.healthKitMax) { this.healthKits++; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'HEALTH KIT ' + this.healthKits + '/' + CFG.healthKitMax, '#ffd83b', 20, 1.2); HUD.toast('HEALTH KIT — ' + this.healthKits + '/' + CFG.healthKitMax, 2.2); }
+      else { Audio.empty(); Floaties.spawn(x, 1.6, z, 'KITS FULL', '#ffd83b', 18, 1.0); HUD.toast('HEALTH KITS ALREADY FULL (' + CFG.healthKitMax + '/' + CFG.healthKitMax + ')', 2.2); }
+    }
     Particles.sparks(x, 1.2, z, 12); HUD.dirty = true;
   },
   recordBest() {
@@ -6110,6 +6165,7 @@ const Game = {
         }
         this.pickupT -= dt; if (this.pickupT <= 0) { this.pickupT = this.pickupInterval(); if (Pickups.count() < this.pickupCap()) this.spawnPickup(); }
         this.powerupT -= dt; if (this.powerupT <= 0) { this.powerupT = rnd(CFG.powerupSpawnMin, CFG.powerupSpawnMax) / this.powerupRateMul(this.wave); if (this.powerupCount() < this.powerupCapForWave()) this.spawnPowerup(); }
+        this.healthKitT -= dt; if (this.healthKitT <= 0) { this.healthKitT = rnd(CFG.healthKitSpawnMin, CFG.healthKitSpawnMax); if (this.healthKitCount() < CFG.healthKitCap) this.spawnHealthKit(); }
       }
       // heartbeat when low
       if (P.hp < P.maxHp * 0.3) { this.heartT -= dt; if (this.heartT <= 0) { this.heartT = 1.1; Audio.heartbeat(); } }
@@ -6303,7 +6359,7 @@ const NET = {
 // reordering makes an older client read a hunter as a walker, or `attack` as `dead`.
 const ZSTATE = ['emerge', 'chase', 'attack', 'dead', 'crouch', 'pounce', 'pin'];
 const ZTYPE_LIST = ['walker', 'runner', 'brute', 'hunter', 'tank'];
-const PU_LIST = ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase']; // append-only — this is a wire-format index array
+const PU_LIST = ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase', 'healthkit']; // append-only — this is a wire-format index array
 const r2 = (v) => Math.round(v * 100) / 100;
 
 /* ------------------------------------------------------------------ pause beacon
