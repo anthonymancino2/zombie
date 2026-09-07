@@ -608,7 +608,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.11.0';
+const GAME_VERSION = 'v1.11.1';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -1516,6 +1516,11 @@ const Layout = {
     for (const id of this.ids) this.els[id] = $(id);
     this.bar = $('layoutBar');
     this.load(); this.apply();
+    // mobile Safari can report a transient/wrong window size on first layout (toolbar/viewport
+    // still settling), which would clamp a saved custom position against the wrong bounds. A short
+    // re-apply once things have actually settled catches that without waiting on a resize event
+    // that may not reliably fire.
+    setTimeout(() => this.apply(), 400);
     const self = this, opt = { passive: false, capture: true };
     $('btnLayoutDone').addEventListener('click', function (e) { e.preventDefault(); self.end(); });
     $('btnLayoutReset').addEventListener('click', function (e) { e.preventDefault(); self.reset(); });
@@ -1560,8 +1565,15 @@ const Layout = {
     const el = this.els[id], p = this.pos[id]; if (!el) return;
     if (!p) { el.style.left = el.style.top = el.style.right = el.style.bottom = ''; return; }
     el.style.right = 'auto'; el.style.bottom = 'auto';
-    el.style.left = Math.round(p.x * window.innerWidth - el.offsetWidth / 2) + 'px';
-    el.style.top = Math.round(p.y * window.innerHeight - el.offsetHeight / 2) + 'px';
+    // a fraction saved at one window size (or with Safari's address bar in a different state —
+    // innerHeight on iOS changes as it shows/hides) can land a button off-screen when reapplied at
+    // another. Re-clamp on every apply, not just at drag time, so a stale saved position can never
+    // push a control past the edge — same margin `place()` uses when you actually drag it.
+    const mx = el.offsetWidth / 2 + 6, my = el.offsetHeight / 2 + 6;
+    const cx = clamp(p.x * window.innerWidth, mx, window.innerWidth - mx);
+    const cy = clamp(p.y * window.innerHeight, my, window.innerHeight - my);
+    el.style.left = Math.round(cx - el.offsetWidth / 2) + 'px';
+    el.style.top = Math.round(cy - el.offsetHeight / 2) + 'px';
   },
   apply() { for (const id of this.ids) this.applyOne(id); },
   reset() { this.pos = {}; this.save(); this.apply(); HUD.toast('LAYOUT RESET', 1.6); },
