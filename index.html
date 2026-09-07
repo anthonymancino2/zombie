@@ -225,9 +225,16 @@ h1.title em{font-style:normal;color:var(--accent2);}
 #loadErr{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#1a0f08;color:#fff;text-align:center;padding:20px;font-family:var(--body-font);z-index:50;}
 #loadErr.show{display:flex;}
 #loadErr h3{font-family:var(--hud-font);letter-spacing:.2em;font-weight:normal;font-size:24px;color:var(--accent2);}
-#rotateHint{position:absolute;left:50%;bottom:calc(10px + var(--sab));transform:translateX(-50%);font-family:var(--hud-font);font-size:11px;letter-spacing:.16em;color:var(--sand);
-  pointer-events:none;white-space:nowrap;background:rgba(12,6,3,.9);border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:6px 14px;}
-#rotateHint:empty{display:none;}
+/* Landscape-only: this game has no portrait layout at all. iOS Safari has no orientation-lock API
+   for a regular web page, so the only universal way to enforce it is to block interaction outright
+   with this overlay whenever the viewport is taller than it is wide, on any touch device. */
+#rotateBlock{position:fixed;inset:0;z-index:999;display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;
+  background:#1a0f08;color:#fff;text-align:center;padding:30px;font-family:var(--body-font);}
+#rotateBlock.show{display:flex;}
+#rotateBlock .icon{font-size:52px;animation:rotatespin 1.6s ease-in-out infinite;}
+#rotateBlock h3{font-family:var(--hud-font);letter-spacing:.18em;font-weight:normal;font-size:20px;color:var(--accent2);margin:0;}
+#rotateBlock p{font-size:13px;color:var(--sand);max-width:280px;margin:0;}
+@keyframes rotatespin{0%,100%{transform:rotate(0deg);}50%{transform:rotate(-90deg);}}
 #menu .scroll{padding-bottom:calc(52px + var(--sab));}
 @media (max-height:420px){
   h1.title{font-size:clamp(34px,8vw,64px);} .tag{margin-bottom:8px;} .cards{margin:4px 0 8px;} .card canvas,.cportrait{width:56px;height:56px;font-size:22px;} .cdesc{display:none;}
@@ -476,7 +483,6 @@ h1.title em{font-style:normal;color:var(--accent2);}
       </div>
       <div class="help" id="verLine" style="opacity:.5"></div>
     </div></div>
-    <div id="rotateHint"></div>
   </div>
 
   <!-- Pause -->
@@ -580,6 +586,8 @@ h1.title em{font-style:normal;color:var(--accent2);}
     </div></div>
   </div>
 
+  <div id="rotateBlock"><div class="icon">📱</div><h3>ROTATE YOUR DEVICE</h3><p>DUST &amp; DEAD is landscape only — turn your phone sideways to keep playing.</p></div>
+
   <div id="loadErr">
     <div><h3>3D ENGINE FAILED TO LOAD</h3>
       <p>The Three.js library could not be fetched. Check your connection and try again.</p>
@@ -626,7 +634,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.13.0';
+const GAME_VERSION = 'v1.14.0';
 const CFG = {
   // playable radius. 4x the playable AREA means the radius doubles (area scales with r^2), not
   // literally 4x the number — 58*sqrt(4)=116. grid/gridMin must cover it: N=256 cells at gridMin=
@@ -664,6 +672,11 @@ const CFG = {
     veryfar: { dist: 8.5, side: 1.8, up: 1.4 }
   },
   tpCloseAlpha: 0.38,
+  // near-overhead, not a true 90° top-down — the camera still pitches slightly short of straight
+  // down and turns with the player's yaw, so there's still a "forward" to read instead of a flat
+  // radar view. height/back are world units above/behind the player; pitch overrides the normal
+  // look-with-your-mouse camera rotation entirely while this tier is active.
+  topDown: { height: 34, back: 7, pitch: -1.45 },
   // hunter: the coil, the leap, and how long it can ride you. pinMax is the safety valve — a solo
   // player with nobody to rescue them is never held down until they die.
   hunterMin: 5.5, hunterRange: 15, hunterWindup: 0.55, hunterCool: 9, pounceSpeed: 15.5, pounceUp: 5.2, pounceGrav: 14,
@@ -3179,6 +3192,7 @@ const Player = {
   // on it, which keeps the body clear of the middle of the screen; the crosshair is projected onto
   // whatever the ray actually hits (see FX.draw), so it still tells the truth about your shot.
   updateCameraTP(cam, sh) {
+    if (Game.camDist === 'topdown') return this.updateCameraTopDown(cam, sh);
     const dir = this.eyeDir(this._dir);
     let py = this.eyeY();
     if (Game.state === 'dying') py = lerp(py, 0.5, Game.deathK);
@@ -3193,6 +3207,18 @@ const Player = {
     cam.position.set(cx + (Math.random() - 0.5) * sh * 0.12, cy + (Math.random() - 0.5) * sh * 0.08, cz + (Math.random() - 0.5) * sh * 0.12);
     cam.rotation.set(this.pitch + (Math.random() - 0.5) * sh * 0.02, this.yaw,
       (Math.random() - 0.5) * sh * 0.03 + (Game.state === 'dying' ? Game.deathRoll : 0));
+  },
+  // near-overhead — camera pitch is fixed (CFG.topDown.pitch), not the player's own look-pitch, so
+  // aiming the mouse/stick up and down doesn't tip a top-down view over
+  updateCameraTopDown(cam, sh) {
+    const td = CFG.topDown, px = this.x, pz = this.z;
+    let py = this.eyeY(); if (Game.state === 'dying') py = lerp(py, 0.5, Game.deathK);
+    const dir = this.eyeDir(this._dir);
+    let cx = px - dir.x * td.back, cy = py + td.height, cz = pz - dir.z * td.back;
+    const t = World.segHit(px, py, pz, cx, cy, cz);
+    if (t >= 0) { const k = Math.max(0.12, t * 0.86); cx = px + (cx - px) * k; cy = py + (cy - py) * k; cz = pz + (cz - pz) * k; }
+    cam.position.set(cx + (Math.random() - 0.5) * sh * 0.1, cy, cz + (Math.random() - 0.5) * sh * 0.1);
+    cam.rotation.set(td.pitch, this.yaw, Game.state === 'dying' ? Game.deathRoll : 0);
   },
   // where the shot lands: the auto-lock target, else the first wall down the ray, else far away
   aimPoint(out) {
@@ -3496,7 +3522,7 @@ const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
     ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'matchClock', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'reloadHint',
-      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateHint',
+      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
       'btnLeaders', 'btnLeadersBack', 'btnLobbyStart', 'btnLobbyLeave', 'lobbyCode', 'lobbyPlayers', 'lobbyStatus', 'lobbyHint',
@@ -4077,7 +4103,7 @@ const Game = {
   timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
-  CAM_TIERS: ['fp', 'close', 'medium', 'far', 'veryfar'],
+  CAM_TIERS: ['fp', 'close', 'medium', 'far', 'veryfar', 'topdown'],
   best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
   fpsAcc: 0, fpsN: 0, fpsAvg: 16.7, fpsT: 0, resT: 0, chain: [], realDt: 0.016, newBest: false, _pt: { x: 0, z: 0 },
   init() {
@@ -4090,6 +4116,10 @@ const Game = {
     const self = this;
     const unlockAudio = function () { Audio.unlock(); if (Audio.ready) { ['touchstart', 'touchend', 'mousedown', 'keydown', 'click'].forEach(ev => document.removeEventListener(ev, unlockAudio)); } };
     ['touchstart', 'touchend', 'mousedown', 'keydown', 'click'].forEach(ev => document.addEventListener(ev, unlockAudio, { passive: true }));
+    // orientation lock requires a user gesture on the platforms that support it at all — fire it
+    // once off the very first touch, same moment audio unlocks
+    const lockOnce = function () { self.tryLockLandscape(); ['touchstart', 'mousedown'].forEach(ev => document.removeEventListener(ev, lockOnce)); };
+    ['touchstart', 'mousedown'].forEach(ev => document.addEventListener(ev, lockOnce, { passive: true }));
     Input.on.any = function () { if (!Audio.ready) Audio.unlock(); else Audio.resume(); };
     Input.on.reload = function () { if (self.state === 'playing') Player.reload(); };
     Input.on.swap = function () { if (self.state === 'playing') Player.swap(); };
@@ -4121,16 +4151,38 @@ const Game = {
     document.addEventListener('visibilitychange', () => { if (document.hidden) { if (self.state === 'playing' && !Net.on()) self.pause(); } else Audio.resume(); });
     window.addEventListener('pagehide', () => { if (self.state === 'playing' && !Net.on()) self.pause(); });
     this.updateRotateHint(); window.addEventListener('resize', () => self.updateRotateHint());
+    window.addEventListener('orientationchange', () => setTimeout(() => self.updateRotateHint(), 60));
     World.generate(Math.floor(Math.random() * 1e9));
     this.selectChar('cloud');
     Net.init(); Board.init(); Mqtt.start();
     const ver = $('verLine'); if (ver) ver.textContent = 'DUST & DEAD ' + GAME_VERSION;
   },
-  updateRotateHint() { const portrait = window.innerHeight > window.innerWidth && ('ontouchstart' in window); DOM.rotateHint.textContent = portrait ? 'ROTATE TO LANDSCAPE FOR THE BEST EXPERIENCE' : ''; },
+  // Landscape only, enforced rather than just suggested: iOS Safari has no orientation-lock API
+  // for a plain web page (screen.orientation.lock throws/no-ops there), so a full-screen block is
+  // the only way that actually works everywhere. Gated to touch devices only — a desktop window
+  // that happens to be taller than wide isn't "portrait mode" in the sense the owner means.
+  updateRotateHint() {
+    const portrait = window.innerHeight > window.innerWidth && ('ontouchstart' in window);
+    const was = DOM.rotateBlock.classList.contains('show');
+    DOM.rotateBlock.classList.toggle('show', portrait);
+    if (portrait && !was && this.state === 'playing') this.pause();
+  },
+  // best-effort real lock where the platform supports it (mainly Android Chrome) — must be called
+  // from a user gesture, so this fires on the very first tap/click, not at load. Wrapped because
+  // it throws immediately on iOS Safari and anywhere else without the API.
+  tryLockLandscape() {
+    try {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      const lock = () => { try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => { }); } catch (e) { } };
+      if (screen.orientation && screen.orientation.lock) lock();
+      else if (req) { req.call(el).then(lock).catch(() => { }); }
+    } catch (e) { }
+  },
   // FIRST PERSON is the default and stays the fastest option to get back to — cycling from any
   // third-person distance always passes back through it before looping to CLOSE again.
-  CAM_DIST_NAME: { close: 'CLOSE', medium: 'MEDIUM', far: 'FAR', veryfar: 'VERY FAR' },
-  CAM_DIST_ABBR: { close: 'CLO', medium: 'MED', far: 'FAR', veryfar: 'FAR+' },
+  CAM_DIST_NAME: { close: 'CLOSE', medium: 'MEDIUM', far: 'FAR', veryfar: 'VERY FAR', topdown: 'TOP-DOWN' },
+  CAM_DIST_ABBR: { close: 'CLO', medium: 'MED', far: 'FAR', veryfar: 'FAR+', topdown: 'TOP' },
   camLabel() { return this.camMode === 'fp' ? '1ST PERSON' : '3RD PERSON — ' + this.CAM_DIST_NAME[this.camDist]; },
   cycleCam() {
     const cur = this.camMode === 'fp' ? 'fp' : this.camDist;
