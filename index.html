@@ -782,7 +782,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.49.0';
+const GAME_VERSION = 'v1.50.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -5063,7 +5063,15 @@ const Bots = {
     }
     b.reviveT = 0;
 
-    // 3. formation. Stand and fight inside the leash; break off and run when you fall behind.
+    // 3. movement. Real-coop filler bots (Net.mode==='host') hunt independently instead of
+    // anchoring to whoever happens to be hosting — see thinkFillerMove for why. Solo squad
+    // companions keep the old stick-with-the-player formation; there's no "he's only alive
+    // because of his bots" complaint to address when the squad is entirely your own.
+    if (Net.mode === 'host') this.thinkFillerMove(b, dt);
+    else this.thinkFormationMove(b, dt);
+  },
+  // formation. Stand and fight inside the leash; break off and run when you fall behind.
+  thinkFormationMove(b, dt) {
     const pdx = Player.x - b.x, pdz = Player.z - b.z, pd = Math.sqrt(pdx * pdx + pdz * pdz);
     const ang = Player.yaw + b.def.slot;
     const gx = Player.x - Math.sin(ang) * CFG.botLeash, gz = Player.z - Math.cos(ang) * CFG.botLeash;
@@ -5071,6 +5079,60 @@ const Bots = {
     else if (!b.target) this.moveTo(b, gx, gz, dt, 1);
     else if (pd > CFG.botLeash + 2.5) this.moveTo(b, gx, gz, dt, 0.8);
     else { b.gait = lerp(b.gait, 0, Math.min(1, dt * 8)); b.vx *= 0.8; b.vz *= 0.8; }
+  },
+  // A filler bot exists to round out a real coop room, not to babysit the host — so it never
+  // homes on any particular player's position. Priority is strictly: fight whatever's already in
+  // range (step 1 above already picked it, walk in close enough to be sure of it) -> if nothing's
+  // in range, close the distance on the nearest zombie anywhere on the map -> if the map is
+  // genuinely clear, wander, paired up with another idle filler so two bots drift the arena
+  // together instead of each scattering off alone (see roamPaired).
+  thinkFillerMove(b, dt) {
+    if (b.target) {
+      const d = Math.hypot(b.target.x - b.x, b.target.z - b.z);
+      if (d > b.def.range * 0.7) this.moveTo(b, b.target.x, b.target.z, dt, 1.1, true);
+      else { b.gait = lerp(b.gait, 0, Math.min(1, dt * 8)); b.vx *= 0.8; b.vz *= 0.8; }
+      return;
+    }
+    const nearest = this.nearestZombieAnywhere(b);
+    if (nearest) { this.moveTo(b, nearest.x, nearest.z, dt, 1.2, true); return; }
+    this.roamPaired(b, dt);
+  },
+  nearestZombieAnywhere(b) {
+    const zs = Zombies.pool; let best = null, bd = Infinity;
+    for (let i = 0; i < zs.length; i++) {
+      const z = zs[i]; if (!z.on || z.state === 'dead' || z.state === 'emerge') continue;
+      const dx = z.x - b.x, dz = z.z - b.z, d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; best = z; }
+    }
+    return best;
+  },
+  // stable index pairing over the fixed 3-slot roster (Boone, Kess, June — see BOT_DEFS/build) so
+  // idle fillers wander in twos rather than each picking their own random point. A bot with no
+  // active buddy (room only needed one filler, or its partner is down/reviving/out) just leads
+  // its own point — pairing only matters when there's actually someone to pair with.
+  roamPairs: [[0, 1], [2]],
+  roamLeaderFor(b) {
+    const i = this.list.indexOf(b);
+    for (const pair of this.roamPairs) if (pair.indexOf(i) >= 0) return this.list[pair[0]];
+    return b;
+  },
+  roamPaired(b, dt) {
+    const leader = this.roamLeaderFor(b);
+    const leaderReady = leader.squadActive && !leader.down && !leader.out && !leader.pinnedBy;
+    if (b === leader || !leaderReady) {
+      if (!(b.roamT > 0)) {
+        const a = rnd(0, TAU), r = rnd(6, 16);
+        b.roamX = b.x + Math.cos(a) * r; b.roamZ = b.z + Math.sin(a) * r;
+        b.roamT = rnd(4, 8);
+      }
+      b.roamT -= dt;
+      this.moveTo(b, b.roamX, b.roamZ, dt, 0.85, true);
+    } else {
+      // trail a couple units off the leader's own point so the pair walks side by side, not stacked
+      const off = this.list.indexOf(b) % 2 === 0 ? 1.6 : -1.6;
+      const tx = leader.roamX != null ? leader.roamX + off : leader.x, tz = leader.roamZ != null ? leader.roamZ : leader.z;
+      this.moveTo(b, tx, tz, dt, 0.85, true);
+    }
   },
   pickTarget(b) {
     const zs = Zombies.pool, R = b.def.range;
@@ -5121,14 +5183,19 @@ const Bots = {
     Audio.botShot(def.kind, b.x, b.z);
     b.flashT = 0.05;
   },
-  moveTo(b, tx, tz, dt, mul) {
+  // `noFlow` skips the flow-field redirect below — used when tx/tz is a filler bot's own hunt or
+  // roam destination (see thinkFillerMove/roamPaired), since that field only ever points at the
+  // player/team and would just drag the bot back toward them the moment LOS to its real target
+  // (a distant zombie, or a wander point) gets blocked by anything, undoing the whole point of
+  // sending it somewhere that isn't the player.
+  moveTo(b, tx, tz, dt, mul, noFlow) {
     let dx = tx - b.x, dz = tz - b.z;
     const d = Math.sqrt(dx * dx + dz * dz);
     if (d < 0.35) { b.gait = lerp(b.gait, 0, Math.min(1, dt * 8)); b.vx *= 0.7; b.vz *= 0.7; return; }
     dx /= d; dz /= d;
     // the horde's flow field is already aimed at the player, so a bot heading home can ride it
     // around cover for free rather than grinding along a wall
-    if (d > 3 && !World.los(b.x, b.z, tx, tz) && World.flowTarget(b.x, b.z, this._t)) {
+    if (!noFlow && d > 3 && !World.los(b.x, b.z, tx, tz) && World.flowTarget(b.x, b.z, this._t)) {
       const fx = this._t.x - b.x, fz = this._t.z - b.z, fl = Math.sqrt(fx * fx + fz * fz);
       if (fl > 0.001) { dx = fx / fl; dz = fz / fl; }
     }
