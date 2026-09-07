@@ -107,6 +107,7 @@ button{font-family:inherit;color:inherit;}
 .pill.invincible{border-color:#ffffff;box-shadow:0 0 10px rgba(255,255,255,.7);}
 .pill.rapidfire{border-color:#ff8a00;box-shadow:0 0 10px rgba(255,138,0,.6);}
 .pill.fastmove{border-color:#00e5ff;box-shadow:0 0 10px rgba(0,229,255,.6);}
+.pill.phase{border-color:#b968ff;box-shadow:0 0 10px rgba(185,104,255,.6);}
 @keyframes pillpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 #points{font-size:28px;line-height:1;color:#fff;text-shadow:0 0 14px var(--glow),0 2px 2px #000;letter-spacing:.04em;}
 #mult{font-size:12px;color:#ffd83b;letter-spacing:.16em;text-shadow:0 0 8px rgba(255,216,59,.7);height:14px;margin-top:2px;}
@@ -520,6 +521,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="pill invincible" id="pillInvincible">INVINCIBLE 12s</div>
         <div class="pill rapidfire" id="pillRapidFire">RAPID FIRE 15s</div>
         <div class="pill fastmove" id="pillFastMove">SPEED BOOST 15s</div>
+        <div class="pill phase" id="pillPhase">WALL PHASE 15s</div>
       </div>
     </div>
     <div class="hudtr">
@@ -755,7 +757,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.42.0';
+const GAME_VERSION = 'v1.43.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -793,7 +795,7 @@ const CFG = {
   // later-wave power-ups (wave >= powerupWave only) — personal buffs, not squad-wide like
   // insta/double, since reload/ammo/rate-of-fire/speed only mean anything for whoever grabbed them
   powerupWave: 3,
-  noReloadTime: 15, infAmmoTime: 15, invincibleTime: 12, rapidFireTime: 15, fastMoveTime: 15,
+  noReloadTime: 15, infAmmoTime: 15, invincibleTime: 12, rapidFireTime: 15, fastMoveTime: 15, phaseTime: 15,
   rapidFireMul: 1.8, fastMoveMul: 1.45,
   pickupLife: 40,
   // dedicated power-up ("special") spawn stream, separate from the health/ammo timer/roll in
@@ -832,9 +834,13 @@ const CFG = {
   // Ultimates.startWhirlwind) so the spin is actually visible, and the body's own yaw spins on
   // top of normal aim at ultWhirlwindSpinSpeed rad/s (see Player.updateBody) — that visible spin
   // IS the attack, unlike the old FIRE-gated sword swing/gamma leap this replaced, which read as
-  // "nothing is happening" whenever the player didn't know to press FIRE.
+  // "nothing is happening" whenever the player didn't know to press FIRE. A vortex also hauls
+  // every zombie on the map straight toward the caster (ignoring walls) for the first
+  // ultVortexPullWindow of those 30s, feeding the spin a steady stream of targets instead of
+  // waiting for the horde to wander in on its own — see Ultimates.tickWhirlwind.
   ultWhirlwindRadius: 3.5, ultWhirlwindPulse: 0.22, ultWhirlwindKnockback: 3.2,
   ultWhirlwindStun: 0.3, ultWhirlwindSpinSpeed: 10,
+  ultVortexPullWindow: 25, ultVortexPullSpeed: 3.5,
   // Chopper & Dudu share one move: 8 clones orbit them, but now hunt aggressively — the seek
   // range covers the whole map (no more waiting for something to wander close) and they close in
   // fast once locked on. Still detonate (instakill, bosses take ultCloneBossDmg instead) the
@@ -1347,8 +1353,19 @@ function genMuzzle() {
 function genIcon(type) {
   const S = 128, c = mkCanvas(S, S), g = c.getContext('2d');
   g.clearRect(0, 0, S, S);
-  const glow = { health: '#ff4040', ammo: '#ffb040', insta: '#ff2020', double: '#ffe040' }[type];
+  const glow = {
+    health: '#ff4040', ammo: '#ffb040', insta: '#ff2020', double: '#ffe040', noreload: '#40c4ff',
+    infammo: '#40ff8a', invincible: '#ffffff', rapidfire: '#ff8a00', fastmove: '#00e5ff', phase: '#b968ff'
+  }[type];
   g.shadowColor = glow; g.shadowBlur = 22;
+  // shared badge backdrop for every power-up glyph below (double included) — a dark disc with a
+  // colored ring in the type's own PICKUP_DEFS color, so even at a glance across the ground the
+  // ring color alone tells power-ups apart, same as the beam/ring VFX already does
+  const badge = () => {
+    g.fillStyle = '#1a1200'; g.beginPath(); g.arc(64, 64, 50, 0, TAU); g.fill();
+    g.shadowBlur = 0;
+  };
+  const ring = () => { g.strokeStyle = glow; g.lineWidth = 4; g.beginPath(); g.arc(64, 64, 50, 0, TAU); g.stroke(); };
   if (type === 'health') {
     g.fillStyle = '#fff'; roundRect(g, 22, 22, 84, 84, 16); g.fill();
     g.shadowBlur = 0; g.fillStyle = '#e62020'; g.fillRect(52, 34, 24, 60); g.fillRect(34, 52, 60, 24);
@@ -1366,11 +1383,53 @@ function genIcon(type) {
     g.beginPath(); g.moveTo(64, 62); g.lineTo(59, 72); g.lineTo(69, 72); g.fill();
     for (let i = 0; i < 4; i++) g.fillRect(48 + i * 9, 80, 4, 8);
     g.strokeStyle = '#ff3030'; g.lineWidth = 4; g.beginPath(); g.arc(64, 64, 50, 0, TAU); g.stroke();
-  } else {
-    g.fillStyle = '#1a1200'; g.beginPath(); g.arc(64, 64, 50, 0, TAU); g.fill();
-    g.shadowBlur = 0; g.fillStyle = '#ffe040'; g.font = 'bold 54px Impact, Arial Narrow, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  } else if (type === 'double') {
+    badge();
+    g.fillStyle = '#ffe040'; g.font = 'bold 54px Impact, Arial Narrow, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText('2X', 64, 66);
-    g.strokeStyle = '#ffe040'; g.lineWidth = 4; g.beginPath(); g.arc(64, 64, 50, 0, TAU); g.stroke();
+    ring();
+  } else if (type === 'noreload') {
+    badge();
+    // a reload arrow chasing its own tail — drawn as an open arc with an arrowhead, not text, so
+    // it can't be confused with infammo's plain infinity glyph at a glance
+    g.strokeStyle = glow; g.lineWidth = 10; g.beginPath(); g.arc(64, 64, 30, -0.4, TAU - 0.9); g.stroke();
+    const ang = TAU - 0.9, hx = 64 + Math.cos(ang) * 30, hy = 64 + Math.sin(ang) * 30;
+    g.fillStyle = glow;
+    g.beginPath(); g.moveTo(hx, hy); g.lineTo(hx - 16, hy - 4); g.lineTo(hx - 4, hy + 15); g.closePath(); g.fill();
+    ring();
+  } else if (type === 'infammo') {
+    badge();
+    g.fillStyle = glow; g.font = 'bold 60px Impact, Arial Narrow, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('∞', 64, 68);
+    ring();
+  } else if (type === 'invincible') {
+    badge();
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.moveTo(64, 24); g.lineTo(96, 38); g.lineTo(96, 66); g.quadraticCurveTo(96, 92, 64, 106); g.quadraticCurveTo(32, 92, 32, 66); g.lineTo(32, 38); g.closePath(); g.fill();
+    g.strokeStyle = '#c9c9c9'; g.lineWidth = 3; g.stroke();
+    ring();
+  } else if (type === 'rapidfire') {
+    badge();
+    g.strokeStyle = glow; g.lineCap = 'round';
+    for (let i = 0; i < 3; i++) { g.lineWidth = 9 - i * 1.5; g.globalAlpha = 1 - i * 0.28; g.beginPath(); g.moveTo(30 - i * 6, 82 - i * 4); g.lineTo(78 - i * 6, 50 - i * 4); g.stroke(); }
+    g.globalAlpha = 1;
+    g.fillStyle = glow; g.beginPath(); g.moveTo(78, 50); g.lineTo(96, 44); g.lineTo(82, 62); g.closePath(); g.fill();
+    ring();
+  } else if (type === 'fastmove') {
+    badge();
+    g.fillStyle = glow;
+    for (let i = 0; i < 2; i++) { const ox = i * 26; g.beginPath(); g.moveTo(30 + ox, 34); g.lineTo(58 + ox, 64); g.lineTo(30 + ox, 94); g.lineTo(42 + ox, 64); g.closePath(); g.fill(); }
+    ring();
+  } else {
+    // phase: a dashed "wall" outline with a solid glyph clipping straight through it, standing in
+    // for "everything else is solid, you aren't"
+    badge();
+    g.strokeStyle = '#8a5cff'; g.lineWidth = 8; g.setLineDash([9, 7]);
+    g.strokeRect(24, 30, 80, 68); g.setLineDash([]);
+    g.fillStyle = glow; g.globalAlpha = 0.9;
+    g.beginPath(); g.moveTo(40, 100); g.lineTo(64, 20); g.lineTo(88, 100); g.lineTo(64, 80); g.closePath(); g.fill();
+    g.globalAlpha = 1;
+    ring();
   }
   return c;
 }
@@ -1421,7 +1480,8 @@ function buildTextures() {
   TEX.muzzle = mkTex(genMuzzle(), 0);
   TEX.glow = mkTex(genRadial(64, [[0, 'rgba(255,255,255,1)'], [.35, 'rgba(255,255,255,.55)'], [1, 'rgba(255,255,255,0)']]), 0);
   TEX.shadow = mkTex(genRadial(64, [[0, 'rgba(0,0,0,.55)'], [.6, 'rgba(0,0,0,.3)'], [1, 'rgba(0,0,0,0)']]), 0);
-  TEX.icons = { health: mkTex(genIcon('health'), 0), ammo: mkTex(genIcon('ammo'), 0), insta: mkTex(genIcon('insta'), 0), double: mkTex(genIcon('double'), 0) };
+  TEX.icons = {};
+  for (const t of ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase']) TEX.icons[t] = mkTex(genIcon(t), 0);
   TEX.lowhpUrl = genLowHpOverlay();
 }
 
@@ -2235,10 +2295,14 @@ const World = {
     return true;
   },
   // circle vs world push-out (boundary, boxes, barrels). o = {x,z}
-  collide(o, r) {
+  // `noObstacles` (set by the WALL PHASE power-up — see Player.update) skips the box/barrel loops
+  // below but keeps the outer arena-radius clamp: phase lets you walk through crates, walls and
+  // buildings, not off the edge of the playable map into whatever is (or isn't) rendered past it.
+  collide(o, r, noObstacles) {
     let hit = false;
     const dd = Math.sqrt(o.x * o.x + o.z * o.z), maxR = CFG.arenaR - r;
     if (dd > maxR) { const k = maxR / dd; o.x *= k; o.z *= k; hit = true; }
+    if (noObstacles) return hit;
     const boxes = this.boxes;
     for (let i = 0; i < boxes.length; i++) {
       const b = boxes[i];
@@ -3248,7 +3312,7 @@ const PICKUP_DEFS = {
   // later-wave only (CFG.powerupWave+) — see Game.spawnPickup
   noreload: { color: 0x40c4ff, label: 'NO RELOAD' }, infammo: { color: 0x40ff8a, label: '∞ AMMO' },
   invincible: { color: 0xffffff, label: 'INVINCIBLE' }, rapidfire: { color: 0xff8a00, label: 'RAPID FIRE' },
-  fastmove: { color: 0x00e5ff, label: 'SPEED BOOST' }
+  fastmove: { color: 0x00e5ff, label: 'SPEED BOOST' }, phase: { color: 0xb968ff, label: 'WALL PHASE' }
 };
 const Pickups = {
   pool: [],
@@ -3698,7 +3762,7 @@ const Player = {
       const spd = this.speed * (this.sprinting ? CFG.sprintMul : 1) * (Game.fastMove > 0 ? CFG.fastMoveMul : 1);
       const vx = (fx * mv.y + rx * mv.x) * spd, vz = (fz * mv.y + rz * mv.x) * spd;
       this.x += vx * dt; this.z += vz * dt;
-      World.collide(this, CFG.playerR);
+      World.collide(this, CFG.playerR, Game.phase > 0);
       const zs = Zombies.pool;
       for (let i = 0; i < zs.length; i++) {
         const zb = zs[i]; if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
@@ -3843,7 +3907,7 @@ const Player = {
     const show = Game.camMode === 'tp' && !this.spectating && (Game.state === 'playing' || Game.state === 'dying');
     b.g.visible = show; b.shadow.visible = show;
     if (!show) return;
-    this._setBodyAlpha(b, Game.camDist === 'close' ? CFG.tpCloseAlpha : 1);
+    this._setBodyAlpha(b, Game.phase > 0 ? 0.35 : (Game.camDist === 'close' ? CFG.tpCloseAlpha : 1));
     if (b.kind === 'gltf') Avatars.setGun(b, this.weapon().def.id);
     const gait = Math.min(1, this.moveMag * (this.sprinting ? 1.5 : 1));
     this.bodyAnim += dt * (1.6 + this.moveMag * (this.sprinting ? 11 : 7));
@@ -4180,6 +4244,23 @@ const Ultimates = {
     HUD.toast(P.char.id === 'cloud' ? 'BUSTER WHIRLWIND!' : 'GAMMA WHIRLWIND!', 1.8);
   },
   tickWhirlwind(P, dt) {
+    // vortex pull: for the first ultVortexPullWindow seconds, every non-dead zombie on the map is
+    // dragged straight toward the caster regardless of walls/props (a supernatural pull, not a
+    // pathing nudge — Zombies.update() still runs its own AI/collision right after this every
+    // frame, this just adds an extra shove on top of it). Stops each zombie just outside the
+    // whirlwind's own hit radius so the knockback pulse below still has room to fling it back out.
+    const elapsed = CFG.ultDuration - P.ultActiveT;
+    if (elapsed <= CFG.ultVortexPullWindow) {
+      const pull = CFG.ultVortexPullSpeed * dt;
+      for (const zb of Zombies.pool) {
+        if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
+        const dx = P.x - zb.x, dz = P.z - zb.z, d = Math.sqrt(dx * dx + dz * dz);
+        const stopAt = zb.radius + CFG.playerR + 0.35;
+        if (d <= stopAt) continue;
+        const k = Math.min(pull, d - stopAt) / d;
+        zb.x += dx * k; zb.z += dz * k;
+      }
+    }
     P.whirlSpinAngle += dt * CFG.ultWhirlwindSpinSpeed;
     P.whirlPulseT -= dt;
     if (P.whirlPulseT > 0) return;
@@ -4446,7 +4527,7 @@ const DOM = {};
 const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
-    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
+    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
@@ -5136,7 +5217,7 @@ const Director = {
 /* ------------------------------------------------------------------ game state, waves, economy, voice lines, main loop */
 const Game = {
   state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0,
-  noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0,
+  noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0, phase: 0,
   timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, powerupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, testMode: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
@@ -5354,7 +5435,7 @@ const Game = {
     for (const e of Explosions.pool) { e.on = false; e.fire.visible = e.ring.visible = false; } for (const l of Explosions.lights) l.intensity = 0;
     Player.reset(char); Input.reset();
     this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0;
-    this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0;
+    this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0; this.phase = 0;
     this.timeScale = 1;
     this.toSpawn = 0; this.waveActive = false; this.streak = 0; this.sayT = -99; this.deathK = 0; this.deathRoll = 0; this.chain.length = 0; this.pickupT = 15;
     this.powerupT = CFG.powerupSpawnMin;
@@ -5471,10 +5552,11 @@ const Game = {
     { key: 'infAmmo', dom: 'pillInfAmmo', label: '∞ AMMO' },
     { key: 'invincible', dom: 'pillInvincible', label: 'INVINCIBLE' },
     { key: 'rapidFire', dom: 'pillRapidFire', label: 'RAPID FIRE' },
-    { key: 'fastMove', dom: 'pillFastMove', label: 'SPEED BOOST' }
+    { key: 'fastMove', dom: 'pillFastMove', label: 'SPEED BOOST' },
+    { key: 'phase', dom: 'pillPhase', label: 'WALL PHASE' }
   ],
   POWER_POOL_EARLY: ['insta', 'double'],
-  POWER_POOL_LATE: ['insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove'],
+  POWER_POOL_LATE: ['insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase'],
   // pickups (power-ups included) land twice as often as the original 13-21s pace and up to twice
   // as many now sit on the ground at once — ramps the gap down further by wave 20, rather than
   // changing drop ODDS (spawnPickup's own mix is untouched).
@@ -5664,6 +5746,7 @@ const Game = {
     else if (type === 'invincible') { this.invincible = CFG.invincibleTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'INVINCIBLE!', '#ffffff', 22, 1.3); HUD.toast('INVINCIBLE — 12 SECONDS', 2.5); }
     else if (type === 'rapidfire') { this.rapidFire = CFG.rapidFireTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'RAPID FIRE!', '#ff8a00', 22, 1.3); HUD.toast('RAPID FIRE — 15 SECONDS', 2.5); }
     else if (type === 'fastmove') { this.fastMove = CFG.fastMoveTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'SPEED BOOST!', '#00e5ff', 22, 1.3); HUD.toast('SPEED BOOST — 15 SECONDS', 2.5); }
+    else if (type === 'phase') { this.phase = CFG.phaseTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'WALL PHASE!', '#b968ff', 22, 1.3); HUD.toast('WALL PHASE — WALK THROUGH ANYTHING, 15 SECONDS', 2.5); }
     Particles.sparks(x, 1.2, z, 12); HUD.dirty = true;
   },
   recordBest() {
@@ -5762,7 +5845,7 @@ const Game = {
     if (P.insta > 0) P.insta -= dt; if (P.dbl > 0) P.dbl -= dt;
     if (this.noReload > 0) this.noReload -= dt; if (this.infAmmo > 0) this.infAmmo -= dt;
     if (this.invincible > 0) this.invincible -= dt; if (this.rapidFire > 0) this.rapidFire -= dt;
-    if (this.fastMove > 0) this.fastMove -= dt;
+    if (this.fastMove > 0) this.fastMove -= dt; if (this.phase > 0) this.phase -= dt;
     // real peers keep their own insta/dbl windows host-side, ticked down the same way — never
     // shared with Player or with each other (see Net.peerCollect/Game.onBulletHit)
     if (Net.isHost()) for (const k in Net.peers) { const p = Net.peers[k]; if (p.insta > 0) p.insta -= dt; if (p.dbl > 0) p.dbl -= dt; }
@@ -5977,7 +6060,7 @@ const NET = {
 // reordering makes an older client read a hunter as a walker, or `attack` as `dead`.
 const ZSTATE = ['emerge', 'chase', 'attack', 'dead', 'crouch', 'pounce', 'pin'];
 const ZTYPE_LIST = ['walker', 'runner', 'brute', 'hunter', 'tank'];
-const PU_LIST = ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove']; // append-only — this is a wire-format index array
+const PU_LIST = ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase']; // append-only — this is a wire-format index array
 const r2 = (v) => Math.round(v * 100) / 100;
 
 /* ------------------------------------------------------------------ pause beacon
