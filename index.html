@@ -752,7 +752,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.34.0';
+const GAME_VERSION = 'v1.35.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1003,6 +1003,10 @@ const AVATARS = {
     accent: 0x9b59b6, hide: [] }
 };
 const AVATAR_ORDER = { male: ['cloud', 'rhino', 'chopper', 'corsair'], female: ['mage'] };
+// character-select card grouping only — purely a display layout, independent of AVATAR_ORDER
+// above (which stays gender-real for Bots.pickAvatars' male/female bot pool). Group B is Dudu,
+// Chopper and the Fox (see buildCharCards); Group A is everyone else.
+const CARD_GROUPS = { a: ['cloud', 'rhino'], b: ['corsair', 'chopper', 'mage'] };
 
 const Avatars = {
   _templates: {}, _muzzleMat: null,
@@ -5242,18 +5246,20 @@ const Game = {
   // gender's stat block), not per-champion — so there are only ever two distinct bar sets.
   GENDER_BARS: { male: { hp: 92, speed: 60, reload: 62 }, female: { hp: 70, speed: 88, reload: 62 } },
   buildCharCards() {
-    const build = (wrapId, gender) => {
+    const build = (wrapId, group) => {
       const wrap = $(wrapId); wrap.innerHTML = '';
-      for (const id of AVATAR_ORDER[gender]) {
+      for (const id of CARD_GROUPS[group]) {
         const av = AVATARS[id];
         // statsFrom borrows another champion's stat block wholesale (Chopper plays identically to
         // the Fox) — the card must show THOSE bars, not the ones for his own card column, or the
-        // menu would promise different numbers than the run actually gives him
-        const statGender = av.statsFrom ? AVATARS[av.statsFrom].gender : gender;
+        // menu would promise different numbers than the run actually gives him. Falls back to the
+        // avatar's own real gender, not which display group the card happens to sit in (Group A/B
+        // is layout only — see CARD_GROUPS).
+        const statGender = av.statsFrom ? AVATARS[av.statsFrom].gender : av.gender;
         const bars = this.GENDER_BARS[statGender], stat = CHARS[statGender];
         const hex = '#' + ('000000' + av.accent.toString(16)).slice(-6);
         const card = document.createElement('div');
-        card.className = 'card ' + gender; card.id = 'card_' + id; card.dataset.char = id;
+        card.className = 'card ' + av.gender; card.id = 'card_' + id; card.dataset.char = id;
         card.style.setProperty('--card-accent', hex);
         card.innerHTML =
           '<div class="chk">SELECTED ▮</div>' +
@@ -5267,7 +5273,7 @@ const Game = {
         wrap.appendChild(card);
       }
     };
-    build('cardsMale', 'male'); build('cardsFemale', 'female');
+    build('cardsMale', 'a'); build('cardsFemale', 'b');
   },
   selectChar(id) {
     if (!AVATARS[id]) id = 'cloud';
