@@ -755,7 +755,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.41.0';
+const GAME_VERSION = 'v1.42.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -826,21 +826,15 @@ const CFG = {
   ultDuration: 30, ultImmunePostTime: 3, ultReducedMul: 0.25,
   ultMeterPerKill: 5, ultMeterPerHeadshot: 8, ultMeterPerSpecialKill: 18,
   ultCooldownBase: 15, ultCooldownPerWave: 2.2, ultCooldownMax: 90,
-  // Cloud: buster-sword combo — FIRE becomes a close-range melee swing instead of his gun for the
-  // move's duration (see Player.update's wantFire branch / Ultimates.swordSwing). A vortex also
-  // hauls every zombie on the map straight toward him (ignoring walls — a supernatural pull, not
-  // a pathing nudge) for the first ultCloudPullWindow of those 30s, so there's a crowd in range by
-  // the time he's done swinging (see Ultimates.tickCloud).
-  ultSwordRange: 2.8, ultSwordCooldown: 0.4, ultSwordSwingAnimDur: 0.28,
-  ultCloudPullWindow: 25, ultCloudPullSpeed: 3.5,
-  // Green Ranger: 4x titan scale (now forces third-person like Cloud's sword, so the growth is
-  // actually visible — see Ultimates.startRanger); FIRE becomes a gamma leap instead of shooting —
-  // a short forward dash that damages/stuns anything it passes through, plus a landing-site
-  // shockwave. leapHop is a purely cosmetic jump-arc on the body so the leap reads as a leap
-  // instead of an instant teleport (see Player.updateBody).
-  ultTitanScale: 4,
-  ultLeapRange: 12, ultLeapHitR: 2.6, ultLeapLandFt: 10, ultLeapStunSec: 3, ultLeapCooldown: 1.0,
-  ultLeapHopDur: 0.3, ultLeapHopHeight: 2.2,
+  // Cloud & Green Ranger share one move: a continuous spinning whirlwind attack for the whole
+  // 30s, fully automatic (no FIRE needed) — every ultWhirlwindPulse seconds it damages, knocks
+  // back and briefly staggers everything within ultWhirlwindRadius. Forces third-person (see
+  // Ultimates.startWhirlwind) so the spin is actually visible, and the body's own yaw spins on
+  // top of normal aim at ultWhirlwindSpinSpeed rad/s (see Player.updateBody) — that visible spin
+  // IS the attack, unlike the old FIRE-gated sword swing/gamma leap this replaced, which read as
+  // "nothing is happening" whenever the player didn't know to press FIRE.
+  ultWhirlwindRadius: 3.5, ultWhirlwindPulse: 0.22, ultWhirlwindKnockback: 3.2,
+  ultWhirlwindStun: 0.3, ultWhirlwindSpinSpeed: 10,
   // Chopper & Dudu share one move: 8 clones orbit them, but now hunt aggressively — the seek
   // range covers the whole map (no more waiting for something to wander close) and they close in
   // fast once locked on. Still detonate (instakill, bosses take ultCloneBossDmg instead) the
@@ -1162,15 +1156,6 @@ const Avatars = {
     // buildGun() sizes/orients for the first-person viewmodel's own hand — a generic scale-down
     // keeps it from looking absurd in an arbitrary rig's hand without hand-tuning all five rigs.
     g.scale.setScalar(0.85);
-    m.gunSlot.add(g); m.gunMesh = g;
-  },
-  // Cloud's buster sword during his ultimate — not a real weapon slot, so it bypasses setGun's
-  // WEAPONS lookup entirely and just parks its own mesh in the same hand attachment
-  showSword(m) {
-    if (!m.gunSlot || m.gunKind === 'sword') return;
-    if (m.gunMesh) { m.gunSlot.remove(m.gunMesh); m.gunMesh = null; }
-    m.gunKind = 'sword';
-    const g = buildBusterSword(); g.scale.setScalar(0.85);
     m.gunSlot.add(g); m.gunMesh = g;
   },
   // walk-cycle crossfade + downed tilt, the GLTF-body equivalent of poseSurvivor
@@ -3533,19 +3518,6 @@ function buildGun(def) {
   }
   return g;
 }
-// Cloud's ultimate swaps his gun for this — an oversized single-edge blade, no muzzle/pump
-// userData since it never fires a bullet (see Ultimates.swordSwing for the actual hit detection)
-function buildBusterSword() {
-  const g = new THREE.Group(); const M = GUNMAT;
-  g.add(box(0.05, 0.11, 1.15, M.metal, 0, 0.02, -0.7));
-  g.add(box(0.014, 0.13, 1.1, M.metal2, 0.028, 0.02, -0.7));
-  g.add(box(0.22, 0.05, 0.09, M.rust, 0, 0, -0.08));
-  g.add(cyl(0.028, 0.22, M.poly, 0, 0, 0.08));
-  g.add(box(0.07, 0.07, 0.03, M.metal, 0, 0, 0.2));
-  buildHand(g, 0.0, -0.02, 0.06, [0.3, 0, 0], false);
-  return g;
-}
-
 /* ------------------------------------------------------------------ survivor body
    The same blocky build serves a networked teammate and your own third-person body, so the
    squad reads as one set of people no matter whose screen you are on. */
@@ -3635,7 +3607,7 @@ const Player = {
     this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
     this.ultCharge = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0;
     this.ultImmune = false; this.ultImmuneT = 0; this.ultReduced = false; this.ultInvisible = false;
-    this.ultAtkCooldown = 0; this.ultPreCamMode = null; this.meleeSwingT = 0; this.leapHopT = 0;
+    this.ultPreCamMode = null; this.whirlPulseT = 0; this.whirlSpinAngle = 0;
     Ultimates.cleanup(this);
     this.downed = false; this.downT = 0; this.spectating = false;
     this.pinnedBy = null; this.escape = 0; this.escSend = 0;
@@ -3667,11 +3639,7 @@ const Player = {
   eyeDir(out) { const cp = Math.cos(this.pitch); out.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp); return out; },
   eyeY() {
     if (this.downed) return 0.62; if (this.spectating) return 0.42;
-    const base = CFG.eyeH + Math.sin(this.bobT) * 0.035 * this.moveMag;
-    // Green Ranger's titan mode: 4x scale means a 4x-higher vantage point too, not just a bigger
-    // body — otherwise the camera would stay at normal-person height while everything else
-    // (third-person body scale) says giant
-    return (this.ultActive && this.char.id === 'rhino') ? base * CFG.ultTitanScale : base;
+    return CFG.eyeH + Math.sin(this.bobT) * 0.035 * this.moveMag;
   },
   update(dt) {
     const mv = Input.getMove(this._mv), lk = Input.consumeLook(this._lk);
@@ -3680,9 +3648,6 @@ const Player = {
     // as you go down still counts down toward ready again), the active effect only while alive
     if (this.ultCooldownT > 0) this.ultCooldownT -= dt;
     if (this.ultImmuneT > 0) this.ultImmuneT -= dt;
-    if (this.ultAtkCooldown > 0) this.ultAtkCooldown -= dt;
-    if (this.meleeSwingT > 0) this.meleeSwingT -= dt;
-    if (this.leapHopT > 0) this.leapHopT -= dt;
     // test mode: keep the gauge topped off and the cooldown clear every frame, so tryUltimate's
     // own gate (charge>=100 && cooldownT<=0) passes again the instant the previous move ends
     if (Game.testMode) { this.ultCharge = 100; this.ultCooldownT = 0; }
@@ -3750,13 +3715,10 @@ const Player = {
       if (this.switchT > 0) this.switchT -= dt;
       this.autoTarget = Game.autoFire ? this.findAutoTarget() : null;
       const wantFire = Input.fire || (this.autoTarget !== null);
-      // Cloud's sword combo and Green Ranger's gamma leap commandeer the FIRE button while their
-      // own move is active — same input, a melee swing/leap instead of a gunshot (see
-      // Ultimates.swordSwing/gammaLeap, both on their own short cooldown rather than a weapon's
-      // rate-of-fire)
-      const meleeUlt = this.ultActive && (this.char.id === 'cloud' || this.char.id === 'rhino');
-      if (meleeUlt) { if (wantFire) this.ultMeleeAttack(); else Input.consumeFireEdge(); }
-      else if (wantFire) this.tryFire(); else Input.consumeFireEdge();
+      // Cloud's and Green Ranger's whirlwind is fully automatic (see Ultimates.tickWhirlwind) and
+      // doesn't touch FIRE at all — unlike the old sword-swing/gamma-leap moves this replaced,
+      // there's no melee input to gate here, so this is just the plain gun-fire path.
+      if (wantFire) this.tryFire(); else Input.consumeFireEdge();
       }
     }
     this.recoil = Math.max(0, this.recoil - dt * 8);
@@ -3882,29 +3844,17 @@ const Player = {
     b.g.visible = show; b.shadow.visible = show;
     if (!show) return;
     this._setBodyAlpha(b, Game.camDist === 'close' ? CFG.tpCloseAlpha : 1);
-    if (b.kind === 'gltf') { if (this.ultActive && this.char.id === 'cloud') Avatars.showSword(b); else Avatars.setGun(b, this.weapon().def.id); }
+    if (b.kind === 'gltf') Avatars.setGun(b, this.weapon().def.id);
     const gait = Math.min(1, this.moveMag * (this.sprinting ? 1.5 : 1));
     this.bodyAnim += dt * (1.6 + this.moveMag * (this.sprinting ? 11 : 7));
     b.g.position.set(this.x, 0, this.z);
-    b.g.rotation.y = this.yaw;
+    // Cloud & Green Ranger's whirlwind spins the whole body on top of normal aim-yaw — that
+    // visible spin (whirlSpinAngle, accumulated every frame in Ultimates.tickWhirlwind) IS the
+    // attack, so it has to actually show up here rather than just driving hidden hit detection.
+    b.g.rotation.y = this.yaw + (this.ultActive && (this.char.id === 'cloud' || this.char.id === 'rhino') ? this.whirlSpinAngle : 0);
     b.shadow.position.set(this.x, 0.014, this.z);
     if (b.kind === 'gltf') Avatars.pose(b, dt, gait, this.downed);
     else poseSurvivor(b, this.bodyAnim, gait, this.downed, this.pitch);
-    // Cloud has no baked attack clip (his rig only ships idle/walk — see Avatars._template), so
-    // the actual swing is faked here: a quick sine chop on the sword prop itself, layered on top
-    // of the hand-bone transform the walk/idle mixer already drives. Timed to swordSwing's own
-    // ultAtkCooldown gate, not a full animation state machine.
-    if (b.gunKind === 'sword' && b.gunMesh) {
-      b.gunMesh.rotation.x = this.meleeSwingT > 0
-        ? -Math.sin((1 - this.meleeSwingT / CFG.ultSwordSwingAnimDur) * Math.PI) * 1.9
-        : 0;
-    }
-    // Green Ranger's gammaLeap repositions x/z instantly (see Ultimates.gammaLeap) — this layers a
-    // purely cosmetic jump arc on top so the third-person body (now actually visible — see
-    // startRanger) visibly hops instead of just snapping to the new spot.
-    if (this.char.id === 'rhino' && this.leapHopT > 0) {
-      b.g.position.y = Math.sin((1 - this.leapHopT / CFG.ultLeapHopDur) * Math.PI) * CFG.ultLeapHopHeight;
-    }
     if (this.vm.flashT > 0) { b.flash.visible = true; b.flash.material.rotation = Math.random() * TAU; }
     else b.flash.visible = false;
   },
@@ -4010,17 +3960,9 @@ const Player = {
     if (this.ultCharge < 100 || this.ultCooldownT > 0) { Audio.empty(); return; }
     this.ultCharge = 0;
     this.ultCooldownT = clamp(CFG.ultCooldownBase + Game.wave * CFG.ultCooldownPerWave, CFG.ultCooldownBase, CFG.ultCooldownMax);
-    this.ultActive = true; this.ultActiveT = CFG.ultDuration; this.ultAtkCooldown = 0;
+    this.ultActive = true; this.ultActiveT = CFG.ultDuration;
     Ultimates.start(this);
     HUD.dirty = true;
-  },
-  // Cloud's sword swing and Green Ranger's leap share one gate: their own cooldown, not a weapon's
-  // rate-of-fire or magazine (see the meleeUlt branch in update())
-  ultMeleeAttack() {
-    if (this.ultAtkCooldown > 0) { Input.consumeFireEdge(); return; }
-    const id = this.char.id;
-    if (id === 'cloud') Ultimates.swordSwing(this);
-    else if (id === 'rhino') Ultimates.gammaLeap(this);
   },
   unlock(i) { const w = this.weapons[i]; if (w.owned) return false; w.owned = true; w.mag = w.def.mag; w.reserve = w.def.reserve; this.switchTo(i); return true; },
   // between-wave resupply so the heavier guns stay usable without a lucky crate
@@ -4128,28 +4070,26 @@ const Player = {
    coop CLIENT instead sends a dedicated 'ultKill' request and only applies a cosmetic-only local
    kill (Zombie.hit's own client branch, silent=true) — reusing the normal bullet-hit report here
    would clamp the damage to 400 (see Net.applyRemoteHit), nowhere near enough to instakill a
-   zombie whose HP has scaled up over 20+ waves. Non-instakill damage (the sword/leap/flames) goes
+   zombie whose HP has scaled up over 20+ waves. Non-instakill damage (the whirlwind/flames) goes
    straight through Game.onBulletHit instead, which already has that same host/client split built
    in, so _dmgStunAt below needs no separate network path of its own.
    Known gap: every one of these moves is simulated purely on the caster's own machine (same as
    the old Cloud/Fox/Dudu visuals always were) — another client never sees a peer's clones/flames/
-   sword, and a stun or Fox's freeze-kill-credit tag only actually lands when the caster IS the
-   host (or playing solo), since a client's own zombie objects aren't authoritative. Consistent
+   whirlwind spin, and a stun or Fox's freeze-kill-credit tag only actually lands when the caster
+   IS the host (or playing solo), since a client's own zombie objects aren't authoritative. Consistent
    with the barrel-attribution gap already accepted elsewhere in this file, not a new regression. */
 const Ultimates = {
   RIFLE_DMG: null,
   rifleDmg() { return this.RIFLE_DMG || (this.RIFLE_DMG = WEAPONS.find(w => w.id === 'rifle').dmg); },
   start(P) {
     const id = P.char.id;
-    if (id === 'cloud') this.startCloud(P);
-    else if (id === 'rhino') this.startRanger(P);
+    if (id === 'cloud' || id === 'rhino') this.startWhirlwind(P);
     else if (id === 'chopper' || id === 'corsair') this.startCloneSwarm(P);
     else if (id === 'mage') this.startFox(P);
   },
   tick(P, dt) {
     const id = P.char.id;
-    if (id === 'cloud') this.tickCloud(P, dt);
-    else if (id === 'rhino') this.tickRanger(P, dt);
+    if (id === 'cloud' || id === 'rhino') this.tickWhirlwind(P, dt);
     else if (id === 'chopper' || id === 'corsair') this.tickCloneSwarm(P, dt);
     else if (id === 'mage') this.tickFox(P, dt);
   },
@@ -4162,9 +4102,6 @@ const Ultimates = {
     this.cleanup(P);
   },
   cleanup(P) {
-    // Cloud's sword is just b.gunMesh (see Player.updateBody/Avatars.showSword) — it clears itself
-    // the next frame once ultActive is false, nothing to dispose of here
-    if (P.body) P.body.g.scale.setScalar(1);
     if (P._ultClones) { for (const c of P._ultClones) { R.scene.remove(c.g); c.g.geometry.dispose(); c.g.material.dispose(); } P._ultClones = null; }
     if (P._ultFlames) { for (const f of P._ultFlames) { R.scene.remove(f.g); f.g.geometry.dispose(); f.g.material.dispose(); } P._ultFlames = null; }
   },
@@ -4196,11 +4133,10 @@ const Ultimates = {
       this.applyAoeKillCosmetic(x, z, r);
     }
   },
-  // shared, non-instakill damage+stun helper — routes through Game.onBulletHit (which already has
-  // its own host/client split), so the sword swing, the leap, and Fox's flame darts all reuse it.
-  // `seen` (a Set, optional) keeps one swing/leap from double-hitting the same zombie across
-  // several overlapping radius checks; `freezeOwnerKey` (optional) tags the zombie for Fox's kill-
-  // credit passthrough (see Game.onZombieKilled)
+  // non-instakill damage+stun helper — routes through Game.onBulletHit (which already has its own
+  // host/client split). Only Fox's flame darts use this now (see tickFox); `seen` (a Set,
+  // optional) is for a caller that overlaps radius checks across several hits in one go, and
+  // `freezeOwnerKey` tags the zombie for Fox's kill-credit passthrough (see Game.onZombieKilled)
   _dmgStunAt(x, z, r, dmg, stunSec, seen, freezeOwnerKey) {
     for (const zb of Zombies.pool) {
       if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
@@ -4226,92 +4162,43 @@ const Ultimates = {
     }
   },
 
-  /* ---------------- Cloud: buster sword combo ----------------
-     Forces third-person for the move's duration (see Player.tryUltimate's camera swap below) so
-     there's no first-person sword to fake — FIRE becomes a close-range swing instead of his gun
-     (see Player.ultMeleeAttack/swordSwing). Full immunity throughout; his whole job here is to
-     stand in the middle of the horde and tank it. */
-  startCloud(P) {
+  /* ---------------- Cloud & Green Ranger: whirlwind ----------------
+     Identical move for both — see CFG.ultWhirlwindRadius/Pulse/Knockback/Stun/SpinSpeed. Forces
+     third-person for the move's duration (in first-person you never see your own body, so the
+     spin — the whole point of the move — would otherwise be invisible and just read as "nothing
+     happening", the exact complaint that killed the old FIRE-gated sword swing/gamma leap this
+     replaced). Fully automatic: no FIRE input involved at all, just a radial damage/knockback/
+     stagger pulse every ultWhirlwindPulse seconds for the whole 30s, plus a continuous visible
+     spin on the body itself (whirlSpinAngle, applied in Player.updateBody) so the attack is
+     unmistakable. Full immunity throughout, same as before. */
+  startWhirlwind(P) {
     P.ultImmune = true;
     P.ultPreCamMode = Game.camMode === 'fp' ? 'fp' : null;
     if (P.ultPreCamMode) { Game.camMode = 'tp'; HUD.refreshOptions(); }
+    P.whirlPulseT = 0; P.whirlSpinAngle = 0;
     Particles.sparks(P.x, 1.2, P.z, 30); Audio.powerup();
-    HUD.toast('BUSTER SWORD!', 1.8);
+    HUD.toast(P.char.id === 'cloud' ? 'BUSTER WHIRLWIND!' : 'GAMMA WHIRLWIND!', 1.8);
   },
-  // vortex: for the first ultCloudPullWindow seconds of the 30s move, every non-dead zombie on
-  // the map is dragged straight toward Cloud regardless of walls/props (a supernatural pull, not
-  // a pathing nudge — Zombies.update() still runs its own AI/collision right after this every
-  // frame, this just adds an extra shove toward him on top of it). Stops each zombie just outside
-  // hugging range so it doesn't clip into his body, and leaves it alone once inside that ring —
-  // that's what ultSwordRange is for.
-  tickCloud(P, dt) {
-    const elapsed = CFG.ultDuration - P.ultActiveT;
-    if (elapsed > CFG.ultCloudPullWindow) return;
-    const pull = CFG.ultCloudPullSpeed * dt;
-    for (const zb of Zombies.pool) {
-      if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
-      const dx = P.x - zb.x, dz = P.z - zb.z, d = Math.sqrt(dx * dx + dz * dz);
-      const stopAt = zb.radius + CFG.playerR + 0.35;
-      if (d <= stopAt) continue;
-      const k = Math.min(pull, d - stopAt) / d;
-      zb.x += dx * k; zb.z += dz * k;
-    }
-  },
-  swordSwing(P) {
-    P.ultAtkCooldown = CFG.ultSwordCooldown;
-    P.meleeSwingT = CFG.ultSwordSwingAnimDur;
-    const dmg = this.rifleDmg(), fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+  tickWhirlwind(P, dt) {
+    P.whirlSpinAngle += dt * CFG.ultWhirlwindSpinSpeed;
+    P.whirlPulseT -= dt;
+    if (P.whirlPulseT > 0) return;
+    P.whirlPulseT = CFG.ultWhirlwindPulse;
+    const dmg = this.rifleDmg(), r = CFG.ultWhirlwindRadius, r2 = r * r;
+    const hostSide = Net.isHost() || !Net.on();
     let hits = 0;
     for (const zb of Zombies.pool) {
       if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
       const dx = zb.x - P.x, dz = zb.z - P.z, d2 = dx * dx + dz * dz;
-      if (d2 > CFG.ultSwordRange * CFG.ultSwordRange) continue;
+      if (d2 > r2) continue;
       const d = Math.sqrt(d2) || 0.0001;
-      if ((dx * fx + dz * fz) / d < 0.3) continue; // ~145° frontal arc — a sweeping combo, not a pinprick
       Game.onBulletHit(zb, dmg, zb.x, zb.y + zb.height * 0.6, zb.z, false, dx / d, dz / d, null);
+      // knockback/stagger: a direct positional shove, same "caster-only simulation" gap every
+      // other ultimate effect here already accepts (see the class comment above Ultimates)
+      if (hostSide) { zb.x += (dx / d) * CFG.ultWhirlwindKnockback; zb.z += (dz / d) * CFG.ultWhirlwindKnockback; zb.stunT = Math.max(zb.stunT, CFG.ultWhirlwindStun); }
       hits++;
     }
-    Audio.powerup();
-    Particles.sparks(P.x + fx * 1.4, 1.3, P.z + fz * 1.4, hits ? 20 : 8);
-    Game.shake = Math.max(Game.shake, hits ? 1.4 : 0.5);
-    FX.hit(hits > 0);
-  },
-
-  /* ---------------- Green Ranger: gamma titan ----------------
-     Grows 4x and takes no damage for the duration. Forces third-person for the move like Cloud's
-     sword does — in first-person you never see your own body, so the 4x growth (the whole point
-     of the move) was otherwise invisible and read as "nothing happening." FIRE is now a gamma
-     leap — an instant forward dash that deals rifle-equal damage and stuns everything it passes
-     through, plus a 10ft shockwave at the landing spot — rather than the old passive
-     contact-instakill. leapHopT fakes a jump arc on the body (see Player.updateBody) so the leap
-     reads as a leap instead of a teleport-style position snap. */
-  startRanger(P) {
-    P.ultImmune = true;
-    P.ultPreCamMode = Game.camMode === 'fp' ? 'fp' : null;
-    if (P.ultPreCamMode) { Game.camMode = 'tp'; HUD.refreshOptions(); }
-    if (P.body) P.body.g.scale.setScalar(CFG.ultTitanScale);
-    Particles.sparks(P.x, 1.2, P.z, 40); Game.shake = Math.max(Game.shake, 3); Audio.powerup();
-    HUD.toast('GAMMA TITAN!', 1.8);
-  },
-  tickRanger(P, dt) { /* growth (eyeY/body scale) and the standard immune/reduced-damage handling
-    in Player.hurt are the only passive effects — all the offense is fire-triggered (gammaLeap) */ },
-  gammaLeap(P) {
-    P.ultAtkCooldown = CFG.ultLeapCooldown;
-    P.leapHopT = CFG.ultLeapHopDur;
-    const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
-    let dist = CFG.ultLeapRange;
-    const t = World.segHit(P.x, 1, P.z, P.x + fx * dist, 1, P.z + fz * dist);
-    if (t >= 0) dist = Math.max(1, dist * t * 0.9);
-    const dmg = this.rifleDmg(), seen = new Set(), steps = 6;
-    for (let i = 1; i <= steps; i++) {
-      const k = i / steps;
-      this._dmgStunAt(P.x + fx * dist * k, P.z + fz * dist * k, CFG.ultLeapHitR, dmg, CFG.ultLeapStunSec, seen);
-    }
-    P.x += fx * dist; P.z += fz * dist;
-    World.collide(P, CFG.playerR * CFG.ultTitanScale);
-    this._dmgStunAt(P.x, P.z, CFG.ultLeapLandFt * 0.3048, dmg, CFG.ultLeapStunSec, seen);
-    Explosions.spawn(P.x, P.z); Audio.explosion(P.x, P.z);
-    Game.shake = Math.max(Game.shake, 2.4);
+    if (hits) { Audio.powerup(); Game.shake = Math.max(Game.shake, 0.6); FX.hit(true); }
   },
 
   /* ---------------- Chopper & Dudu: clone swarm ----------------
@@ -4439,15 +4326,16 @@ const Ultimates = {
   /* ---------------- painting another player's ultimate onto their own avatar ----------------
      Everything above is the CASTER's own machine deciding what happens (damage, freeze, kill
      credit) — this half is purely cosmetic, run by every OTHER client for every peer/bot in
-     Net.updateAvatars. It never touches gameplay, only what a peer's avatar looks like: the sword
-     in Cloud's hand, Ranger's titan scale, or the clone/flame swarm at the positions the caster's
-     own machine already computed and broadcast (see Ultimates.exportPositions/Net.sendInput). */
+     Net.updateAvatars. It never touches gameplay, only what a peer's avatar looks like: the
+     clone/flame swarm at the positions the caster's own machine already computed and broadcast
+     (see Ultimates.exportPositions/Net.sendInput). Cloud/Ranger's whirlwind spin itself isn't
+     synced here — a peer's Net.updateAvatars sets v.g.rotation.y straight from their broadcast
+     yaw right after this runs, so a peer whirlwinding shows up to you holding their normal gun,
+     not visibly spinning; same accepted caster-only-simulation gap as the clone/flame seek logic
+     above (only positions cross the network, never the local animation state driving them). */
   syncPeerVisual(peer, v) {
     const id = peer.char, active = !!peer.ultActive;
-    if (id === 'cloud' && active) Avatars.showSword(v);
-    else Avatars.setGun(v, WEAPONS[peer.w] ? WEAPONS[peer.w].id : null);
-    const wantScale = (id === 'rhino' && active) ? CFG.ultTitanScale : 1;
-    if (v.g.scale.x !== wantScale) v.g.scale.setScalar(wantScale);
+    Avatars.setGun(v, WEAPONS[peer.w] ? WEAPONS[peer.w].id : null);
     if (id === 'chopper' || id === 'corsair') this._syncPeerSwarm(peer, active && peer.ultPos);
     else if (id === 'mage') this._syncPeerSwarm(peer, active && peer.ultPos);
     else this._syncPeerSwarm(peer, null);
@@ -6535,8 +6423,8 @@ const Net = {
   // so taking `kills` from the client here would wipe the tally the host just credited.
   applyPeerState(peer, m) {
     this.setPeer(peer, m.x, m.z, m.r, m.h, m.m, m.s, m.w, null, m.f, null, m.a);
-    // cosmetic-only ultimate visuals (sword/titan-scale/clone+flame positions) — see
-    // Ultimates.exportPositions/syncPeerVisual and Net.updateAvatars
+    // cosmetic-only ultimate visuals (clone+flame positions) — see Ultimates.exportPositions/
+    // syncPeerVisual and Net.updateAvatars
     peer.ultActive = !!m.u; peer.ultPos = m.up || null;
   },
   sendInput() {
@@ -6780,8 +6668,8 @@ const Net = {
       // placeholder body than silently dropping their every position update on the floor
       if (!peer) { peer = this.mkPeer(id, 'SURVIVOR', 'cloud'); this.peers[id] = peer; }
       this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null, e.length > 12 ? e[12] : null, e.length > 13 ? e[13] : null);
-      // cosmetic-only ultimate visuals (sword/titan-scale/clone+flame positions) relayed from
-      // whoever's actually running the move (see Ultimates.exportPositions/syncPeerVisual)
+      // cosmetic-only ultimate visuals (clone+flame positions) relayed from whoever's actually
+      // running the move (see Ultimates.exportPositions/syncPeerVisual)
       peer.ultActive = e.length > 14 ? !!e[14] : false;
       peer.ultPos = e.length > 15 ? e[15] : null;
     }
