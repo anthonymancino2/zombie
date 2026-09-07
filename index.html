@@ -789,7 +789,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.51.0';
+const GAME_VERSION = 'v1.52.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -2278,7 +2278,42 @@ const World = {
   },
   destroyBarrel(br) {
     br.alive = false; this.setInst(this.barrelMesh, br.idx, br.x, -5, br.z, 0, 0.001, 0.001); this.barrelMesh.instanceMatrix.needsUpdate = true;
-    this.rebuildGrid(); this.flowX = 1e9;
+    this.unblockBarrel(br); this.flowX = 1e9;
+  },
+  // destroying a barrel only ever REMOVES a small blocked disc from the grid — the full
+  // rebuildGrid() this used to call re-scans every box AND every barrel across the entire 256x256
+  // grid plus a fresh reachability BFS over up to 65,536 cells, EVERY single time a barrel dies.
+  // That's expensive enough to cause a real, visible frame hitch on every barrel kill (a core,
+  // frequently-used play pattern) — the actual cause behind "the gun feels laggy/doesn't fire
+  // right when a barrel explodes": the main thread was just busy, input wasn't actually dropped.
+  // This only clears the cells that specific barrel's own footprint could have blocked, checking
+  // each one against every remaining box/barrel/the arena boundary first so it never unblocks a
+  // cell something else still needs walled off. Trade-off: it does NOT re-run the reachability
+  // pass, so a barrel that happened to be the sole blocker sealing off a pocket won't retroactively
+  // reopen it for zombie pathing — acceptable, since barrels are small (r=0.55) and restockBarrels()
+  // (between waves, not perf-sensitive) still does a full rebuildGrid() when new ones are placed.
+  unblockBarrel(br) {
+    const N = this.N, g = this.grid, inf = 0.5, rr = br.r + inf;
+    const x0 = Math.max(0, Math.floor(br.x - rr - CFG.gridMin - 0.5)), x1 = Math.min(N - 1, Math.ceil(br.x + rr - CFG.gridMin - 0.5));
+    const z0 = Math.max(0, Math.floor(br.z - rr - CFG.gridMin - 0.5)), z1 = Math.min(N - 1, Math.ceil(br.z + rr - CFG.gridMin - 0.5));
+    for (let cz = z0; cz <= z1; cz++) for (let cx = x0; cx <= x1; cx++) {
+      const wx = CFG.gridMin + cx + 0.5, wz = CFG.gridMin + cz + 0.5;
+      if ((wx - br.x) * (wx - br.x) + (wz - br.z) * (wz - br.z) >= rr * rr) continue;
+      if (this.cellStillBlocked(wx, wz)) continue;
+      g[cz * N + cx] = 0;
+    }
+  },
+  cellStillBlocked(wx, wz) {
+    const R2 = (CFG.arenaR - 0.7) * (CFG.arenaR - 0.7);
+    if (wx * wx + wz * wz > R2) return true;
+    const inf = 0.5;
+    for (const b of this.boxes) { if (wx > b.x0 - inf && wx < b.x1 + inf && wz > b.z0 - inf && wz < b.z1 + inf) return true; }
+    for (const other of this.barrels) {
+      if (!other.alive) continue;
+      const rr = other.r + inf, dx = wx - other.x, dz = wz - other.z;
+      if (dx * dx + dz * dz < rr * rr) return true;
+    }
+    return false;
   },
   rebuildGrid() {
     const N = this.N, g = this.grid, R2 = (CFG.arenaR - 0.7) * (CFG.arenaR - 0.7);
@@ -4995,6 +5030,16 @@ const Bots = {
     }
     if (back) HUD.toast(back === 1 ? 'A SQUADMATE IS BACK ON THEIR FEET' : 'THE SQUAD REGROUPS', 2.4);
   },
+  // full heal for the whole squad at the top of every wave (see beginWave) — regroup() above only
+  // revives whoever was knocked out, at a partial 60% HP; this runs right after it and tops
+  // EVERYONE still standing back to 100% too, so nobody carries chip damage from the last wave
+  // into a fresh fight.
+  healFull() {
+    for (const b of this.list) {
+      if (!b.squadActive || b.out) continue;
+      b.hp = b.maxHp; b.shield = b.maxShield; b.shieldRegenT = 0;
+    }
+  },
 
   // A late wave can run for minutes, so waiting for the next one is too long to be the only way
   // back: a wiped-out squad walks one member back in rather than letting the run quietly turn
@@ -5785,6 +5830,7 @@ const Game = {
     // let the wave banner land before the director drops a special on top of it
     Director.tankT = Math.max(Director.tankT, 12); Director.hunterT = Math.max(Director.hunterT, 7);
     if (w > 1) Bots.regroup();
+    Bots.healFull();
     // Weapons unlock at their wave milestone, or earlier if the player has banked
     // enough points — that is what points buy.
     WEAPONS.forEach((def, i) => {
