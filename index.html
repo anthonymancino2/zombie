@@ -222,12 +222,16 @@ h1.title em{font-style:normal;color:var(--accent2);}
   transition:transform .1s;}
 .bigbtn:active{transform:scale(.97);}
 .bigbtn.secondary{background:rgba(0,0,0,.45);border-color:rgba(255,255,255,.35);box-shadow:none;font-size:16px;padding:10px 20px;}
+/* neon-blue coop button — same footprint as .secondary (it shares a row with GLOBAL LEADERBOARD)
+   but deliberately lit up: this is the button that gets other people into your game, worth the
+   extra visual shout */
+.bigbtn.neon{font-size:16px;padding:10px 20px;color:#00141c;border-color:#7cf3ff;
+  background:linear-gradient(180deg,#3ce6ff,#0090ff);text-shadow:0 0 6px rgba(255,255,255,.6);
+  box-shadow:0 0 16px 2px rgba(30,220,255,.7),0 0 36px rgba(0,160,255,.45),inset 0 1px 0 rgba(255,255,255,.5);}
 .help{font-size:11px;color:var(--dim);margin-top:12px;line-height:1.5;letter-spacing:.04em;}
-.verrow{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:2px;}
-.verrow .help{margin-top:0;}
-.syncbtn{font-family:var(--hud-font);font-size:10px;letter-spacing:.14em;color:var(--sand);
-  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.22);border-radius:12px;
-  padding:3px 11px;cursor:pointer;touch-action:manipulation;opacity:.8;flex:none;}
+.syncbtn{align-self:center;font-family:var(--hud-font);font-size:11px;letter-spacing:.14em;color:var(--sand);
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.28);border-radius:14px;
+  padding:8px 14px;cursor:pointer;touch-action:manipulation;opacity:.85;flex:none;}
 .syncbtn:active{transform:scale(.94);opacity:1;}
 .help b{color:var(--sand);font-weight:600;}
 .best{font-family:var(--hud-font);font-size:12px;letter-spacing:.2em;color:#ffd83b;margin-top:10px;text-shadow:0 0 8px rgba(255,216,59,.5);}
@@ -520,9 +524,10 @@ h1.title em{font-style:normal;color:var(--accent2);}
       </div>
       <div class="row">
         <button class="bigbtn" id="btnStart">ENTER THE ARENA</button>
+        <button class="syncbtn" id="btnSync" title="Force-reload the latest version of the game">⟳ SYNC</button>
       </div>
       <div class="row" style="margin-top:10px">
-        <button class="bigbtn secondary" id="btnOnline">PLAY WITH FRIENDS</button>
+        <button class="bigbtn neon" id="btnOnline">COOP MODE</button>
         <button class="bigbtn secondary" id="btnLeaders">GLOBAL LEADERBOARD</button>
       </div>
       <div class="best" id="bestLine"></div>
@@ -531,10 +536,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <b>Desktop:</b> WASD move · Shift sprint · mouse look · click fire · R reload · Q light / E heavy weapon swap · 1-2-3 weapons · V camera · Esc pause.<br>
         Shotgun unlocks at wave 3, assault rifle at wave 6. Shoot the red barrels. Grab the glowing drops.
       </div>
-      <div class="verrow">
-        <span class="help" id="verLine" style="opacity:.5"></span>
-        <button class="syncbtn" id="btnSync" title="Force-reload the latest version of the game">⟳ SYNC</button>
-      </div>
+      <div class="help" id="verLine" style="opacity:.5"></div>
     </div></div>
   </div>
 
@@ -703,7 +705,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.22.0';
+const GAME_VERSION = 'v1.23.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
