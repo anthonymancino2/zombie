@@ -163,7 +163,8 @@ button{font-family:inherit;color:inherit;}
 /* ultimate-move button, stacked above SWAP WEAPON in the same right-edge column — high enough to
    clear .hudbr (the ammo/weapon-name text block, right-anchored at the same bottom:202 the old
    heavy-weapon-swap button used to share that slot with) */
-#btnUlt{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(268px + var(--sab));font-size:11px;border-color:#8a5cff;}
+#btnUlt{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(268px + var(--sab));font-size:9px;letter-spacing:.06em;border-color:#8a5cff;}
+#btnUlt small{font-size:8px;letter-spacing:.1em;margin-top:1px;}
 #btnUlt.ready{border-color:#ffd83b;box-shadow:0 0 18px rgba(255,216,59,.85);animation:ultpulse 1s ease-in-out infinite;}
 /* AUTO lives up in the corner beside PAUSE: it is a toggle you touch between waves, and down in
    the thumb cluster it kept getting hit by accident while firing. */
@@ -488,7 +489,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <div id="btnSwitch" class="tbtn">SWAP<small>WEAPON</small></div>
     <div id="btnReload" class="tbtn">RELOAD</div>
     <div id="btnSprint" class="tbtn"><span class="meter"></span>SPRINT</div>
-    <div id="btnUlt" class="tbtn"><span class="meter"></span>MOVE</div>
+    <div id="btnUlt" class="tbtn"><span class="meter"></span>SPECIAL<small id="ultTimer"></small></div>
     <div id="btnFire" class="tbtn"><span class="ring"></span>FIRE</div>
     <div id="layoutBar">DRAG THE BUTTONS<button id="btnLayoutReset">RESET</button><button id="btnLayoutDone" class="go">DONE</button></div>
   </div>
@@ -563,6 +564,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="cards" id="cardsFemale"></div>
       <div class="opts">
         <div class="opt" id="optAuto">AUTO-FIRE: <span>OFF</span></div>
+        <div class="opt" id="optTest">TEST MODE: <span>OFF</span></div>
         <div class="opt" id="optCam">CAMERA: <span>1ST</span></div>
         <div class="opt on" id="optSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="optVoice">VOICE LINES: <span>ON</span></div>
@@ -594,6 +596,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <h2>PAUSED</h2>
       <div class="opts">
         <div class="opt" id="pOptAuto">AUTO-FIRE: <span>OFF</span></div>
+        <div class="opt" id="pOptTest">TEST MODE: <span>OFF</span></div>
         <div class="opt" id="pOptCam">CAMERA: <span>1ST</span></div>
         <div class="opt on" id="pOptSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="pOptVoice">VOICE LINES: <span>ON</span></div>
@@ -752,7 +755,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.37.0';
+const GAME_VERSION = 'v1.38.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3623,7 +3626,8 @@ const Player = {
     this.insta = 0; this.dbl = 0;
     // squadmates would otherwise all boot up inside each other at the origin
     if (Net.mode !== 'off') { const a = rnd(0, TAU); this.x = Math.cos(a) * 2.6; this.z = Math.sin(a) * 2.6; }
-    this.weapons = WEAPONS.map((def, i) => ({ def: def, owned: i === 0, mag: def.mag, reserve: def.reserve }));
+    this.weapons = WEAPONS.map((def, i) => ({ def: def, owned: i === 0 || Game.testMode, mag: def.mag, reserve: def.reserve }));
+    if (Game.testMode) this.ultCharge = 100;
     this.cur = 0; this.cooldown = 0; this.reloading = false; this.reloadT = 0; this.switchT = 0; this.bloom = 0; this.bobT = 0; this.stepD = 0; this.lastHurt = -99; this.recoil = 0;
     this.stats = { shots: 0, hits: 0, kills: 0, head: 0, score: 0 }; this.autoTarget = null; this.lowSaid = false;
     this.vm.models.forEach((m, i) => m.visible = i === 0);
@@ -3660,6 +3664,9 @@ const Player = {
     if (this.ultCooldownT > 0) this.ultCooldownT -= dt;
     if (this.ultImmuneT > 0) this.ultImmuneT -= dt;
     if (this.ultAtkCooldown > 0) this.ultAtkCooldown -= dt;
+    // test mode: keep the gauge topped off and the cooldown clear every frame, so tryUltimate's
+    // own gate (charge>=100 && cooldownT<=0) passes again the instant the previous move ends
+    if (Game.testMode) { this.ultCharge = 100; this.ultCooldownT = 0; }
     if (this.ultActive && this.alive) {
       this.ultActiveT -= dt;
       Ultimates.tick(this, dt);
@@ -4486,9 +4493,9 @@ const DOM = {};
 const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
-    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
+    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateBlock',
-      'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
+      'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
       'btnLeaders', 'btnLeadersBack', 'btnLobbyStart', 'btnLobbyLeave', 'lobbyCode', 'lobbyPlayers', 'lobbyStatus', 'lobbyHint', 'lobbyTimer',
       'startVotePopup', 'startVoteText', 'btnStartVoteYes', 'btnStartVoteNo',
@@ -4520,6 +4527,10 @@ const HUD = {
       DOM.ultFill.classList.toggle('ready', ultReady);
       if (DOM.btnUlt) DOM.btnUlt.classList.toggle('ready', ultReady);
     }
+    // countdown on the SPECIAL button itself: remaining active time while it's running, else
+    // remaining cooldown, else blank once it's charged and ready to fire again
+    const ultTimerTxt = P.ultActive ? Math.ceil(P.ultActiveT) + 's' : (P.ultCooldownT > 0 ? Math.ceil(P.ultCooldownT) + 's' : '');
+    if (DOM.ultTimer) this.set('ultTimer', DOM.ultTimer, ultTimerTxt);
     this.set('hp', DOM.hpNum, Math.ceil(P.hp) + ' ');
     if (this.last.hpMax !== P.maxHp) { this.last.hpMax = P.maxHp; DOM.hpNum.innerHTML = Math.ceil(P.hp) + ' <span>/ ' + P.maxHp + '</span>'; this.last.hp = null; }
     else if (this.last.hpTxt !== Math.ceil(P.hp)) { this.last.hpTxt = Math.ceil(P.hp); DOM.hpNum.innerHTML = Math.ceil(P.hp) + ' <span>/ ' + P.maxHp + '</span>'; }
@@ -4618,6 +4629,7 @@ const HUD = {
   refreshOptions() {
     const G = Game;
     [DOM.optAuto, DOM.pOptAuto].forEach(e => { e.classList.toggle('on', G.autoFire); e.querySelector('span').textContent = G.autoFire ? 'ON' : 'OFF'; });
+    [DOM.optTest, DOM.pOptTest].forEach(e => { e.classList.toggle('on', G.testMode); e.querySelector('span').textContent = G.testMode ? 'ON' : 'OFF'; });
     [DOM.optCam, DOM.pOptCam].forEach(e => { e.classList.toggle('on', G.camMode === 'tp'); e.querySelector('span').textContent = G.camMode === 'tp' ? '3RD-' + G.CAM_DIST_ABBR[G.camDist] : '1ST'; });
     // in coop the squad is the people you are actually playing with, so the bot control steps
     // aside; solo cycles OFF/1/2/3 bots on a single click-through control
@@ -5174,7 +5186,7 @@ const Game = {
   noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0,
   timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
-  autoFire: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
+  autoFire: false, testMode: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
   CAM_TIERS: ['fp', 'close', 'medium', 'far', 'veryfar', 'topdown'],
   best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
   fpsAcc: 0, fpsN: 0, fpsAvg: 16.7, fpsT: 0, resT: 0, chain: [], realDt: 0.016, newBest: false, _pt: { x: 0, z: 0 },
@@ -5228,6 +5240,7 @@ const Game = {
     $('btnMenu').addEventListener('click', () => self.toMenu());
     const optToggle = (els, fn) => els.forEach(e => e.addEventListener('click', () => { fn(); HUD.refreshOptions(); }));
     optToggle([DOM.optAuto, DOM.pOptAuto], () => self.setAutoFire(!self.autoFire));
+    optToggle([DOM.optTest, DOM.pOptTest], () => { self.setTestMode(!self.testMode); HUD.toast('TEST MODE ' + (self.testMode ? 'ON — special always full, all weapons unlocked' : 'OFF'), 2.6); });
     optToggle([DOM.optCam, DOM.pOptCam], () => self.cycleCam());
     optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquadCount((self.squadCount + 1) % 4));
     optToggle([DOM.optVoice, DOM.pOptVoice], () => self.voice = !self.voice);
@@ -5299,6 +5312,16 @@ const Game = {
   setAutoFire(v) {
     this.autoFire = v;
     try { localStorage.setItem('dnd_autofire', v ? '1' : '0'); } catch (e) { }
+  },
+  // dev/QA toggle: keeps the SPECIAL gauge topped off with no cooldown and every weapon owned,
+  // so a move (or a weapon) can be tried out without grinding kills/waves for it first. Not
+  // persisted — always starts OFF so nobody ships a run with it on by accident.
+  setTestMode(v) {
+    this.testMode = v;
+    if (v) {
+      Player.ultCharge = 100; Player.ultCooldownT = 0;
+      for (const w of Player.weapons) w.owned = true;
+    }
   },
   // GRIT/VITALS, SPEED and RELOAD bars are per-gender (every champion of a gender shares that
   // gender's stat block), not per-champion — so there are only ever two distinct bar sets.
