@@ -76,12 +76,17 @@ button{font-family:inherit;color:inherit;}
 #hpNum span{font-size:12px;color:var(--sand);letter-spacing:.1em;}
 #waveNum{font-size:30px;line-height:1;letter-spacing:.06em;color:#fff;text-shadow:0 0 14px var(--glow),0 0 4px var(--accent),0 2px 2px #000;}
 #zLeft{font-size:12px;letter-spacing:.2em;color:var(--sand);margin-top:2px;text-shadow:0 1px 3px #000,0 0 6px rgba(0,0,0,.8);}
-#powerups{display:flex;gap:6px;justify-content:center;margin-top:6px;}
+#powerups{display:flex;gap:6px;justify-content:center;margin-top:6px;flex-wrap:wrap;}
 .pill{display:none;font-size:11px;letter-spacing:.12em;padding:4px 8px;border-radius:20px;border:1px solid var(--accent);
   background:rgba(0,0,0,.5);color:#fff;text-shadow:0 0 6px var(--glow);box-shadow:0 0 10px var(--glow);}
 .pill.on{display:inline-block;animation:pillpulse 1.2s ease-in-out infinite;}
 .pill.insta{border-color:#ff3b3b;box-shadow:0 0 10px rgba(255,59,59,.6);}
 .pill.dbl{border-color:#ffd83b;box-shadow:0 0 10px rgba(255,216,59,.6);}
+.pill.noreload{border-color:#40c4ff;box-shadow:0 0 10px rgba(64,196,255,.6);}
+.pill.infammo{border-color:#40ff8a;box-shadow:0 0 10px rgba(64,255,138,.6);}
+.pill.invincible{border-color:#ffffff;box-shadow:0 0 10px rgba(255,255,255,.7);}
+.pill.rapidfire{border-color:#ff8a00;box-shadow:0 0 10px rgba(255,138,0,.6);}
+.pill.fastmove{border-color:#00e5ff;box-shadow:0 0 10px rgba(0,229,255,.6);}
 @keyframes pillpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 #points{font-size:28px;line-height:1;color:#fff;text-shadow:0 0 14px var(--glow),0 2px 2px #000;letter-spacing:.04em;}
 #mult{font-size:12px;color:#ffd83b;letter-spacing:.16em;text-shadow:0 0 8px rgba(255,216,59,.7);height:14px;margin-top:2px;}
@@ -229,6 +234,10 @@ h1.title em{font-style:normal;color:var(--accent2);}
 }
 @media (max-height:440px){
   #toast{top:calc(84px + var(--sat));font-size:11px;}
+  /* every buff pill active at once (rare, but possible if pickups cluster) wraps to several rows —
+     shrink them here so that worst case still clears the HP bar instead of growing into it */
+  .pill{font-size:9px;padding:3px 6px;}
+  #powerups{max-width:56vw;margin-left:auto;margin-right:auto;}
   #btnFire{width:78px;height:78px;bottom:calc(12px + var(--sab));right:calc(14px + var(--sar));}
   #btnReload{width:50px;height:50px;right:calc(116px + var(--sar));bottom:calc(16px + var(--sab));}
   #btnSwitch{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(112px + var(--sab));}
@@ -400,6 +409,11 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div id="powerups">
         <div class="pill insta" id="pillInsta">INSTA-KILL 15s</div>
         <div class="pill dbl" id="pillDbl">2X POINTS 30s</div>
+        <div class="pill noreload" id="pillNoReload">NO RELOAD 15s</div>
+        <div class="pill infammo" id="pillInfAmmo">∞ AMMO 15s</div>
+        <div class="pill invincible" id="pillInvincible">INVINCIBLE 12s</div>
+        <div class="pill rapidfire" id="pillRapidFire">RAPID FIRE 15s</div>
+        <div class="pill fastmove" id="pillFastMove">SPEED BOOST 15s</div>
       </div>
     </div>
     <div class="hudtr">
@@ -608,7 +622,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.11.1';
+const GAME_VERSION = 'v1.12.0';
 const CFG = {
   arenaR: 58,            // playable radius (units)
   grid: 128, gridMin: -64, cell: 1,
@@ -618,6 +632,11 @@ const CFG = {
   countMul: 1.25, speedMul: 1.05, hpMul: 1.15,
   ptsHit: 10, ptsKill: 100, ptsHead: 25,
   instaTime: 15, dblTime: 30,
+  // later-wave power-ups (wave >= powerupWave only) — personal buffs, not squad-wide like
+  // insta/double, since reload/ammo/rate-of-fire/speed only mean anything for whoever grabbed them
+  powerupWave: 6,
+  noReloadTime: 15, infAmmoTime: 15, invincibleTime: 12, rapidFireTime: 15, fastMoveTime: 15,
+  rapidFireMul: 1.8, fastMoveMul: 1.45,
   pickupLife: 40,
   // coop: how long you bleed out on the sand, and what it costs a teammate to pick you back up
   downTime: 45, reviveTime: 3.5, reviveRange: 2.4, reviveHp: 0.4,
@@ -2791,7 +2810,11 @@ const Zombies = {
 /* ------------------------------------------------------------------ pickups (floating indicators) */
 const PICKUP_DEFS = {
   health: { color: 0xff4a4a, label: '+50 HP' }, ammo: { color: 0xffb040, label: 'AMMO' },
-  insta: { color: 0xff2a2a, label: 'INSTA-KILL' }, double: { color: 0xffe040, label: '2X POINTS' }
+  insta: { color: 0xff2a2a, label: 'INSTA-KILL' }, double: { color: 0xffe040, label: '2X POINTS' },
+  // later-wave only (CFG.powerupWave+) — see Game.spawnPickup
+  noreload: { color: 0x40c4ff, label: 'NO RELOAD' }, infammo: { color: 0x40ff8a, label: '∞ AMMO' },
+  invincible: { color: 0xffffff, label: 'INVINCIBLE' }, rapidfire: { color: 0xff8a00, label: 'RAPID FIRE' },
+  fastmove: { color: 0x00e5ff, label: 'SPEED BOOST' }
 };
 const Pickups = {
   pool: [],
@@ -3064,7 +3087,7 @@ const Player = {
       const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw), rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
       const mag = Math.min(1, Math.sqrt(mv.x * mv.x + mv.y * mv.y)); this.moveMag = lerp(this.moveMag, mag, Math.min(1, dt * 10));
       this.updateSprint(dt, mag);
-      const spd = this.speed * (this.sprinting ? CFG.sprintMul : 1);
+      const spd = this.speed * (this.sprinting ? CFG.sprintMul : 1) * (Game.fastMove > 0 ? CFG.fastMoveMul : 1);
       const vx = (fx * mv.y + rx * mv.x) * spd, vz = (fz * mv.y + rz * mv.x) * spd;
       this.x += vx * dt; this.z += vz * dt;
       World.collide(this, CFG.playerR);
@@ -3226,9 +3249,10 @@ const Player = {
   tryFire() {
     const w = this.weapon(), def = w.def;
     if (this.reloading || this.switchT > 0 || this.cooldown > 0) { Input.consumeFireEdge(); return; }
-    if (w.mag <= 0) { Input.consumeFireEdge(); if (w.reserve > 0) this.reload(); else { Audio.empty(); this.cooldown = 0.25; HUD.toast('OUT OF AMMO — SWAP WEAPON'); } return; }
+    if (w.mag <= 0) { Input.consumeFireEdge(); if (w.reserve > 0 || Game.infAmmo > 0) this.reload(); else { Audio.empty(); this.cooldown = 0.25; HUD.toast('OUT OF AMMO — SWAP WEAPON'); } return; }
     Input.consumeFireEdge();
-    w.mag--; this.cooldown = 1 / def.rate; this.stats.shots++;
+    if (!(Game.infAmmo > 0)) w.mag--;
+    this.cooldown = 1 / (def.rate * (Game.rapidFire > 0 ? CFG.rapidFireMul : 1)); this.stats.shots++;
     this.recoil = def.recoil; Game.shake = Math.max(Game.shake, def.recoil * 0.22);
     const spread = (def.spread + this.bloom) * Math.PI / 180; if (def.bloom) this.bloom = Math.min(def.bloom, this.bloom + 0.45);
     const dir = this.eyeDir(this._dir), ey = this.eyeY();
@@ -3255,12 +3279,22 @@ const Player = {
   },
   reload() {
     const w = this.weapon(), def = w.def;
-    if (this.reloading || this.switchT > 0 || w.mag >= def.mag || w.reserve <= 0 || !this.alive) return;
-    this.reloading = true; this.reloadTotal = def.reload * this.char.reloadMul; this.reloadT = this.reloadTotal; Audio.reload(def.id); HUD.dirty = true;
+    const infAmmo = Game.infAmmo > 0;
+    if (this.reloading || this.switchT > 0 || w.mag >= def.mag || (w.reserve <= 0 && !infAmmo) || !this.alive) return;
+    Audio.reload(def.id); HUD.dirty = true;
+    if (Game.noReload > 0 || infAmmo) {
+      // instant top-up: no animation, no timer — matches the "no reload" buff, and infinite ammo
+      // never needs to wait on a reload either since running out shouldn't cost you anything
+      const take = Math.min(def.mag - w.mag, infAmmo ? Infinity : w.reserve);
+      w.mag += take; if (w.reserve !== Infinity && !infAmmo) w.reserve -= take;
+      return;
+    }
+    this.reloading = true; this.reloadTotal = def.reload * this.char.reloadMul; this.reloadT = this.reloadTotal;
   },
   finishReload() {
     const w = this.weapon(), def = w.def; this.reloading = false;
-    const take = Math.min(def.mag - w.mag, w.reserve); w.mag += take; if (w.reserve !== Infinity) w.reserve -= take; HUD.dirty = true;
+    const infAmmo = Game.infAmmo > 0;
+    const take = Math.min(def.mag - w.mag, infAmmo ? Infinity : w.reserve); w.mag += take; if (w.reserve !== Infinity && !infAmmo) w.reserve -= take; HUD.dirty = true;
   },
   switchTo(i) {
     if (i < 0 || i >= this.weapons.length || !this.weapons[i].owned || i === this.cur || !this.alive) return;
@@ -3293,6 +3327,7 @@ const Player = {
   },
   hurt(amount, fx, fz) {
     if (!this.alive || Game.state !== 'playing') return;
+    if (Game.invincible > 0) return;
     this.hp -= amount; this.lastHurt = Game.time; Game.shake = Math.max(Game.shake, 0.9);
     Audio.hurt(); FX.damage(fx, fz); HUD.dirty = true;
     if (this.hp <= this.maxHp * 0.3 && !this.lowSaid) { this.lowSaid = true; Game.say('lowhp'); }
@@ -3445,7 +3480,7 @@ const DOM = {};
 const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
-    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'reloadHint',
+    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateHint',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
@@ -3476,6 +3511,11 @@ const HUD = {
     if (ins) this.set('insT', DOM.pillInsta, 'INSTA-KILL ' + Math.ceil(G.insta) + 's');
     const dbl = G.dbl > 0; if (this.last.dbl !== dbl) { this.last.dbl = dbl; DOM.pillDbl.classList.toggle('on', dbl); DOM.mult.textContent = dbl ? '2X MULTIPLIER' : ''; }
     if (dbl) this.set('dblT', DOM.pillDbl, '2X POINTS ' + Math.ceil(G.dbl) + 's');
+    // the 5 later-wave power-ups all follow the same on/off + countdown-text pattern as insta/dbl
+    for (const p of Game.POWER_PILLS) {
+      const on = G[p.key] > 0; if (this.last[p.key] !== on) { this.last[p.key] = on; DOM[p.dom].classList.toggle('on', on); }
+      if (on) this.set(p.key + 'T', DOM[p.dom], p.label + ' ' + Math.ceil(G[p.key]) + 's');
+    }
     // score
     this.set('pts', DOM.points, fmt(G.points));
     this.set('kills', DOM.kills, G.kills + (G.kills === 1 ? ' KILL' : ' KILLS'));
@@ -4014,7 +4054,9 @@ const Director = {
 
 /* ------------------------------------------------------------------ game state, waves, economy, voice lines, main loop */
 const Game = {
-  state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0, insta: 0, dbl: 0, timeScale: 1, matchTime: 0,
+  state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0, insta: 0, dbl: 0,
+  noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0,
+  timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
   CAM_TIERS: ['fp', 'close', 'medium', 'far', 'veryfar'],
@@ -4148,7 +4190,9 @@ const Game = {
     Zombies.clear(); Bullets.clear(); Pickups.clear(); Floaties.clear(); Particles.clear(); Decals.clear();
     for (const e of Explosions.pool) { e.on = false; e.fire.visible = e.ring.visible = false; } for (const l of Explosions.lights) l.intensity = 0;
     Player.reset(char); Input.reset();
-    this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0; this.insta = 0; this.dbl = 0; this.timeScale = 1;
+    this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0; this.insta = 0; this.dbl = 0;
+    this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0;
+    this.timeScale = 1;
     this.toSpawn = 0; this.waveActive = false; this.streak = 0; this.sayT = -99; this.deathK = 0; this.deathRoll = 0; this.chain.length = 0; this.pickupT = 15;
     Director.reset(); Bots.spawn();
     HUD.last = {}; HUD.dirty = true; HUD.showScreen(null); HUD.showHud(true); HUD.refreshOptions();
@@ -4238,10 +4282,26 @@ const Game = {
     const type = r < bruteP ? 'brute' : (r < bruteP + runnerP ? 'runner' : 'walker');
     if (Zombies.spawn(type, w)) this.toSpawn--;
   },
+  // the 5 new power-ups only enter the pool from CFG.powerupWave on — early waves keep the
+  // original insta/double-only pace so the opening game isn't suddenly buff-soup
+  POWER_PILLS: [
+    { key: 'noReload', dom: 'pillNoReload', label: 'NO RELOAD' },
+    { key: 'infAmmo', dom: 'pillInfAmmo', label: '∞ AMMO' },
+    { key: 'invincible', dom: 'pillInvincible', label: 'INVINCIBLE' },
+    { key: 'rapidFire', dom: 'pillRapidFire', label: 'RAPID FIRE' },
+    { key: 'fastMove', dom: 'pillFastMove', label: 'SPEED BOOST' }
+  ],
+  POWER_POOL_EARLY: ['insta', 'double'],
+  POWER_POOL_LATE: ['insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove'],
   spawnPickup() {
     let type; const r = Math.random(), hasGun = Player.weapons.some(w => w.owned && w.def.maxReserve !== Infinity);
     if (hasGun && Player.lowOnAmmo() && r < 0.5) type = 'ammo';
-    else if (r < 0.34) type = 'health'; else if (r < 0.62) type = hasGun ? 'ammo' : 'health'; else if (r < 0.82) type = 'insta'; else type = 'double';
+    else if (r < 0.34) type = 'health';
+    else if (r < 0.62) type = hasGun ? 'ammo' : 'health';
+    else {
+      const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
+      type = pool[Math.floor(Math.random() * pool.length)];
+    }
     if (World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn(type, this._pt.x, this._pt.z);
   },
   // `by` is set when a coop teammate landed the shot — their client already drew the impact,
@@ -4325,6 +4385,13 @@ const Game = {
     else if (type === 'ammo') { P.refillAmmo(); Floaties.spawn(x, 1.6, z, 'AMMO REFILLED', '#ffb040', 20, 1.2); this.say('ammo'); HUD.toast('AMMO CRATE — RESERVE REFILLED'); }
     else if (type === 'insta') { this.insta = CFG.instaTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'INSTA-KILL!', '#ff3a3a', 22, 1.3); this.say('insta', true); HUD.toast('INSTA-KILL — ONE SHOT, ONE KILL', 2.5); }
     else if (type === 'double') { this.dbl = CFG.dblTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'DOUBLE POINTS!', '#ffe040', 22, 1.3); this.say('double', true); HUD.toast('DOUBLE POINTS — 30 SECONDS', 2.5); }
+    // the 5 later-wave power-ups below are personal, not squad-wide like insta/double above —
+    // reload/ammo/rate-of-fire/speed only mean anything for whoever actually picked it up
+    else if (type === 'noreload') { this.noReload = CFG.noReloadTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'NO RELOAD!', '#40c4ff', 22, 1.3); HUD.toast('NO RELOAD — 15 SECONDS', 2.5); }
+    else if (type === 'infammo') { this.infAmmo = CFG.infAmmoTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, '∞ AMMO!', '#40ff8a', 22, 1.3); HUD.toast('INFINITE AMMO — 15 SECONDS', 2.5); }
+    else if (type === 'invincible') { this.invincible = CFG.invincibleTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'INVINCIBLE!', '#ffffff', 22, 1.3); HUD.toast('INVINCIBLE — 12 SECONDS', 2.5); }
+    else if (type === 'rapidfire') { this.rapidFire = CFG.rapidFireTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'RAPID FIRE!', '#ff8a00', 22, 1.3); HUD.toast('RAPID FIRE — 15 SECONDS', 2.5); }
+    else if (type === 'fastmove') { this.fastMove = CFG.fastMoveTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'SPEED BOOST!', '#00e5ff', 22, 1.3); HUD.toast('SPEED BOOST — 15 SECONDS', 2.5); }
     Particles.sparks(x, 1.2, z, 12); HUD.dirty = true;
   },
   recordBest() {
@@ -4396,6 +4463,9 @@ const Game = {
     }
     this.shake = Math.max(0, this.shake - dt * 3.2);
     if (this.insta > 0) this.insta -= dt; if (this.dbl > 0) this.dbl -= dt;
+    if (this.noReload > 0) this.noReload -= dt; if (this.infAmmo > 0) this.infAmmo -= dt;
+    if (this.invincible > 0) this.invincible -= dt; if (this.rapidFire > 0) this.rapidFire -= dt;
+    if (this.fastMove > 0) this.fastMove -= dt;
     // waves
     if (this.state === 'playing') {
       if (Net.isClient()) { /* the host owns waves, spawning and pickups — we just render them */ }
@@ -4595,7 +4665,7 @@ const NET = { PREFIX: 'dnd/1/', VER: 1, MAX: 4, SNAP: 1 / 12, INPUT: 1 / 15, BEA
 // reordering makes an older client read a hunter as a walker, or `attack` as `dead`.
 const ZSTATE = ['emerge', 'chase', 'attack', 'dead', 'crouch', 'pounce', 'pin'];
 const ZTYPE_LIST = ['walker', 'runner', 'brute', 'hunter', 'tank'];
-const PU_LIST = ['health', 'ammo', 'insta', 'double'];
+const PU_LIST = ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove']; // append-only — this is a wire-format index array
 const r2 = (v) => Math.round(v * 100) / 100;
 
 /* ------------------------------------------------------------------ pause beacon
