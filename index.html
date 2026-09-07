@@ -755,7 +755,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.39.0';
+const GAME_VERSION = 'v1.40.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -827,19 +827,26 @@ const CFG = {
   // the time he's done swinging (see Ultimates.tickCloud).
   ultSwordRange: 2.8, ultSwordCooldown: 0.4, ultSwordSwingAnimDur: 0.28,
   ultCloudPullWindow: 25, ultCloudPullSpeed: 3.5,
-  // Green Ranger: 4x titan scale; FIRE becomes a gamma leap instead of shooting — a short forward
-  // dash that damages/stuns anything it passes through, plus a landing-site shockwave
+  // Green Ranger: 4x titan scale (now forces third-person like Cloud's sword, so the growth is
+  // actually visible — see Ultimates.startRanger); FIRE becomes a gamma leap instead of shooting —
+  // a short forward dash that damages/stuns anything it passes through, plus a landing-site
+  // shockwave. leapHop is a purely cosmetic jump-arc on the body so the leap reads as a leap
+  // instead of an instant teleport (see Player.updateBody).
   ultTitanScale: 4,
-  ultLeapRange: 8, ultLeapHitR: 2.2, ultLeapLandFt: 10, ultLeapStunSec: 3, ultLeapCooldown: 1.0,
-  // Chopper & Dudu share one move: 8 clones orbit them, break off to attack anything that wanders
-  // within ultCloneSeekFt of one, and detonate (instakill, bosses take ultCloneBossDmg instead)
-  // the instant the move ends rather than just despawning quietly
-  ultCloneCount: 8, ultCloneOrbitR: 2.4, ultCloneSeekFt: 10, ultCloneSeekSpeed: 7.5,
+  ultLeapRange: 12, ultLeapHitR: 2.6, ultLeapLandFt: 10, ultLeapStunSec: 3, ultLeapCooldown: 1.0,
+  ultLeapHopDur: 0.3, ultLeapHopHeight: 2.2,
+  // Chopper & Dudu share one move: 8 clones orbit them, but now hunt aggressively — the seek
+  // range covers the whole map (no more waiting for something to wander close) and they close in
+  // fast once locked on. Still detonate (instakill, bosses take ultCloneBossDmg instead) the
+  // instant the move ends rather than just despawning quietly.
+  ultCloneCount: 8, ultCloneOrbitR: 2.4, ultCloneSeekFt: 1000, ultCloneSeekSpeed: 15,
   ultCloneHitR: 0.7, ultCloneExplodeR: 3.2, ultCloneBossDmg: 900,
   // Nine-Tail Fox: invisible to the horde's targeting (see Net.targetFor/Bots.targetFor) while 6
-  // flame familiars orbit her, darting out on their own 1.5s timer to freeze (stun) the nearest
-  // enemy in range and immediately reappear at her side (see Ultimates.tickFox)
-  ultFlameCount: 6, ultFlameInterval: 1.5, ultFlameRange: 16, ultFlameFreezeSec: 3, ultFlameOrbitR: 1.6,
+  // flame familiars orbit her, now darting out map-wide on a much shorter timer to freeze (stun)
+  // the nearest enemy in range and immediately reappear at her side (see Ultimates.tickFox) —
+  // same aggressive-hunter treatment as Chopper/Dudu's clones, just freeze instead of a kill
+  ultFlameCount: 6, ultFlameInterval: 0.6, ultFlameRange: 200, ultFlameFreezeSec: 3, ultFlameOrbitR: 1.6,
+  ultFlameDashSpeed: 22,
   // sprint: a full meter buys ~4s of running, and refills in ~7s once you stop leaning on it
   sprintMul: 1.62, sprintDrain: 0.25, sprintRegen: 0.145, sprintHold: 0.7, sprintMin: 0.12,
   // third-person boom: behind and over the right shoulder, camera axis parallel to the aim ray.
@@ -3622,7 +3629,7 @@ const Player = {
     this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
     this.ultCharge = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0;
     this.ultImmune = false; this.ultImmuneT = 0; this.ultReduced = false; this.ultInvisible = false;
-    this.ultAtkCooldown = 0; this.ultPreCamMode = null; this.meleeSwingT = 0;
+    this.ultAtkCooldown = 0; this.ultPreCamMode = null; this.meleeSwingT = 0; this.leapHopT = 0;
     Ultimates.cleanup(this);
     this.downed = false; this.downT = 0; this.spectating = false;
     this.pinnedBy = null; this.escape = 0; this.escSend = 0;
@@ -3669,6 +3676,7 @@ const Player = {
     if (this.ultImmuneT > 0) this.ultImmuneT -= dt;
     if (this.ultAtkCooldown > 0) this.ultAtkCooldown -= dt;
     if (this.meleeSwingT > 0) this.meleeSwingT -= dt;
+    if (this.leapHopT > 0) this.leapHopT -= dt;
     // test mode: keep the gauge topped off and the cooldown clear every frame, so tryUltimate's
     // own gate (charge>=100 && cooldownT<=0) passes again the instant the previous move ends
     if (Game.testMode) { this.ultCharge = 100; this.ultCooldownT = 0; }
@@ -3884,6 +3892,12 @@ const Player = {
       b.gunMesh.rotation.x = this.meleeSwingT > 0
         ? -Math.sin((1 - this.meleeSwingT / CFG.ultSwordSwingAnimDur) * Math.PI) * 1.9
         : 0;
+    }
+    // Green Ranger's gammaLeap repositions x/z instantly (see Ultimates.gammaLeap) — this layers a
+    // purely cosmetic jump arc on top so the third-person body (now actually visible — see
+    // startRanger) visibly hops instead of just snapping to the new spot.
+    if (this.char.id === 'rhino' && this.leapHopT > 0) {
+      b.g.position.y = Math.sin((1 - this.leapHopT / CFG.ultLeapHopDur) * Math.PI) * CFG.ultLeapHopHeight;
     }
     if (this.vm.flashT > 0) { b.flash.visible = true; b.flash.material.rotation = Math.random() * TAU; }
     else b.flash.visible = false;
@@ -4258,11 +4272,17 @@ const Ultimates = {
   },
 
   /* ---------------- Green Ranger: gamma titan ----------------
-     Grows 4x and takes no damage for the duration. FIRE is now a gamma leap — an instant forward
-     dash that deals rifle-equal damage and stuns everything it passes through, plus a 10ft
-     shockwave at the landing spot — rather than the old passive contact-instakill. */
+     Grows 4x and takes no damage for the duration. Forces third-person for the move like Cloud's
+     sword does — in first-person you never see your own body, so the 4x growth (the whole point
+     of the move) was otherwise invisible and read as "nothing happening." FIRE is now a gamma
+     leap — an instant forward dash that deals rifle-equal damage and stuns everything it passes
+     through, plus a 10ft shockwave at the landing spot — rather than the old passive
+     contact-instakill. leapHopT fakes a jump arc on the body (see Player.updateBody) so the leap
+     reads as a leap instead of a teleport-style position snap. */
   startRanger(P) {
     P.ultImmune = true;
+    P.ultPreCamMode = Game.camMode === 'fp' ? 'fp' : null;
+    if (P.ultPreCamMode) { Game.camMode = 'tp'; HUD.refreshOptions(); }
     if (P.body) P.body.g.scale.setScalar(CFG.ultTitanScale);
     Particles.sparks(P.x, 1.2, P.z, 40); Game.shake = Math.max(Game.shake, 3); Audio.powerup();
     HUD.toast('GAMMA TITAN!', 1.8);
@@ -4271,6 +4291,7 @@ const Ultimates = {
     in Player.hurt are the only passive effects — all the offense is fire-triggered (gammaLeap) */ },
   gammaLeap(P) {
     P.ultAtkCooldown = CFG.ultLeapCooldown;
+    P.leapHopT = CFG.ultLeapHopDur;
     const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
     let dist = CFG.ultLeapRange;
     const t = World.segHit(P.x, 1, P.z, P.x + fx * dist, 1, P.z + fz * dist);
@@ -4288,12 +4309,15 @@ const Ultimates = {
   },
 
   /* ---------------- Chopper & Dudu: clone swarm ----------------
-     8 clones orbit, breaking off toward anything that wanders within ultCloneSeekFt and killing
-     it on contact — same instakill hitbox the old Dudu-only orbit had, bosses untouched by it
-     same as before. New: the instant the move ends, every clone detonates (instakill in
-     ultCloneExplodeR, bosses take ultCloneBossDmg instead) rather than just despawning quietly.
-     Only 1/4 damage taken during the 30s itself (ultReduced) — full immunity only kicks in for
-     the 3s after, same as the other three moves. */
+     8 clones orbit, and each independently hunts down the nearest zombie ANYWHERE on the map
+     (ultCloneSeekFt is effectively unlimited) at ultCloneSeekSpeed, killing on contact — same
+     instakill hitbox the old Dudu-only orbit had, bosses untouched by it same as before.
+     Aggressive on purpose: once a clone drops a target (it died) it immediately re-acquires the
+     next-nearest zombie rather than drifting back to orbit, so a full swarm reads as a relentless
+     hunter-killer pack, not a passive perimeter. The instant the move ends, every clone detonates
+     (instakill in ultCloneExplodeR, bosses take ultCloneBossDmg instead) rather than just
+     despawning quietly. Only 1/4 damage taken during the 30s itself (ultReduced) — full immunity
+     only kicks in for the 3s after, same as the other three moves. */
   // shared mesh factories — used for the caster's own (logic-driving) swarm below AND for
   // painting the same swarm onto a peer's avatar elsewhere on the network (see
   // Net.updateAvatars/syncPeerVisual), which only ever gets positions, never the seek/orbit logic
@@ -4357,10 +4381,10 @@ const Ultimates = {
 
   /* ---------------- Nine-Tail Fox: astral veil ----------------
      Invisible to the horde's targeting (see Net.targetFor/Bots.targetFor) and fully immune for
-     the duration. 6 flame familiars orbit her; each keeps its own 1.5s timer, darts to the
-     nearest enemy in range when it fires, freezes (stuns) it on contact, and immediately
-     reappears at her side. Kills on anything she's frozen also credit her kill count/score (see
-     Game.onZombieKilled), on top of whoever actually finished it off. */
+     the duration. 6 flame familiars orbit her; each keeps its own ultFlameInterval timer, darts to
+     the nearest enemy anywhere in ultFlameRange (map-wide) when it fires, freezes (stuns) it on
+     contact, and immediately reappears at her side. Kills on anything she's frozen also credit
+     her kill count/score (see Game.onZombieKilled), on top of whoever actually finished it off. */
   startFox(P) {
     P.ultImmune = true; P.ultInvisible = true;
     const n = CFG.ultFlameCount, flames = [];
@@ -4384,7 +4408,7 @@ const Ultimates = {
         if (d < 0.4 || f.dashT <= 0) {
           this._dmgStunAt(f.tx, f.tz, 1.1, dmg, CFG.ultFlameFreezeSec, null, ownerKey);
           f.x = homeX; f.z = homeZ; f.dashT = 0;
-        } else { const k = Math.min(1, dt * 18 / d); f.x += dx * k; f.z += dz * k; }
+        } else { const k = Math.min(1, dt * CFG.ultFlameDashSpeed / d); f.x += dx * k; f.z += dz * k; }
       } else {
         f.x = homeX; f.z = homeZ;
         f.cd -= dt;
@@ -4395,7 +4419,10 @@ const Ultimates = {
             const dx = zb.x - f.x, dz = zb.z - f.z, d2 = dx * dx + dz * dz;
             if (d2 < bd) { bd = d2; best = zb; }
           }
-          if (best) { f.tx = best.x; f.tz = best.z; f.dashT = 0.6; }
+          // dash window scales with distance (map-wide range now means some targets are far) so
+          // the flame visually covers the ground instead of instantly proc'ing on something it
+          // hasn't reached yet — capped so a very distant kill still lands promptly
+          if (best) { f.tx = best.x; f.tz = best.z; f.dashT = clamp(Math.hypot(f.tx - f.x, f.tz - f.z) / CFG.ultFlameDashSpeed, 0.15, 1.4); }
           f.cd = CFG.ultFlameInterval;
         }
       }
