@@ -755,7 +755,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.40.0';
+const GAME_VERSION = 'v1.41.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -780,7 +780,7 @@ const CFG = {
   // tied to arenaR0/arenaRMax — the map now grows ~17x in area (29→120) but the requested
   // wave-30 zombie count (~300) stays pinned to the old ~4.28x-from-58 density curve, or wave 30
   // would try to field over a thousand zombies.
-  maxZombies: 300, bullets: 96, grenades: 8, chainFx: 12, particles: 1800, floaties: 48, pickups: 8, decals: 40, explosions: 5,
+  maxZombies: 300, bullets: 96, grenades: 8, chainFx: 12, particles: 1800, floaties: 48, pickups: 14, decals: 40, explosions: 5,
   zombieBaseHp: 60, zombieBaseSpeed: 2.35, countBase: 6,
   countMul: 1.25, speedMul: 1.05, hpMul: 1.15,
   ptsHit: 10, ptsKill: 100, ptsHead: 25,
@@ -796,6 +796,12 @@ const CFG = {
   noReloadTime: 15, infAmmoTime: 15, invincibleTime: 12, rapidFireTime: 15, fastMoveTime: 15,
   rapidFireMul: 1.8, fastMoveMul: 1.45,
   pickupLife: 40,
+  // dedicated power-up ("special") spawn stream, separate from the health/ammo timer/roll in
+  // spawnPickup — that shared roll only handed a power-up to ~38% of its spawns and shared ONE
+  // pool cap with health/ammo, so specials all but vanished whenever the ground had ammo/health
+  // sitting on it. This ticks and caps completely independently (see Game.spawnPowerup/
+  // powerupCount) so a special shows up on a short, predictable clock no matter what else is out.
+  powerupSpawnMin: 7, powerupSpawnMax: 12, powerupCap: 4,
   // coop: how long you bleed out on the sand, and what it costs a teammate to pick you back up
   downTime: 45, reviveTime: 3.5, reviveRange: 2.4, reviveHp: 0.4,
   // shield: a regenerating buffer in front of HP, same idea for every survivor (player, peer, or
@@ -5244,7 +5250,7 @@ const Game = {
   state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0,
   noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0,
   timeScale: 1, matchTime: 0,
-  toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
+  toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, powerupT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, testMode: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
   CAM_TIERS: ['fp', 'close', 'medium', 'far', 'veryfar', 'topdown'],
   best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
@@ -5463,6 +5469,7 @@ const Game = {
     this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0;
     this.timeScale = 1;
     this.toSpawn = 0; this.waveActive = false; this.streak = 0; this.sayT = -99; this.deathK = 0; this.deathRoll = 0; this.chain.length = 0; this.pickupT = 15;
+    this.powerupT = CFG.powerupSpawnMin;
     this.powerBag.length = 0; this.powerBagPool = null;
     Director.reset(); Bots.spawn();
     HUD.last = {}; HUD.dirty = true; HUD.showScreen(null); HUD.showHud(true); HUD.refreshOptions();
@@ -5609,6 +5616,15 @@ const Game = {
       const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
       type = this.nextPowerType(pool);
     }
+    if (World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn(type, this._pt.x, this._pt.z);
+  },
+  // separate from spawnPickup entirely — this is the dedicated "special" stream (see
+  // CFG.powerupSpawnMin/Max/powerupCap), always a power-up, never health/ammo, ticked and capped
+  // on its own so it can't get crowded out by whatever health/ammo happens to be on the ground
+  powerupCount() { let n = 0; for (const p of Pickups.pool) if (p.on && this.POWER_POOL_LATE.includes(p.type)) n++; return n; },
+  spawnPowerup() {
+    const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
+    const type = this.nextPowerType(pool);
     if (World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn(type, this._pt.x, this._pt.z);
   },
   // `by` is set when a coop teammate landed the shot — their client already drew the impact,
@@ -5879,6 +5895,7 @@ const Game = {
           if (World.coverPoint(P.x, P.z, this._pt)) Pickups.spawn(Math.random() < 0.6 ? 'health' : (Math.random() < 0.5 ? 'insta' : 'double'), this._pt.x, this._pt.z);
         }
         this.pickupT -= dt; if (this.pickupT <= 0) { this.pickupT = this.pickupInterval(); if (Pickups.count() < this.pickupCap()) this.spawnPickup(); }
+        this.powerupT -= dt; if (this.powerupT <= 0) { this.powerupT = rnd(CFG.powerupSpawnMin, CFG.powerupSpawnMax); if (this.powerupCount() < CFG.powerupCap) this.spawnPowerup(); }
       }
       // heartbeat when low
       if (P.hp < P.maxHp * 0.3) { this.heartT -= dt; if (this.heartT <= 0) { this.heartT = 1.1; Audio.heartbeat(); } }
