@@ -755,7 +755,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.38.0';
+const GAME_VERSION = 'v1.39.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -811,18 +811,22 @@ const CFG = {
     { at: 0.50, dmg: 1.25, reload: 1.25 }
   ],
   // per-character ultimate (see Player.tryUltimate / Game.ult*): meter fills off kills, a button
-  // fires it once full. Every one of the 5 moves runs a flat 10s, and every one grants full
+  // fires it once full. Every one of the 5 moves runs a flat 30s, and every one grants full
   // immunity for 3s after it ends (ultImmuneT) — Cloud/Ranger/Fox ALSO get full immunity for the
-  // 10s itself (ultImmune), while Chopper/Dudu instead only take 1/4 damage during their own 10s
+  // 30s itself (ultImmune), while Chopper/Dudu instead only take 1/4 damage during their own 30s
   // (ultReduced), a tankier-not-invincible window per their brief. The cooldown floor scales with
   // wave (a full meter earlier than that just has to wait), so the move can't be chained
   // back-to-back into the late game trivially.
-  ultDuration: 10, ultImmunePostTime: 3, ultReducedMul: 0.25,
+  ultDuration: 30, ultImmunePostTime: 3, ultReducedMul: 0.25,
   ultMeterPerKill: 5, ultMeterPerHeadshot: 8, ultMeterPerSpecialKill: 18,
   ultCooldownBase: 15, ultCooldownPerWave: 2.2, ultCooldownMax: 90,
   // Cloud: buster-sword combo — FIRE becomes a close-range melee swing instead of his gun for the
-  // move's duration (see Player.update's wantFire branch / Ultimates.swordSwing)
-  ultSwordRange: 2.8, ultSwordCooldown: 0.4,
+  // move's duration (see Player.update's wantFire branch / Ultimates.swordSwing). A vortex also
+  // hauls every zombie on the map straight toward him (ignoring walls — a supernatural pull, not
+  // a pathing nudge) for the first ultCloudPullWindow of those 30s, so there's a crowd in range by
+  // the time he's done swinging (see Ultimates.tickCloud).
+  ultSwordRange: 2.8, ultSwordCooldown: 0.4, ultSwordSwingAnimDur: 0.28,
+  ultCloudPullWindow: 25, ultCloudPullSpeed: 3.5,
   // Green Ranger: 4x titan scale; FIRE becomes a gamma leap instead of shooting — a short forward
   // dash that damages/stuns anything it passes through, plus a landing-site shockwave
   ultTitanScale: 4,
@@ -3618,7 +3622,7 @@ const Player = {
     this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
     this.ultCharge = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0;
     this.ultImmune = false; this.ultImmuneT = 0; this.ultReduced = false; this.ultInvisible = false;
-    this.ultAtkCooldown = 0; this.ultPreCamMode = null;
+    this.ultAtkCooldown = 0; this.ultPreCamMode = null; this.meleeSwingT = 0;
     Ultimates.cleanup(this);
     this.downed = false; this.downT = 0; this.spectating = false;
     this.pinnedBy = null; this.escape = 0; this.escSend = 0;
@@ -3664,6 +3668,7 @@ const Player = {
     if (this.ultCooldownT > 0) this.ultCooldownT -= dt;
     if (this.ultImmuneT > 0) this.ultImmuneT -= dt;
     if (this.ultAtkCooldown > 0) this.ultAtkCooldown -= dt;
+    if (this.meleeSwingT > 0) this.meleeSwingT -= dt;
     // test mode: keep the gauge topped off and the cooldown clear every frame, so tryUltimate's
     // own gate (charge>=100 && cooldownT<=0) passes again the instant the previous move ends
     if (Game.testMode) { this.ultCharge = 100; this.ultCooldownT = 0; }
@@ -3871,6 +3876,15 @@ const Player = {
     b.shadow.position.set(this.x, 0.014, this.z);
     if (b.kind === 'gltf') Avatars.pose(b, dt, gait, this.downed);
     else poseSurvivor(b, this.bodyAnim, gait, this.downed, this.pitch);
+    // Cloud has no baked attack clip (his rig only ships idle/walk — see Avatars._template), so
+    // the actual swing is faked here: a quick sine chop on the sword prop itself, layered on top
+    // of the hand-bone transform the walk/idle mixer already drives. Timed to swordSwing's own
+    // ultAtkCooldown gate, not a full animation state machine.
+    if (b.gunKind === 'sword' && b.gunMesh) {
+      b.gunMesh.rotation.x = this.meleeSwingT > 0
+        ? -Math.sin((1 - this.meleeSwingT / CFG.ultSwordSwingAnimDur) * Math.PI) * 1.9
+        : 0;
+    }
     if (this.vm.flashT > 0) { b.flash.visible = true; b.flash.material.rotation = Math.random() * TAU; }
     else b.flash.visible = false;
   },
@@ -4087,9 +4101,9 @@ const Player = {
 /* ------------------------------------------------------------------ ultimates
    One unique move per champion, gated behind a meter that fills off kills (see
    Game.onZombieKilled) and a cooldown floor that scales with wave (see Player.tryUltimate).
-   Every move runs a flat 10s and grants full immunity for 3s after it ends (ultImmuneT) — Cloud/
-   Ranger/Fox ALSO get full immunity for the 10s itself (ultImmune), while Chopper/Dudu instead
-   only take 1/4 damage during their own 10s (ultReduced), per their own brief.
+   Every move runs a flat 30s and grants full immunity for 3s after it ends (ultImmuneT) — Cloud/
+   Ranger/Fox ALSO get full immunity for the 30s itself (ultImmune), while Chopper/Dudu instead
+   only take 1/4 damage during their own 30s (ultReduced), per their own brief.
    Instakill AoEs go through applyAoeKillAuthoritative on the host or solo machine directly; a
    coop CLIENT instead sends a dedicated 'ultKill' request and only applies a cosmetic-only local
    kill (Zombie.hit's own client branch, silent=true) — reusing the normal bullet-hit report here
@@ -4204,10 +4218,28 @@ const Ultimates = {
     Particles.sparks(P.x, 1.2, P.z, 30); Audio.powerup();
     HUD.toast('BUSTER SWORD!', 1.8);
   },
-  tickCloud(P, dt) { /* the sword itself is a hand-attached mesh (Avatars.showSword) that just
-    follows the body's own animation — nothing extra to update here between swings */ },
+  // vortex: for the first ultCloudPullWindow seconds of the 30s move, every non-dead zombie on
+  // the map is dragged straight toward Cloud regardless of walls/props (a supernatural pull, not
+  // a pathing nudge — Zombies.update() still runs its own AI/collision right after this every
+  // frame, this just adds an extra shove toward him on top of it). Stops each zombie just outside
+  // hugging range so it doesn't clip into his body, and leaves it alone once inside that ring —
+  // that's what ultSwordRange is for.
+  tickCloud(P, dt) {
+    const elapsed = CFG.ultDuration - P.ultActiveT;
+    if (elapsed > CFG.ultCloudPullWindow) return;
+    const pull = CFG.ultCloudPullSpeed * dt;
+    for (const zb of Zombies.pool) {
+      if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
+      const dx = P.x - zb.x, dz = P.z - zb.z, d = Math.sqrt(dx * dx + dz * dz);
+      const stopAt = zb.radius + CFG.playerR + 0.35;
+      if (d <= stopAt) continue;
+      const k = Math.min(pull, d - stopAt) / d;
+      zb.x += dx * k; zb.z += dz * k;
+    }
+  },
   swordSwing(P) {
     P.ultAtkCooldown = CFG.ultSwordCooldown;
+    P.meleeSwingT = CFG.ultSwordSwingAnimDur;
     const dmg = this.rifleDmg(), fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
     let hits = 0;
     for (const zb of Zombies.pool) {
@@ -4260,7 +4292,7 @@ const Ultimates = {
      it on contact — same instakill hitbox the old Dudu-only orbit had, bosses untouched by it
      same as before. New: the instant the move ends, every clone detonates (instakill in
      ultCloneExplodeR, bosses take ultCloneBossDmg instead) rather than just despawning quietly.
-     Only 1/4 damage taken during the 10s itself (ultReduced) — full immunity only kicks in for
+     Only 1/4 damage taken during the 30s itself (ultReduced) — full immunity only kicks in for
      the 3s after, same as the other three moves. */
   // shared mesh factories — used for the caster's own (logic-driving) swarm below AND for
   // painting the same swarm onto a peer's avatar elsewhere on the network (see
