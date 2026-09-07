@@ -752,7 +752,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.35.0';
+const GAME_VERSION = 'v1.36.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -4242,13 +4242,31 @@ const Ultimates = {
      ultCloneExplodeR, bosses take ultCloneBossDmg instead) rather than just despawning quietly.
      Only 1/4 damage taken during the 10s itself (ultReduced) — full immunity only kicks in for
      the 3s after, same as the other three moves. */
+  // shared mesh factories — used for the caster's own (logic-driving) swarm below AND for
+  // painting the same swarm onto a peer's avatar elsewhere on the network (see
+  // Net.updateAvatars/syncPeerVisual), which only ever gets positions, never the seek/orbit logic
+  _makeCloneMesh() {
+    const geo = new THREE.SphereGeometry(0.34, 10, 8);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x5dffe0, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const g = new THREE.Mesh(geo, mat); R.scene.add(g); return g;
+  },
+  _makeFlameMesh() {
+    const geo = new THREE.SphereGeometry(0.22, 8, 6);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff6a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const g = new THREE.Mesh(geo, mat); R.scene.add(g); return g;
+  },
+  // this client's own active clone/flame positions, for the network packet that lets every other
+  // client paint the same swarm onto this player's avatar (see Net.sendInput/sendSnapshot)
+  exportPositions(P) {
+    if (P._ultClones) return P._ultClones.map(c => [r2(c.x), r2(c.z)]);
+    if (P._ultFlames) return P._ultFlames.map(f => [r2(f.x), r2(f.z)]);
+    return null;
+  },
   startCloneSwarm(P) {
     P.ultReduced = true;
     const n = CFG.ultCloneCount, clones = [];
     for (let i = 0; i < n; i++) {
-      const geo = new THREE.SphereGeometry(0.34, 10, 8);
-      const mat = new THREE.MeshBasicMaterial({ color: 0x5dffe0, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
-      const g = new THREE.Mesh(geo, mat); R.scene.add(g);
+      const g = this._makeCloneMesh();
       clones.push({ g: g, ang: (i / n) * TAU, x: P.x, z: P.z, target: null });
     }
     P._ultClones = clones;
@@ -4295,9 +4313,7 @@ const Ultimates = {
     P.ultImmune = true; P.ultInvisible = true;
     const n = CFG.ultFlameCount, flames = [];
     for (let i = 0; i < n; i++) {
-      const geo = new THREE.SphereGeometry(0.22, 8, 6);
-      const mat = new THREE.MeshBasicMaterial({ color: 0xff6a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
-      const g = new THREE.Mesh(geo, mat); R.scene.add(g);
+      const g = this._makeFlameMesh();
       flames.push({ g: g, ang: (i / n) * TAU, x: P.x, z: P.z, cd: (i / n) * CFG.ultFlameInterval, dashT: 0, tx: 0, tz: 0 });
     }
     P._ultFlames = flames;
@@ -4333,6 +4349,35 @@ const Ultimates = {
       }
       f.g.position.set(f.x, 1.3, f.z);
     }
+  },
+
+  /* ---------------- painting another player's ultimate onto their own avatar ----------------
+     Everything above is the CASTER's own machine deciding what happens (damage, freeze, kill
+     credit) — this half is purely cosmetic, run by every OTHER client for every peer/bot in
+     Net.updateAvatars. It never touches gameplay, only what a peer's avatar looks like: the sword
+     in Cloud's hand, Ranger's titan scale, or the clone/flame swarm at the positions the caster's
+     own machine already computed and broadcast (see Ultimates.exportPositions/Net.sendInput). */
+  syncPeerVisual(peer, v) {
+    const id = peer.char, active = !!peer.ultActive;
+    if (id === 'cloud' && active) Avatars.showSword(v);
+    else Avatars.setGun(v, WEAPONS[peer.w] ? WEAPONS[peer.w].id : null);
+    const wantScale = (id === 'rhino' && active) ? CFG.ultTitanScale : 1;
+    if (v.g.scale.x !== wantScale) v.g.scale.setScalar(wantScale);
+    if (id === 'chopper' || id === 'corsair') this._syncPeerSwarm(peer, active && peer.ultPos);
+    else if (id === 'mage') this._syncPeerSwarm(peer, active && peer.ultPos);
+    else this._syncPeerSwarm(peer, null);
+  },
+  _syncPeerSwarm(peer, pos) {
+    if (!pos || !pos.length) {
+      if (peer._ultVis) { for (const m of peer._ultVis) { R.scene.remove(m); m.geometry.dispose(); m.material.dispose(); } peer._ultVis = null; }
+      return;
+    }
+    if (!peer._ultVis) {
+      const isFlame = peer.char === 'mage';
+      peer._ultVis = pos.map(() => isFlame ? this._makeFlameMesh() : this._makeCloneMesh());
+    }
+    const y = peer.char === 'mage' ? 1.3 : 1.1;
+    for (let i = 0; i < pos.length && i < peer._ultVis.length; i++) peer._ultVis[i].position.set(pos[i][0], y, pos[i][1]);
   }
 };
 
@@ -6164,6 +6209,9 @@ const Net = {
       // mirrors this peer's own Player.ultInvisible (see Net.sendSnapshot/applySnapshot) — lets
       // the host's Net.targetFor skip them while they're using Nine-Tail Fox's move
       ultInvisible: false,
+      // cosmetic-only mirror of whichever ultimate this peer is running (see
+      // Ultimates.syncPeerVisual) — ultPos holds their clone/flame positions when relevant
+      ultActive: false, ultPos: null, _ultVis: null,
       tx: 0, tz: 0, tRy: 0, vis: null, walk: 0, flashT: 0, last: Net.clock,
       get alive() { return this.st === 0; },
       hurt: function (amount, fx, fz) { self.damagePeer(this, amount); }
@@ -6369,15 +6417,22 @@ const Net = {
   },
   // A client owns its position and hit points but NOT its kill count — the host resolves kills,
   // so taking `kills` from the client here would wipe the tally the host just credited.
-  applyPeerState(peer, m) { this.setPeer(peer, m.x, m.z, m.r, m.h, m.m, m.s, m.w, null, m.f, null, m.a); },
+  applyPeerState(peer, m) {
+    this.setPeer(peer, m.x, m.z, m.r, m.h, m.m, m.s, m.w, null, m.f, null, m.a);
+    // cosmetic-only ultimate visuals (sword/titan-scale/clone+flame positions) — see
+    // Ultimates.exportPositions/syncPeerVisual and Net.updateAvatars
+    peer.ultActive = !!m.u; peer.ultPos = m.up || null;
+  },
   sendInput() {
-    Mqtt.publish(this.topicC(), JSON.stringify({
+    const msg = {
       k: 'p', id: this.id, x: r2(Player.x), z: r2(Player.z), r: r2(Player.yaw),
       h: Math.round(Player.hp), m: Player.maxHp,
       s: Player.alive ? 0 : (Player.downed ? 1 : 2),
       w: Player.cur, kl: Player.stats.kills, f: Player.vm.flashT > 0 ? 1 : 0,
-      a: Game.coopMenu ? 1 : 0
-    }));
+      a: Game.coopMenu ? 1 : 0, u: Player.ultActive ? 1 : 0
+    };
+    const up = Ultimates.exportPositions(Player); if (up) msg.up = up;
+    Mqtt.publish(this.topicC(), JSON.stringify(msg));
   },
   damagePeer(peer, amount) {
     if (this.mode !== 'host') return;
@@ -6524,19 +6579,23 @@ const Net = {
     }
     const us = [];
     for (let i = 0; i < Pickups.pool.length; i++) { const p = Pickups.pool[i]; if (p.on) us.push([i, PU_LIST.indexOf(p.type), r2(p.x), r2(p.z)]); }
+    // this host's own clone/flame positions (if any) so every peer can paint the same swarm onto
+    // this machine's own avatar too, exactly like a peer's own ultv is relayed below
+    const myUp = Ultimates.exportPositions(Player);
     const pl = [[this.id, r2(Player.x), r2(Player.z), r2(Player.yaw), Math.round(Player.hp), Player.maxHp,
       Player.alive ? 0 : (Player.downed ? 1 : 2), Player.cur, Player.stats.kills, Player.vm.flashT > 0 ? 1 : 0, Player.stats.head,
-      Game.coopMenu ? 1 : 0, Math.round(Player.stats.score), Player.ultInvisible ? 1 : 0]];
+      Game.coopMenu ? 1 : 0, Math.round(Player.stats.score), Player.ultInvisible ? 1 : 0, Player.ultActive ? 1 : 0, myUp || null]];
     for (const k in this.peers) {
       const p = this.peers[k];
-      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head, p.afk, Math.round(p.score || 0), p.ultInvisible ? 1 : 0]);
+      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head, p.afk, Math.round(p.score || 0), p.ultInvisible ? 1 : 0, p.ultActive ? 1 : 0, p.ultPos || null]);
     }
     // filler bots reported in the same row shape as a real peer (see roster() above) — weapon
     // index is always 0 (pistol) since bots don't track one of their own; everything else is
     // their real live state, so a downed/revived bot reads correctly on every other machine too.
+    // Bots never run an ultimate, so ult/up are always the inert 0/null.
     for (const b of Bots.list) {
       if (!b.squadActive) continue;
-      pl.push([b.id, r2(b.x), r2(b.z), r2(b.ry), Math.round(b.hp), b.maxHp, b.out ? 2 : (b.down ? 1 : 0), 0, b.kills, 0, b.head, 0, Math.round(b.score || 0), 0]);
+      pl.push([b.id, r2(b.x), r2(b.z), r2(b.ry), Math.round(b.hp), b.maxHp, b.out ? 2 : (b.down ? 1 : 0), 0, b.kills, 0, b.head, 0, Math.round(b.score || 0), 0, 0, null]);
     }
     this.send({
       k: 's', wv: Game.wave, wa: Game.waveActive ? 1 : 0, ts: Game.toSpawn, pts: Math.round(Game.points),
@@ -6605,6 +6664,10 @@ const Net = {
       // placeholder body than silently dropping their every position update on the floor
       if (!peer) { peer = this.mkPeer(id, 'SURVIVOR', 'cloud'); this.peers[id] = peer; }
       this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null, e.length > 12 ? e[12] : null, e.length > 13 ? e[13] : null);
+      // cosmetic-only ultimate visuals (sword/titan-scale/clone+flame positions) relayed from
+      // whoever's actually running the move (see Ultimates.exportPositions/syncPeerVisual)
+      peer.ultActive = e.length > 14 ? !!e[14] : false;
+      peer.ultPos = e.length > 15 ? e[15] : null;
     }
     for (const k in this.peers) if (!keep[k]) { this.killAvatar(this.peers[k]); delete this.peers[k]; }
   },
@@ -6721,7 +6784,9 @@ const Net = {
     return s;
   },
   killAvatar(peer) {
-    if (!peer || !peer.vis) return;
+    if (!peer) return;
+    if (peer._ultVis) { for (const m of peer._ultVis) { R.scene.remove(m); m.geometry.dispose(); m.material.dispose(); } peer._ultVis = null; }
+    if (!peer.vis) return;
     const v = peer.vis;
     R.scene.remove(v.g); R.scene.remove(v.shadow); R.scene.remove(v.label);
     v.g.traverse(function (o) { if (o.geometry && o.geometry.dispose) o.geometry.dispose(); });
@@ -6735,7 +6800,7 @@ const Net = {
       if (p.st === 2) { if (p.vis) { p.vis.g.visible = false; p.vis.shadow.visible = false; p.vis.label.visible = false; p.vis.beacon.g.visible = false; } continue; }
       const v = this.ensureAvatar(p);
       v.g.visible = true; v.shadow.visible = true; v.label.visible = true;
-      Avatars.setGun(v, WEAPONS[p.w] ? WEAPONS[p.w].id : null);
+      Ultimates.syncPeerVisual(p, v);
       const ox = p.x, oz = p.z, kk = Math.min(1, dt * 12);
       p.x += (p.tx - p.x) * kk; p.z += (p.tz - p.z) * kk;
       let da = p.tRy - p.ry; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
