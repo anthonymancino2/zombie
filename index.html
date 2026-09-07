@@ -757,7 +757,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.44.0';
+const GAME_VERSION = 'v1.45.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -829,22 +829,25 @@ const CFG = {
   ultMeterPerKill: 5, ultMeterPerHeadshot: 8, ultMeterPerSpecialKill: 18,
   ultCooldownBase: 15, ultCooldownPerWave: 2.2, ultCooldownMax: 90,
   // Cloud & Green Ranger share one move: a continuous spinning whirlwind attack for the whole
-  // 30s, fully automatic (no FIRE needed) — every ultWhirlwindPulse seconds it damages, knocks
-  // back and briefly staggers everything within ultWhirlwindRadius. Forces third-person (see
-  // Ultimates.startWhirlwind) so the spin is actually visible, and the body's own yaw spins on
-  // top of normal aim at ultWhirlwindSpinSpeed rad/s (see Player.updateBody) — that visible spin
-  // IS the attack, unlike the old FIRE-gated sword swing/gamma leap this replaced, which read as
-  // "nothing is happening" whenever the player didn't know to press FIRE. A vortex also hauls
-  // every zombie on the map straight toward the caster (ignoring walls) for the first
-  // ultVortexPullWindow of those 30s, feeding the spin a steady stream of targets instead of
-  // waiting for the horde to wander in on its own — see Ultimates.tickWhirlwind.
-  ultWhirlwindRadius: 3.5, ultWhirlwindPulse: 0.22, ultWhirlwindKnockback: 3.2,
+  // 30s, fully automatic (no FIRE needed). Forces third-person (see Ultimates.startWhirlwind) so
+  // the spin is actually visible, and the body's own yaw spins on top of normal aim at
+  // ultWhirlwindSpinSpeed rad/s (see Player.updateBody) — that visible spin IS the attack, unlike
+  // the old FIRE-gated sword swing/gamma leap this replaced, which read as "nothing is happening"
+  // whenever the player didn't know to press FIRE. A vortex also hauls every zombie on the map
+  // straight toward the caster (ignoring walls) for the first ultVortexPullWindow of those 30s,
+  // feeding the spin a steady stream of targets instead of waiting for the horde to wander in on
+  // its own — see Ultimates.tickWhirlwind.
+  ultWhirlwindPulse: 0.22, ultWhirlwindKnockback: 3.2,
   ultWhirlwindStun: 0.3, ultWhirlwindSpinSpeed: 10,
   ultVortexPullWindow: 25, ultVortexPullSpeed: 3.5,
-  // giant energy weapon (blue sword for Cloud, green boomerang for Ranger) orbiting at
-  // ultWhirlwindOrbitR, plus a ground ring roughly tracing the hit radius — purely cosmetic, see
+  // the giant energy weapon (blue sword for Cloud, green boomerang for Ranger) is what actually
+  // lands hits every ultWhirlwindPulse seconds, not an aura centered on the caster — checked at
+  // the weapon's own orbit position (ultWhirlwindOrbitR from the caster) with a wide reach of its
+  // own (ultWhirlwindWeaponReach) for the blade's length. Max effective range from the caster is
+  // therefore orbitR+reach, noticeably farther than a flat player-centered radius would give. The
+  // ground ring roughly traces that same reach — purely cosmetic, see
   // Ultimates._makeEnergySword/_makeEnergyBoomerang/_makeWhirlRing
-  ultWhirlwindOrbitR: 2.0,
+  ultWhirlwindOrbitR: 2.0, ultWhirlwindWeaponReach: 2.5,
   // Chopper & Dudu share one move: 8 clones orbit them, but now hunt aggressively — the seek
   // range covers the whole map (no more waiting for something to wander close) and they close in
   // fast once locked on. Still detonate (instakill, bosses take ultCloneBossDmg instead) the
@@ -4233,17 +4236,19 @@ const Ultimates = {
   },
 
   /* ---------------- Cloud & Green Ranger: whirlwind ----------------
-     Identical move for both — see CFG.ultWhirlwindRadius/Pulse/Knockback/Stun/SpinSpeed. Forces
-     third-person for the move's duration (in first-person you never see your own body, so the
-     spin — the whole point of the move — would otherwise be invisible and just read as "nothing
-     happening", the exact complaint that killed the old FIRE-gated sword swing/gamma leap this
-     replaced). Fully automatic: no FIRE input involved at all, just a radial damage/knockback/
-     stagger pulse every ultWhirlwindPulse seconds for the whole 30s, plus a continuous visible
-     spin on the body itself (whirlSpinAngle, applied in Player.updateBody) so the attack is
-     unmistakable. Full immunity throughout, same as before. A giant energy weapon (blue sword for
-     Cloud, green boomerang for Ranger) orbits at ultWhirlwindOrbitR in time with whirlSpinAngle,
-     plus a ground ring roughly tracing the hit radius — purely cosmetic, caster-only like every
-     other ultimate's visuals (see the class comment up top). */
+     Identical move for both — see CFG.ultWhirlwindPulse/Knockback/Stun/SpinSpeed/OrbitR/
+     WeaponReach. Forces third-person for the move's duration (in first-person you never see your
+     own body, so the spin — the whole point of the move — would otherwise be invisible and just
+     read as "nothing happening", the exact complaint that killed the old FIRE-gated sword
+     swing/gamma leap this replaced). Fully automatic: no FIRE input involved at all. The giant
+     energy weapon (blue sword for Cloud, green boomerang for Ranger) orbiting at
+     ultWhirlwindOrbitR is what actually lands the damage/knockback/stagger pulse every
+     ultWhirlwindPulse seconds — checked at the weapon's own position, not the caster's, so the
+     hit range is genuinely the weapon's reach and not just an aura glued to his feet — plus the
+     body itself continuously spins (whirlSpinAngle, applied in Player.updateBody) so the attack
+     is unmistakable even before you register the weapon prop. Full immunity throughout, same as
+     before. The ground ring roughly traces the weapon's swing reach — purely cosmetic, caster-only
+     like every other ultimate's visuals (see the class comment up top). */
   _energyMat(color, opacity) {
     return new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity == null ? 0.92 : opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
   },
@@ -4268,7 +4273,9 @@ const Ultimates = {
     R.scene.add(g); return g;
   },
   _makeWhirlRing(color) {
-    const inner = CFG.ultWhirlwindRadius - 0.4, outer = CFG.ultWhirlwindRadius + 0.15;
+    // a thin band right at the outer edge of the weapon's max reach (orbitR+reach) — a boundary
+    // telegraph, not an attempt to fill the whole swept disc
+    const outer = CFG.ultWhirlwindOrbitR + CFG.ultWhirlwindWeaponReach, inner = outer - 0.5;
     const geo = new THREE.RingGeometry(inner, outer, 40); geo.rotateX(-Math.PI / 2);
     const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
     const g = new THREE.Mesh(geo, mat); R.scene.add(g); return g;
@@ -4315,17 +4322,24 @@ const Ultimates = {
     P.whirlPulseT -= dt;
     if (P.whirlPulseT > 0) return;
     P.whirlPulseT = CFG.ultWhirlwindPulse;
-    const dmg = this.rifleDmg(), r = CFG.ultWhirlwindRadius, r2 = r * r;
+    // the WEAPON hits, not the caster: checked around its current orbit position (same spot it's
+    // rendered at, above) rather than the player's, with its own reach for the blade's length —
+    // giving a genuinely longer total range (orbitR+reach) than a flat aura around the caster ever
+    // could
+    const dmg = this.rifleDmg(), r = CFG.ultWhirlwindWeaponReach, r2 = r * r;
+    const wx = P._whirlWeapon ? P._whirlWeapon.position.x : P.x;
+    const wz = P._whirlWeapon ? P._whirlWeapon.position.z : P.z;
     const hostSide = Net.isHost() || !Net.on();
     let hits = 0;
     for (const zb of Zombies.pool) {
       if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
-      const dx = zb.x - P.x, dz = zb.z - P.z, d2 = dx * dx + dz * dz;
+      const dx = zb.x - wx, dz = zb.z - wz, d2 = dx * dx + dz * dz;
       if (d2 > r2) continue;
       const d = Math.sqrt(d2) || 0.0001;
       Game.onBulletHit(zb, dmg, zb.x, zb.y + zb.height * 0.6, zb.z, false, dx / d, dz / d, null);
-      // knockback/stagger: a direct positional shove, same "caster-only simulation" gap every
-      // other ultimate effect here already accepts (see the class comment above Ultimates)
+      // knockback/stagger: a direct positional shove away from the weapon's impact point, same
+      // "caster-only simulation" gap every other ultimate effect here already accepts (see the
+      // class comment above Ultimates)
       if (hostSide) { zb.x += (dx / d) * CFG.ultWhirlwindKnockback; zb.z += (dz / d) * CFG.ultWhirlwindKnockback; zb.stunT = Math.max(zb.stunT, CFG.ultWhirlwindStun); }
       hits++;
     }
