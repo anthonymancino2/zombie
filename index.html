@@ -72,6 +72,12 @@ button{font-family:inherit;color:inherit;}
 #hpFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
   background:linear-gradient(90deg,var(--accent),var(--accent2));box-shadow:0 0 10px var(--glow);transition:transform .12s linear,background .3s;}
 #hpFill.low{background:linear-gradient(90deg,#ff2a2a,#ff7a1a);}
+/* shield sits right above HP, thinner — same width so the two read as one stacked meter */
+#shieldBar{width:min(42vw,220px);height:6px;border:2px solid #2fd0ff;background:rgba(0,0,0,.45);border-radius:3px;
+  box-shadow:0 0 10px rgba(47,208,255,.5),inset 0 0 6px rgba(0,0,0,.6);margin-top:4px;overflow:hidden;position:relative;}
+#shieldFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
+  background:linear-gradient(90deg,#39e6ff,#0ea5e0);box-shadow:0 0 8px rgba(57,230,255,.7);transition:transform .12s linear;}
+#shieldFill.recharging{opacity:.55;}
 #hpNum{font-size:22px;line-height:1;margin-top:4px;text-shadow:0 0 10px var(--glow),0 2px 2px #000;}
 #matchClock{font-family:var(--hud-font);font-size:13px;letter-spacing:.1em;color:var(--sand);margin-top:5px;text-shadow:0 0 8px rgba(0,0,0,.6);}
 #hpNum span{font-size:12px;color:var(--sand);letter-spacing:.1em;}
@@ -462,6 +468,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   <div id="hud">
     <div class="hudtl">
       <div class="lbl" id="hpLabel">GRIT</div>
+      <div id="shieldBar"><div id="shieldFill"></div></div>
       <div id="hpBar"><div id="hpFill"></div></div>
       <div id="hpNum">100 <span>/ 100</span></div>
       <div id="matchClock">0:00</div>
@@ -710,7 +717,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.26.0';
+const GAME_VERSION = 'v1.27.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -748,6 +755,18 @@ const CFG = {
   pickupLife: 40,
   // coop: how long you bleed out on the sand, and what it costs a teammate to pick you back up
   downTime: 45, reviveTime: 3.5, reviveRange: 2.4, reviveHp: 0.4,
+  // shield: a regenerating buffer in front of HP, same idea for every survivor (player, peer, or
+  // bot) — absorbs damage first, stops regenerating the moment something lands, then refills
+  // over shieldRegenTime once shieldRegenDelay has passed with nothing new taken.
+  shieldMul: 0.5, shieldRegenDelay: 4, shieldRegenTime: 3,
+  // desperation buff: the lower your own HP, the harder you hit and the faster you reload —
+  // thresholds checked low-to-high so only the single best-matching tier ever applies (they
+  // don't stack). Reload is a speed multiplier (bigger = faster), not a time multiplier.
+  hpBuffTiers: [
+    { at: 0.15, dmg: 1.85, reload: 1.95 },
+    { at: 0.30, dmg: 1.50, reload: 1.50 },
+    { at: 0.50, dmg: 1.25, reload: 1.25 }
+  ],
   // sprint: a full meter buys ~4s of running, and refills in ~7s once you stop leaning on it
   sprintMul: 1.62, sprintDrain: 0.25, sprintRegen: 0.145, sprintHold: 0.7, sprintMin: 0.12,
   // third-person boom: behind and over the right shoulder, camera axis parallel to the aim ray.
@@ -814,6 +833,12 @@ function fogForR(r) {
 function applyDrawDistance(r) {
   const fg = fogForR(r);
   R.scene.fog.near = fg.near; R.scene.fog.far = fg.far;
+}
+// shared by Player and every bot — CFG.hpBuffTiers is ordered lowest-threshold-first so the
+// first (most extreme) match wins, rather than the tiers stacking on top of each other.
+function hpBuff(frac) {
+  for (const t of CFG.hpBuffTiers) if (frac <= t.at) return t;
+  return { dmg: 1, reload: 1 };
 }
 
 /* ------------------------------------------------------------------ characters */
@@ -3461,6 +3486,7 @@ const Player = {
   reset(char) {
     if (this.char !== char) { this.char = char; this.buildModels(); this.buildBody(); }
     this.x = 0; this.z = 0; this.yaw = rnd(0, TAU); this.pitch = 0; this.maxHp = char.hp; this.hp = char.hp; this.alive = true; this.speed = char.speed;
+    this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
     this.downed = false; this.downT = 0; this.spectating = false;
     this.pinnedBy = null; this.escape = 0; this.escSend = 0;
     this.stamina = 1; this.sprintOn = false; this.sprinting = false; this.staminaHold = 0;
@@ -3472,6 +3498,7 @@ const Player = {
     this.vm.models.forEach((m, i) => m.visible = i === 0);
   },
   weapon() { return this.weapons[this.cur]; },
+  buffMul() { return hpBuff(this.maxHp > 0 ? this.hp / this.maxHp : 1); },
   eyeDir(out) { const cp = Math.cos(this.pitch); out.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp); return out; },
   eyeY() { if (this.downed) return 0.62; if (this.spectating) return 0.42; return CFG.eyeH + Math.sin(this.bobT) * 0.035 * this.moveMag; },
   update(dt) {
@@ -3489,6 +3516,10 @@ const Player = {
       if (DOM.downedBar) DOM.downedBar.style.transform = 'scaleX(' + Math.max(0, this.downT / CFG.downTime).toFixed(3) + ')';
       if (DOM.downedSub) DOM.downedSub.textContent = Math.ceil(Math.max(0, this.downT)) + 's — A TEAMMATE CAN STILL REACH YOU';
       if (this.downT <= 0) this.bleedOut();
+    }
+    if (this.alive && this.shield < this.maxShield) {
+      if (this.shieldRegenT > 0) this.shieldRegenT -= dt;
+      else this.shield = Math.min(this.maxShield, this.shield + this.maxShield / CFG.shieldRegenTime * dt);
     }
     if (this.alive) {
       // thrashing under a hunter still turns you, but at a third of the rate — otherwise shaking
@@ -3689,6 +3720,10 @@ const Player = {
     let ax, ay, az;
     if (this.autoTarget) { const t = this.autoTarget; ax = t.x; ay = t.y + t.height * 0.62; az = t.z; }
     else { ax = this.x + dir.x * 60; ay = ey + dir.y * 60; az = this.z + dir.z * 60; }
+    // desperation buff: the lower your own HP, the harder every shot hits (see CFG.hpBuffTiers) —
+    // grenade launcher damage isn't touched here (its dmg lives on the projectile/explosion, not
+    // this call), everything else scales at the moment of firing
+    const dmg = def.dmg * this.buffMul().dmg;
     if (def.grenade) {
       // one lobbed shell per trigger pull, no pellet spread — it arcs and explodes on impact
       // (see Grenades module) rather than hitscanning
@@ -3700,7 +3735,7 @@ const Player = {
         const sx = (Math.random() + Math.random() - 1) * spread, sy = (Math.random() + Math.random() - 1) * spread;
         dx += rx * sx + up.x * sy; dy += up.y * sy; dz += rz * sx + up.z * sy;
         L = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-        Bullets.fire(mx, my, mz, dx / L, dy / L, dz / L, def.speed, def.dmg, def.range, def.id, def.falloff, null, def.instakill, def.chain);
+        Bullets.fire(mx, my, mz, dx / L, dy / L, dz / L, def.speed, dmg, def.range, def.id, def.falloff, null, def.instakill, def.chain);
       }
     }
     Audio.shot(def.id);
@@ -3722,7 +3757,9 @@ const Player = {
       w.mag += take; if (w.reserve !== Infinity && !infAmmo) w.reserve -= take;
       return;
     }
-    this.reloading = true; this.reloadTotal = def.reload * this.char.reloadMul; this.reloadT = this.reloadTotal;
+    // reload is a speed multiplier (bigger = faster), so it divides the reload time rather than
+    // multiplying it — same desperation buff as tryFire's damage bump, see CFG.hpBuffTiers
+    this.reloading = true; this.reloadTotal = def.reload * this.char.reloadMul / this.buffMul().reload; this.reloadT = this.reloadTotal;
   },
   finishReload() {
     const w = this.weapon(), def = w.def; this.reloading = false;
@@ -3764,6 +3801,8 @@ const Player = {
   hurt(amount, fx, fz) {
     if (!this.alive || Game.state !== 'playing') return;
     if (Game.invincible > 0) return;
+    this.shieldRegenT = CFG.shieldRegenDelay;
+    if (this.shield > 0) { const absorb = Math.min(this.shield, amount); this.shield -= absorb; amount -= absorb; }
     this.hp -= amount; this.lastHurt = Game.time; Game.shake = Math.max(Game.shake, 0.9);
     Audio.hurt(); FX.damage(fx, fz); HUD.dirty = true;
     if (this.hp <= this.maxHp * 0.3 && !this.lowSaid) { this.lowSaid = true; Game.say('lowhp'); }
@@ -3916,7 +3955,7 @@ const DOM = {};
 const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
-    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'matchClock', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
+    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'matchClock', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
@@ -3936,6 +3975,10 @@ const HUD = {
     // health (updates continuously due to regen)
     const hpk = clamp(P.hp / P.maxHp, 0, 1);
     if (this.last.hpk !== hpk) { this.last.hpk = hpk; DOM.hpFill.style.transform = 'scaleX(' + hpk.toFixed(3) + ')'; DOM.hpFill.classList.toggle('low', hpk < 0.3); }
+    const shk = P.maxShield > 0 ? clamp(P.shield / P.maxShield, 0, 1) : 0;
+    if (this.last.shk !== shk) { this.last.shk = shk; DOM.shieldFill.style.transform = 'scaleX(' + shk.toFixed(3) + ')'; }
+    const shRecharging = P.shieldRegenT > 0 && shk < 1;
+    if (this.last.shRecharging !== shRecharging) { this.last.shRecharging = shRecharging; DOM.shieldFill.classList.toggle('recharging', shRecharging); }
     this.set('hp', DOM.hpNum, Math.ceil(P.hp) + ' ');
     if (this.last.hpMax !== P.maxHp) { this.last.hpMax = P.maxHp; DOM.hpNum.innerHTML = Math.ceil(P.hp) + ' <span>/ ' + P.maxHp + '</span>'; this.last.hp = null; }
     else if (this.last.hpTxt !== Math.ceil(P.hp)) { this.last.hpTxt = Math.ceil(P.hp); DOM.hpNum.innerHTML = Math.ceil(P.hp) + ' <span>/ ' + P.maxHp + '</span>'; }
@@ -4093,6 +4136,7 @@ const Bots = {
       this.list.push({
         def: def, id: def.id, name: def.name,
         x: 0, z: 0, ry: 0, vx: 0, vz: 0, hp: def.hp, maxHp: def.hp,
+        maxShield: Math.round(def.hp * CFG.shieldMul), shield: Math.round(def.hp * CFG.shieldMul), shieldRegenT: 0,
         alive: true, down: false, out: false, downT: 0, pinnedBy: null,
         kills: 0, head: 0, cool: 0, anim: 0, gait: 0, flashT: 0, lastHurt: -99,
         target: null, aimT: 0, reviveT: 0, reviveOn: null,
@@ -4139,7 +4183,7 @@ const Bots = {
         const b = inactive[i], a = rnd(0, TAU);
         this.assignAvatar(b, avatars[b.id]);
         b.squadActive = true;
-        b.hp = b.maxHp; b.alive = true; b.down = false; b.out = false; b.downT = 0; b.pinnedBy = null;
+        b.hp = b.maxHp; b.shield = b.maxShield; b.shieldRegenT = 0; b.alive = true; b.down = false; b.out = false; b.downT = 0; b.pinnedBy = null;
         b.kills = 0; b.head = 0; b.cool = rnd(0, 0.4); b.anim = rnd(0, 6); b.gait = 0; b.flashT = 0;
         b.lastHurt = -99; b.target = null; b.aimT = 0; b.reviveT = 0; b.reviveOn = null;
         b.x = Player.x + Math.cos(a) * 2.4; b.z = Player.z + Math.sin(a) * 2.4; b.vx = b.vz = 0; b.ry = Player.yaw;
@@ -4186,7 +4230,7 @@ const Bots = {
       const b = active[i], a = rnd(0, TAU);
       this.assignAvatar(b, avatars[b.id]);
       b.squadActive = true;
-      b.hp = b.maxHp; b.alive = true; b.down = false; b.out = false; b.downT = 0; b.pinnedBy = null;
+      b.hp = b.maxHp; b.shield = b.maxShield; b.shieldRegenT = 0; b.alive = true; b.down = false; b.out = false; b.downT = 0; b.pinnedBy = null;
       b.kills = 0; b.head = 0; b.cool = rnd(0, 0.4); b.anim = rnd(0, 6); b.gait = 0; b.flashT = 0;
       b.lastHurt = -99; b.target = null; b.aimT = 0; b.reviveT = 0; b.reviveOn = null;
       b.x = Player.x + Math.cos(a) * 2.4; b.z = Player.z + Math.sin(a) * 2.4; b.vx = b.vz = 0; b.ry = Player.yaw;
@@ -4272,6 +4316,10 @@ const Bots = {
       // pinned: frozen and bleeding until a squadmate shoots it off (or CFG.pinMax expires)
       if (b.pinnedBy) { b.gait = 0; b.target = null; b.reviveT = 0; this.draw(b, dt); continue; }
       if (b.hp < b.maxHp && Game.time - b.lastHurt > CFG.botCalm) b.hp = Math.min(b.maxHp, b.hp + CFG.botRegen * dt);
+      if (b.shield < b.maxShield) {
+        if (b.shieldRegenT > 0) b.shieldRegenT -= dt;
+        else b.shield = Math.min(b.maxShield, b.shield + b.maxShield / CFG.shieldRegenTime * dt);
+      }
       this.think(b, dt);
       this.draw(b, dt);
     }
@@ -4368,7 +4416,12 @@ const Bots = {
     b.ry = Math.atan2(-(tx - b.x), -(tz - b.z));
     b.cool -= dt;
     if (b.cool > 0) return;
-    b.cool = 1 / def.rate;
+    // same desperation buff Player gets (CFG.hpBuffTiers) — a bot has no reload to speed up, so
+    // its "reload" half of the buff shortens the cooldown between shots instead, the closest bot
+    // equivalent to firing faster once low
+    const buff = hpBuff(b.maxHp > 0 ? b.hp / b.maxHp : 1);
+    b.cool = 1 / (def.rate * buff.reload);
+    const dmg = def.dmg * buff.dmg;
     const my = 1.35, spread = def.spread * Math.PI / 180;
     for (let p = 0; p < def.pellets; p++) {
       let dx = tx - b.x, dy = ty - my, dz = tz - b.z;
@@ -4377,7 +4430,7 @@ const Bots = {
       dy += (Math.random() + Math.random() - 1) * spread * 0.5;
       dz += (Math.random() + Math.random() - 1) * spread;
       L = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-      Bullets.fire(b.x, my, b.z, dx / L, dy / L, dz / L, 170, def.dmg, def.range + 10, def.kind, null, b);
+      Bullets.fire(b.x, my, b.z, dx / L, dy / L, dz / L, 170, dmg, def.range + 10, def.kind, null, b);
     }
     Audio.botShot(def.kind, b.x, b.z);
     b.flashT = 0.05;
@@ -4421,6 +4474,8 @@ const Bots = {
   /* ---------------- damage, down, out ---------------- */
   hurtBot(b, amount) {
     if (b.down || b.out || Game.state !== 'playing') return;
+    b.shieldRegenT = CFG.shieldRegenDelay;
+    if (b.shield > 0) { const absorb = Math.min(b.shield, amount); b.shield -= absorb; amount -= absorb; }
     b.hp -= amount; b.lastHurt = Game.time;
     if (b.hp > 0) return;
     b.hp = 0; b.down = true; b.alive = false; b.downT = CFG.downTime; b.target = null; b.reviveT = 0;
