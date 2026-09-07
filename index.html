@@ -738,7 +738,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.30.0';
+const GAME_VERSION = 'v1.31.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -775,7 +775,7 @@ const CFG = {
   instaTime: 15, dblTime: 30,
   // later-wave power-ups (wave >= powerupWave only) — personal buffs, not squad-wide like
   // insta/double, since reload/ammo/rate-of-fire/speed only mean anything for whoever grabbed them
-  powerupWave: 6,
+  powerupWave: 3,
   noReloadTime: 15, infAmmoTime: 15, invincibleTime: 12, rapidFireTime: 15, fastMoveTime: 15,
   rapidFireMul: 1.8, fastMoveMul: 1.45,
   pickupLife: 40,
@@ -5151,6 +5151,7 @@ const Game = {
     this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0;
     this.timeScale = 1;
     this.toSpawn = 0; this.waveActive = false; this.streak = 0; this.sayT = -99; this.deathK = 0; this.deathRoll = 0; this.chain.length = 0; this.pickupT = 15;
+    this.powerBag.length = 0; this.powerBagPool = null;
     Director.reset(); Bots.spawn();
     HUD.last = {}; HUD.dirty = true; HUD.showScreen(null); HUD.showHud(true); HUD.refreshOptions();
     DOM.joyHint.classList.toggle('hide', !('ontouchstart' in window)); DOM.dmg.style.opacity = '0'; DOM.lowhp.classList.remove('on');
@@ -5264,16 +5265,26 @@ const Game = {
   ],
   POWER_POOL_EARLY: ['insta', 'double'],
   POWER_POOL_LATE: ['insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove'],
-  // pickups (power-ups included) were landing every 13-21s no matter how far a run had gone,
-  // which read as "too rare" once the later-wave power-ups actually entered the pool at wave
-  // CFG.powerupWave (6) — ramps the gap down to roughly half by wave 20 and lets one more sit on
-  // the ground at once, rather than changing drop ODDS (spawnPickup's own mix is untouched).
+  // pickups (power-ups included) land twice as often as the original 13-21s pace and up to twice
+  // as many now sit on the ground at once — ramps the gap down further by wave 20, rather than
+  // changing drop ODDS (spawnPickup's own mix is untouched).
   pickupInterval() {
-    if (this.wave < 5) return rnd(13, 21);
+    if (this.wave < 5) return rnd(6.5, 10.5);
     const t = clamp((this.wave - 5) / 15, 0, 1);
-    return rnd(lerp(13, 6, t), lerp(21, 10, t));
+    return rnd(lerp(6.5, 3, t), lerp(10.5, 5, t));
   },
-  pickupCap() { return this.wave >= 5 ? 4 : 3; },
+  pickupCap() { return this.wave >= 5 ? 8 : 6; },
+  // shuffled draw-bag per pool so every power-up in it shows once before any repeats — plain
+  // Math.random() picks were technically uniform but felt like "the same 2-3" on any short run
+  powerBag: [], powerBagPool: null,
+  nextPowerType(pool) {
+    if (pool !== this.powerBagPool || !this.powerBag.length) {
+      this.powerBag = pool.slice();
+      for (let i = this.powerBag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[this.powerBag[i], this.powerBag[j]] = [this.powerBag[j], this.powerBag[i]]; }
+      this.powerBagPool = pool;
+    }
+    return this.powerBag.pop();
+  },
   spawnPickup() {
     let type; const r = Math.random(), hasGun = Player.weapons.some(w => w.owned && w.def.maxReserve !== Infinity);
     if (hasGun && Player.lowOnAmmo() && r < 0.5) type = 'ammo';
@@ -5281,7 +5292,7 @@ const Game = {
     else if (r < 0.62) type = hasGun ? 'ammo' : 'health';
     else {
       const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
-      type = pool[Math.floor(Math.random() * pool.length)];
+      type = this.nextPowerType(pool);
     }
     if (World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn(type, this._pt.x, this._pt.z);
   },
