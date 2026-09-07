@@ -73,6 +73,7 @@ button{font-family:inherit;color:inherit;}
   background:linear-gradient(90deg,var(--accent),var(--accent2));box-shadow:0 0 10px var(--glow);transition:transform .12s linear,background .3s;}
 #hpFill.low{background:linear-gradient(90deg,#ff2a2a,#ff7a1a);}
 #hpNum{font-size:22px;line-height:1;margin-top:4px;text-shadow:0 0 10px var(--glow),0 2px 2px #000;}
+#matchClock{font-family:var(--hud-font);font-size:13px;letter-spacing:.1em;color:var(--sand);margin-top:5px;text-shadow:0 0 8px rgba(0,0,0,.6);}
 #hpNum span{font-size:12px;color:var(--sand);letter-spacing:.1em;}
 #waveNum{font-size:30px;line-height:1;letter-spacing:.06em;color:#fff;text-shadow:0 0 14px var(--glow),0 0 4px var(--accent),0 2px 2px #000;}
 #zLeft{font-size:12px;letter-spacing:.2em;color:var(--sand);margin-top:2px;text-shadow:0 1px 3px #000,0 0 6px rgba(0,0,0,.8);}
@@ -247,7 +248,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #joyHint{left:calc(42px + var(--sal));bottom:calc(42px + var(--sab));width:104px;height:104px;}
   #layoutBar{top:calc(56px + var(--sat));}
   .hudbr{bottom:calc(186px + var(--sab));} #ammoMag{font-size:30px;} #ammoRes{font-size:11px;} #wpnName{font-size:10px;} #reloadHint{font-size:10px;}
-  #points{font-size:22px;} #waveNum{font-size:22px;} #hpBar{width:32vw;height:12px;} #hpNum{font-size:17px;} #zLeft{font-size:10px;}
+  #points{font-size:22px;} #waveNum{font-size:22px;} #hpBar{width:32vw;height:12px;} #hpNum{font-size:17px;} #zLeft{font-size:10px;} #matchClock{font-size:11px;margin-top:3px;}
   #subtitle{font-size:12px;bottom:calc(16px + var(--sab));max-width:44vw;left:38%;}
 }
 @media (max-width:560px) and (orientation:portrait){
@@ -257,7 +258,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnAuto{right:calc(10px + var(--sar));top:calc(64px + var(--sat));}
   #btnCam{right:calc(10px + var(--sar));top:calc(118px + var(--sat));}
   .hudtr{right:calc(68px + var(--sar));}
-  #hpBar{width:34vw;} #hpNum{font-size:18px;} #points{font-size:22px;} #waveNum{font-size:22px;} #zLeft{font-size:10px;}
+  #hpBar{width:34vw;} #hpNum{font-size:18px;} #points{font-size:22px;} #waveNum{font-size:22px;} #zLeft{font-size:10px;} #matchClock{font-size:11px;margin-top:3px;}
   #subtitle{bottom:calc(272px + var(--sab));max-width:86vw;font-size:13px;}
   #toast{top:calc(120px + var(--sat));}
   #banner{top:26%;}
@@ -350,12 +351,13 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .lbrow.top1 .rk{color:#ffd83b;} .lbrow.top2 .rk{color:#dfe4ea;} .lbrow.top3 .rk{color:#e0a060;}
 .lbrow .ln{flex:1 1 auto;min-width:0;font-family:var(--hud-font);font-size:14px;letter-spacing:.06em;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .lbrow .lw{font-family:var(--hud-font);font-size:11px;letter-spacing:.16em;color:var(--sand);flex:none;}
+.lbrow .lt{font-family:var(--hud-font);font-size:11px;letter-spacing:.1em;color:var(--dim);flex:none;width:44px;text-align:right;}
 .lbrow .lp{font-family:var(--hud-font);font-size:16px;letter-spacing:.06em;color:var(--accent2);flex:none;min-width:84px;text-align:right;}
 .lbrow .lm{font-family:var(--hud-font);font-size:9px;letter-spacing:.16em;color:var(--dim);flex:none;width:38px;}
 .subhead{font-family:var(--hud-font);font-size:11px;letter-spacing:.28em;color:var(--dim);margin:16px 0 6px;text-align:center;}
 
 @media (max-height:440px){
-  #coop{top:calc(70px + var(--sat));}
+  #coop{top:calc(86px + var(--sat));}
   .mate{padding:3px 6px;min-width:110px;}
   .mate .mn{font-size:10px;max-width:110px;}
   #boss{top:calc(100px + var(--sat));width:min(38vw,260px);}
@@ -402,6 +404,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="lbl" id="hpLabel">GRIT</div>
       <div id="hpBar"><div id="hpFill"></div></div>
       <div id="hpNum">100 <span>/ 100</span></div>
+      <div id="matchClock">0:00</div>
     </div>
     <div class="hudtc">
       <div id="waveNum">WAVE 1</div>
@@ -599,6 +602,7 @@ const clamp = (v, a, b) => (v < a ? a : (v > b ? b : v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const fmt = (n) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const fmtClock = (t) => { t = Math.max(0, t); const m = Math.floor(t / 60), s = Math.floor(t % 60); return m + ':' + (s < 10 ? '0' : '') + s; };
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -622,12 +626,20 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.12.2';
+const GAME_VERSION = 'v1.13.0';
 const CFG = {
-  arenaR: 58,            // playable radius (units)
-  grid: 128, gridMin: -64, cell: 1,
+  // playable radius. 4x the playable AREA means the radius doubles (area scales with r^2), not
+  // literally 4x the number — 58*sqrt(4)=116. grid/gridMin must cover it: N=256 cells at gridMin=
+  // -128 spans [-128,128), the same ~12-unit margin past the rim (scaled 2x) the original 128/-64
+  // pair left past R=58. N is baked into a few bit-trick indices (x = i & (N-1), y = i >> log2(N))
+  // for speed — if this ever changes again, N must stay a power of 2 and those must be updated too
+  // (currently 255/8 for N=256; see World.cellCenterX/Z, rebuildGrid, computeFlow, flowTarget).
+  arenaR: 116,
+  grid: 256, gridMin: -128, cell: 1,
   playerR: 0.45, eyeH: 1.62,
-  maxZombies: 28, bullets: 96, particles: 1800, floaties: 48, pickups: 8, decals: 40, explosions: 5,
+  // 4x the playable area at the same density means ~4x the zombies — pool cap and the per-wave
+  // spawn cap (maxAlive) both need to scale together, or the bigger map just feels emptier.
+  maxZombies: 112, bullets: 96, particles: 1800, floaties: 48, pickups: 8, decals: 40, explosions: 5,
   zombieBaseHp: 60, zombieBaseSpeed: 2.35, countBase: 6,
   countMul: 1.25, speedMul: 1.05, hpMul: 1.15,
   ptsHit: 10, ptsKill: 100, ptsHead: 25,
@@ -1630,8 +1642,11 @@ const R = {
     r.setPixelRatio(this.pr);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0xd2a377, 46, 190);
-    this.camera = new THREE.PerspectiveCamera(75, 1, 0.08, 460); this.camera.rotation.order = 'YXZ';
+    // fog start/end and the camera far plane scale with the arena's radius (2x, matching the 4x
+    // area bump) so the haze creeps in at the same relative distance and nothing pops in/out at
+    // the new, farther rim
+    this.scene.fog = new THREE.Fog(0xd2a377, 92, 380);
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.08, 920); this.camera.rotation.order = 'YXZ';
     this.gunScene = new THREE.Scene();
     this.gunCam = new THREE.PerspectiveCamera(56, 1, 0.01, 12);
 
@@ -1731,13 +1746,13 @@ const World = {
     // instanced meshes (fixed capacity, count adjusted per match)
     TEX.adobe.anisotropy = R.maxAniso; TEX.crate.anisotropy = R.maxAniso;
     const wallGeo = new THREE.BoxGeometry(5, 2.2, 0.9); wallGeo.translate(0, 1.1, 0);
-    this.wallMesh = new THREE.InstancedMesh(wallGeo, new THREE.MeshLambertMaterial({ map: TEX.adobe, color: 0xdcb489 }), 64);
+    this.wallMesh = new THREE.InstancedMesh(wallGeo, new THREE.MeshLambertMaterial({ map: TEX.adobe, color: 0xdcb489 }), 256);
     const crateGeo = new THREE.BoxGeometry(1.6, 1.6, 1.6); crateGeo.translate(0, 0.8, 0);
-    this.crateMesh = new THREE.InstancedMesh(crateGeo, new THREE.MeshLambertMaterial({ map: TEX.crate, color: 0xd8b891 }), 64);
+    this.crateMesh = new THREE.InstancedMesh(crateGeo, new THREE.MeshLambertMaterial({ map: TEX.crate, color: 0xd8b891 }), 256);
     const barrelGeo = new THREE.CylinderGeometry(0.52, 0.52, 1.25, 12, 1); barrelGeo.translate(0, 0.625, 0);
-    this.barrelMesh = new THREE.InstancedMesh(barrelGeo, new THREE.MeshLambertMaterial({ map: TEX.barrel, color: 0xffd8c0 }), 24);
+    this.barrelMesh = new THREE.InstancedMesh(barrelGeo, new THREE.MeshLambertMaterial({ map: TEX.barrel, color: 0xffd8c0 }), 96);
     const rockGeo = new THREE.DodecahedronGeometry(1, 0); rockGeo.scale(1, 0.62, 1);
-    this.rockMesh = new THREE.InstancedMesh(rockGeo, new THREE.MeshLambertMaterial({ color: 0x8d6c4c }), 90);
+    this.rockMesh = new THREE.InstancedMesh(rockGeo, new THREE.MeshLambertMaterial({ color: 0x8d6c4c }), 360);
     const postGeo = new THREE.BoxGeometry(0.16, 1.5, 0.16); postGeo.translate(0, 0.75, 0);
     this.postMesh = new THREE.InstancedMesh(postGeo, new THREE.MeshLambertMaterial({ color: 0x3a2412 }), 72);
     [this.wallMesh, this.crateMesh, this.barrelMesh, this.rockMesh, this.postMesh].forEach(m => { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; R.scene.add(m); });
@@ -1767,8 +1782,8 @@ const World = {
     if (cx < 0 || cz < 0 || cx >= N || cz >= N) return -1;
     return cz * N + cx;
   },
-  cellCenterX(i) { return CFG.gridMin + (i & 127) + 0.5; },
-  cellCenterZ(i) { return CFG.gridMin + (i >> 7) + 0.5; },
+  cellCenterX(i) { return CFG.gridMin + (i & 255) + 0.5; },
+  cellCenterZ(i) { return CFG.gridMin + (i >> 8) + 0.5; },
   isBlocked(x, z) { const i = this.cellIndex(x, z); return i < 0 || this.grid[i] === 1; },
 
   generate(seed) {
@@ -1778,7 +1793,7 @@ const World = {
     const RA = CFG.arenaR;
     let wi = 0, ci = 0;
     // ---- adobe walls (straight + L-shaped), axis aligned
-    const nStruct = 8 + Math.floor(rng() * 3);
+    const nStruct = (8 + Math.floor(rng() * 3)) * 4;
     for (let n = 0, tries = 0; n < nStruct && tries < 400; tries++) {
       const r = 11 + rng() * (RA - 24), a = rng() * TAU, cx = Math.round(Math.cos(a) * r), cz = Math.round(Math.sin(a) * r);
       let ok = true; for (const s of S) if (Math.abs(s.x - cx) < 13 && Math.abs(s.z - cz) < 13) { ok = false; break; }
@@ -1793,7 +1808,7 @@ const World = {
         for (let i = 0; i < nseg; i++) { const off = (i - (nseg - 1) / 2) * 5; segs.push(vert ? { x: cx, z: cz + off, yaw: Math.PI / 2 } : { x: cx + off, z: cz, yaw: 0 }); }
       }
       for (const sg of segs) {
-        if (wi >= 64) break;
+        if (wi >= 256) break;
         this.setInst(this.wallMesh, wi++, sg.x, 0, sg.z, sg.yaw, h / 2.2, 1, srnd(0.82, 1.12));
         const hx = sg.yaw === 0 ? 2.5 : 0.45, hz = sg.yaw === 0 ? 0.45 : 2.5;
         boxes.push({ x0: sg.x - hx, x1: sg.x + hx, z0: sg.z - hz, z1: sg.z + hz, h: h, kind: 1 });
@@ -1802,7 +1817,7 @@ const World = {
     }
     this.wallMesh.count = wi; this.wallMesh.instanceMatrix.needsUpdate = true;
     // ---- crate clusters
-    const nClus = 9 + Math.floor(rng() * 4);
+    const nClus = (9 + Math.floor(rng() * 4)) * 4;
     for (let n = 0, tries = 0; n < nClus && tries < 500; tries++) {
       const r = 7 + rng() * (RA - 13), a = rng() * TAU, cx = Math.cos(a) * r, cz = Math.sin(a) * r;
       if (!this.freeSpot(cx, cz, 2.2)) continue;
@@ -1811,24 +1826,24 @@ const World = {
       const cnt = 1 + Math.floor(rng() * 3), dirx = rng() < 0.5 ? 1 : 0, cl = { x: cx, z: cz, crates: [] };
       for (let i = 0; i < cnt; i++) {
         const x = cx + (dirx ? i * 1.75 : 0) + (i ? srnd(-.08, .08) : 0), z = cz + (dirx ? 0 : i * 1.75);
-        if (ci >= 60) break;
+        if (ci >= 252) break;
         if (i > 0 && !this.freeSpot(x, z, 1.0)) continue;
         const yaw = srnd(-0.14, 0.14);
         this.setInst(this.crateMesh, ci++, x, 0, z, yaw, 1, 1, srnd(0.78, 1.14));
         boxes.push({ x0: x - 0.88, x1: x + 0.88, z0: z - 0.88, z1: z + 0.88, h: 1.6, kind: 2 });
         cl.crates.push({ x: x, z: z });
-        if (i === 0 && rng() < 0.4 && ci < 60) { this.setInst(this.crateMesh, ci++, x + srnd(-.1, .1), 1.6, z + srnd(-.1, .1), yaw + srnd(-.3, .3), 1, 1, srnd(0.78, 1.14)); boxes[boxes.length - 1].h = 3.2; }
+        if (i === 0 && rng() < 0.4 && ci < 252) { this.setInst(this.crateMesh, ci++, x + srnd(-.1, .1), 1.6, z + srnd(-.1, .1), yaw + srnd(-.3, .3), 1, 1, srnd(0.78, 1.14)); boxes[boxes.length - 1].h = 3.2; }
       }
       C.push(cl); n++;
     }
     this.crateMesh.count = ci; this.crateMesh.instanceMatrix.needsUpdate = true;
     // ---- explosive barrels
-    const nBar = 9 + Math.floor(rng() * 4);
+    const nBar = (9 + Math.floor(rng() * 4)) * 4;
     for (let n = 0; n < nBar; n++) { const p = this.findBarrelSpot(); if (!p) break; barrels.push({ x: p.x, z: p.z, r: 0.55, h: 1.25, alive: true, idx: n }); this.setInst(this.barrelMesh, n, p.x, 0, p.z, rng() * TAU, 1, 1); }
     this.barrelMesh.count = barrels.length; this.barrelMesh.instanceMatrix.needsUpdate = true;
     // ---- rocks (decorative)
     let ri = 0;
-    for (let n = 0; n < 90; n++) {
+    for (let n = 0; n < 360; n++) {
       const r = 4 + rng() * (RA + 30), a = rng() * TAU, x = Math.cos(a) * r, z = Math.sin(a) * r;
       if (r < RA && !this.freeSpot(x, z, 1.4)) continue;
       const s = r > RA ? srnd(0.5, 2.2) : srnd(0.18, 0.55);
@@ -1893,7 +1908,7 @@ const World = {
     const d = this.dist, q = this.queue; d.fill(65535);
     const s = this.cellIndex(0, 0); let head = 0, tail = 0; d[s] = 0; q[tail++] = s;
     while (head < tail) {
-      const i = q[head++], x = i & 127, y = i >> 7;
+      const i = q[head++], x = i & 255, y = i >> 8;
       if (x > 0 && !g[i - 1] && d[i - 1] === 65535) { d[i - 1] = 1; q[tail++] = i - 1; }
       if (x < N - 1 && !g[i + 1] && d[i + 1] === 65535) { d[i + 1] = 1; q[tail++] = i + 1; }
       if (y > 0 && !g[i - N] && d[i - N] === 65535) { d[i - N] = 1; q[tail++] = i - N; }
@@ -1908,7 +1923,7 @@ const World = {
     const s = this.cellIndex(px, pz); if (s < 0) return;
     let head = 0, tail = 0; d[s] = 0; q[tail++] = s;
     while (head < tail) {
-      const i = q[head++], nd = d[i] + 1, x = i & 127, y = i >> 7;
+      const i = q[head++], nd = d[i] + 1, x = i & 255, y = i >> 8;
       if (x > 0 && !g[i - 1] && d[i - 1] === 65535) { d[i - 1] = nd; q[tail++] = i - 1; }
       if (x < N - 1 && !g[i + 1] && d[i + 1] === 65535) { d[i + 1] = nd; q[tail++] = i + 1; }
       if (y > 0 && !g[i - N] && d[i - N] === 65535) { d[i - N] = nd; q[tail++] = i - N; }
@@ -1926,7 +1941,7 @@ const World = {
     const N = this.N, i = this.cellIndex(x, z); if (i < 0) return false;
     const d = this.dist, g = this.grid;
     let best = d[i], bj = -1;
-    const cx = i & 127, cy = i >> 7;
+    const cx = i & 255, cy = i >> 8;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       if (!dx && !dy) continue;
       const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
@@ -3480,7 +3495,7 @@ const DOM = {};
 const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
-    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'reloadHint',
+    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'matchClock', 'waveNum', 'zLeft', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnSprint', 'joyHint', 'rotateHint',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
@@ -3502,6 +3517,9 @@ const HUD = {
     if (this.last.hpMax !== P.maxHp) { this.last.hpMax = P.maxHp; DOM.hpNum.innerHTML = Math.ceil(P.hp) + ' <span>/ ' + P.maxHp + '</span>'; this.last.hp = null; }
     else if (this.last.hpTxt !== Math.ceil(P.hp)) { this.last.hpTxt = Math.ceil(P.hp); DOM.hpNum.innerHTML = Math.ceil(P.hp) + ' <span>/ ' + P.maxHp + '</span>'; }
     const low = hpk < 0.3 && P.alive; if (this.last.low !== low) { this.last.low = low; DOM.lowhp.classList.toggle('on', low); }
+    // live run clock — the same formatter and matchTime the leaderboard submission uses, so what
+    // you watch tick during the run is exactly what gets recorded
+    this.set('clock', DOM.matchClock, fmtClock(G.matchTime));
     // wave / zombies left
     this.set('wave', DOM.waveNum, 'WAVE ' + G.wave);
     const left = G.toSpawn + Zombies.activeCount();
@@ -4256,7 +4274,9 @@ const Game = {
     Floaties.spawn(x, y, z, '+' + n, color || '#ffffff', size || 16, 0.9);
   },
   waveCount(w) { return Math.round(CFG.countBase * Math.pow(CFG.countMul, w - 1)); },
-  maxAlive(w) { return Math.min(CFG.maxZombies, 6 + w * 2); },
+  // scaled 4x alongside CFG.maxZombies to match the 4x bigger arena — same per-wave curve, just
+  // proportioned to the new map so density doesn't thin out
+  maxAlive(w) { return Math.min(CFG.maxZombies, (6 + w * 2) * 4); },
   beginWave() {
     this.wave++; const w = this.wave;
     this.toSpawn = this.waveCount(w); this.waveActive = true; this.spawnT = 0.5;
@@ -4441,9 +4461,9 @@ const Game = {
     this.state = 'gameover'; this.timeScale = 1;
     const S = Player.stats, acc = S.shots > 0 ? Math.round(100 * Math.min(1, S.hits / S.shots)) : 0;
     DOM.goWave.textContent = this.wave; DOM.goPoints.textContent = fmt(this.points); DOM.goKills.textContent = this.kills; DOM.goAcc.textContent = acc + '%'; DOM.goHead.textContent = S.head;
-    const m = Math.floor(this.matchTime / 60), s = Math.floor(this.matchTime % 60); DOM.goTime.textContent = m + ':' + (s < 10 ? '0' : '') + s;
-    DOM.goBest.textContent = (this.newBest ? 'NEW BEST RUN! ' : 'BEST RUN: ') + 'WAVE ' + this.best.wave + ' · ' + fmt(this.best.points) + ' PTS';
-    DOM.goTag.textContent = Player.char.id === 'male' ? 'THE DESERT KEEPS ITS DEAD' : 'OPERATOR DOWN. MISSION FAILED.';
+    DOM.goTime.textContent = fmtClock(this.matchTime);
+    DOM.goBest.textContent = (this.newBest ? 'NEW BEST RUN! ' : 'BEST RUN: ') + 'WAVE ' + this.best.wave + ' · ' + fmt(this.best.points) + ' PTS' + (this.best.t ? ' · ' + fmtClock(this.best.t) : '');
+    DOM.goTag.textContent = (AVATARS[Player.char.id] || AVATARS.cloud).gender === 'male' ? 'THE DESERT KEEPS ITS DEAD' : 'OPERATOR DOWN. MISSION FAILED.';
     const coop = Net.mode !== 'off', squad = !coop && Bots.on;
     DOM.goRoom.textContent = coop ? 'SQUAD RUN · ROOM ' + Net.code : (squad ? 'SQUAD RUN · WITH BOTS' : '');
     if (squad) {
@@ -4463,7 +4483,7 @@ const Game = {
       }).join('');
     } else DOM.goCoop.innerHTML = '';
     // three guns on your side is not the same run as one, so the board says which it was
-    Board.submit(Net.displayName(), this.points, this.wave, this.kills, coop ? 1 : (squad ? 2 : 0));
+    Board.submit(Net.displayName(), this.points, this.wave, this.kills, coop ? 1 : (squad ? 2 : 0), this.matchTime);
     HUD.showHud(false); HUD.showScreen('gameover');
   },
   update(dt) {
@@ -5407,11 +5427,13 @@ const Board = {
   // called at the end of every run; only a personal best is worth publishing
   // `mode`: 0 solo, 1 coop, 2 squad-with-bots. Older entries only ever stored 0 or 1, so the
   // renderer still reads those correctly.
-  submit(name, pts, wave, kills, mode) {
+  submit(name, pts, wave, kills, mode, time) {
     if (!(pts > 0)) return;
     const prev = this.best;
     if (prev && prev.pts >= pts) return;
-    const e = { n: (name || 'SURVIVOR').toUpperCase().slice(0, 14), pts: Math.round(pts), w: wave, k: kills, c: mode | 0, t: Date.now() };
+    // `t` was already "submitted at" (Date.now()) before the run clock existed — kept as `ts` so
+    // old saved entries and the wire format don't shift; `t` now carries the run's elapsed seconds
+    const e = { n: (name || 'SURVIVOR').toUpperCase().slice(0, 14), pts: Math.round(pts), w: wave, k: kills, c: mode | 0, t: Math.round(time || 0), ts: Date.now() };
     this.best = e;
     try { localStorage.setItem('dnd_best', JSON.stringify(e)); } catch (e2) { }
     this.entries[Net.pid] = Object.assign({ pid: Net.pid }, e);
@@ -5445,17 +5467,22 @@ const Board = {
     let html = '';
     list.forEach(function (e, i) {
       const cls = 'lbrow' + (i < 3 ? ' top' + (i + 1) : '') + (e.pid === Net.pid ? ' me' : '');
+      // e.t used to be a Date.now() submission stamp on entries saved before the run clock
+      // existed (huge number of seconds) — only show it once it looks like an actual elapsed
+      // match duration, so old leaderboard.json rows don't render a garbage time column
+      const time = (typeof e.t === 'number' && e.t > 0 && e.t < 36000) ? fmtClock(e.t) : '—';
       html += '<div class="' + cls + '">' +
         '<span class="rk">' + (i + 1) + '</span>' +
         '<span class="ln">' + Net.esc(e.n || 'SURVIVOR') + '</span>' +
         '<span class="lm">' + (e.c === 2 ? 'SQUAD' : (e.c ? 'COOP' : 'SOLO')) + '</span>' +
         '<span class="lw">WAVE ' + (e.w || 1) + '</span>' +
+        '<span class="lt">' + time + '</span>' +
         '<span class="lp">' + fmt(e.pts) + '</span></div>';
     });
     el.innerHTML = html;
     if (DOM.lbStatus) {
       DOM.lbStatus.textContent = (this.loaded ? '' : 'LIVE ONLY — ') + list.length + ' RUNS' +
-        (this.best ? ' · YOUR BEST ' + fmt(this.best.pts) : '');
+        (this.best ? ' · YOUR BEST ' + fmt(this.best.pts) + (this.best.t ? ' IN ' + fmtClock(this.best.t) : '') : '');
     }
   }
 };
