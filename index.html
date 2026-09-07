@@ -752,7 +752,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.36.0';
+const GAME_VERSION = 'v1.37.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -4167,7 +4167,20 @@ const Ultimates = {
       const dx = zb.x - x, dz = zb.z - z; if (dx * dx + dz * dz > r * r) continue;
       if (seen) seen.add(zb);
       Game.onBulletHit(zb, dmg, zb.x, zb.y + zb.height * 0.6, zb.z, false, 0, 0, null);
-      if (stunSec) zb.stunT = Math.max(zb.stunT, stunSec);
+    }
+    // stun/freeze only means anything if it lands on the HOST's own (authoritative) zombie — a
+    // client setting zb.stunT on its own local mirror is invisible to everyone else and to
+    // onZombieKilled's foxFrozenBy check (which only ever runs host-side). Same host/client split
+    // aoeKill already uses for the instakill AoEs, just for a non-lethal effect instead.
+    if (!stunSec) return;
+    if (Net.isHost() || !Net.on()) this._applyStunAuthoritative(x, z, r, stunSec, freezeOwnerKey);
+    else if (Net.isClient()) Net.send({ k: 'ultStun', x: r2(x), z: r2(z), r: r2(r), sec: r2(stunSec), by: freezeOwnerKey || null });
+  },
+  _applyStunAuthoritative(x, z, r, stunSec, freezeOwnerKey) {
+    for (const zb of Zombies.pool) {
+      if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
+      const dx = zb.x - x, dz = zb.z - z; if (dx * dx + dz * dz > r * r) continue;
+      zb.stunT = Math.max(zb.stunT, stunSec);
       if (freezeOwnerKey) zb.foxFrozenBy = freezeOwnerKey;
     }
   },
@@ -6191,6 +6204,10 @@ const Net = {
     // a peer's ultimate — resolved authoritatively here rather than through the normal (400-
     // capped) hit report; see the note above Ultimates.aoeKill for why that path won't do
     else if (m.k === 'ultKill') Ultimates.applyAoeKillAuthoritative(m.x, m.z, m.r, { bossDamage: m.bossDmg || 0 });
+    // a peer's stun/freeze (Ranger's leap, Fox's flames) — same reasoning as ultKill above: it
+    // has to land on the real zombie object to mean anything for the rest of the squad, or to
+    // ever pay off in onZombieKilled's foxFrozenBy check
+    else if (m.k === 'ultStun') Ultimates._applyStunAuthoritative(m.x, m.z, m.r, m.sec, m.by || null);
   },
   mkPeer(id, name, ch) {
     const self = this;
