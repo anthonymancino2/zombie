@@ -694,7 +694,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.20.0';
+const GAME_VERSION = 'v1.21.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -5868,9 +5868,19 @@ const Net = {
       const d = (p.x - zb.x) * (p.x - zb.x) + (p.z - zb.z) * (p.z - zb.z);
       if (d < bd) { bd = d; best = p; }
     }
-    // nobody huntable right now (everyone's down or paused): keep shambling toward the local
-    // body so the horde does not freeze in place
-    return best || Player;
+    if (best) return best;
+    // nobody huntable right now — everyone is down, or paused, or (playing solo) both. The old
+    // "|| Player" fallback here used to hand back the real, still-alive Player object whenever
+    // this was the only-survivor-and-they're-paused case, which quietly undid the whole point of
+    // pausing: every P.alive gate elsewhere in Zombie.update() waves an attack through as long as
+    // alive is true, and a merely-paused Player still IS alive. Ony an actually-dead/downed
+    // Player (alive already false) was ever safe to hand back that way. This inert stand-in keeps
+    // the horde shambling toward where the local body is — so movement doesn't just freeze — with
+    // alive permanently false, so it reads exactly like the already-safe downed case everywhere
+    // else in that file.
+    const idle = this._idleTarget || (this._idleTarget = { x: 0, z: 0, alive: false, pinnedBy: null });
+    idle.x = Player.x; idle.z = Player.z;
+    return idle;
   },
   // there is one flow field, so aim it at the middle of whoever is still standing
   flowPoint(out) {
