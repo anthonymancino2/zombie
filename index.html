@@ -223,6 +223,12 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .bigbtn:active{transform:scale(.97);}
 .bigbtn.secondary{background:rgba(0,0,0,.45);border-color:rgba(255,255,255,.35);box-shadow:none;font-size:16px;padding:10px 20px;}
 .help{font-size:11px;color:var(--dim);margin-top:12px;line-height:1.5;letter-spacing:.04em;}
+.verrow{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:2px;}
+.verrow .help{margin-top:0;}
+.syncbtn{font-family:var(--hud-font);font-size:10px;letter-spacing:.14em;color:var(--sand);
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.22);border-radius:12px;
+  padding:3px 11px;cursor:pointer;touch-action:manipulation;opacity:.8;flex:none;}
+.syncbtn:active{transform:scale(.94);opacity:1;}
 .help b{color:var(--sand);font-weight:600;}
 .best{font-family:var(--hud-font);font-size:12px;letter-spacing:.2em;color:#ffd83b;margin-top:10px;text-shadow:0 0 8px rgba(255,216,59,.5);}
 #gameover .panel h2, #pause .panel h2{font-family:var(--hud-font);font-size:clamp(40px,9vw,80px);letter-spacing:.1em;color:#fff;margin:0 0 6px;font-weight:normal;text-shadow:0 0 30px rgba(255,59,59,.7),0 0 6px #ff3b3b,0 4px 2px #000;}
@@ -525,7 +531,10 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <b>Desktop:</b> WASD move · Shift sprint · mouse look · click fire · R reload · Q light / E heavy weapon swap · 1-2-3 weapons · V camera · Esc pause.<br>
         Shotgun unlocks at wave 3, assault rifle at wave 6. Shoot the red barrels. Grab the glowing drops.
       </div>
-      <div class="help" id="verLine" style="opacity:.5"></div>
+      <div class="verrow">
+        <span class="help" id="verLine" style="opacity:.5"></span>
+        <button class="syncbtn" id="btnSync" title="Force-reload the latest version of the game">⟳ SYNC</button>
+      </div>
     </div></div>
   </div>
 
@@ -694,7 +703,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.21.0';
+const GAME_VERSION = 'v1.22.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -4546,6 +4555,14 @@ const Game = {
     Input.on.pause = function () { if (Layout.editing) { Layout.end(); return; } if (self.coopMenu) self.resume(); else if (self.state === 'playing') self.pause(); else if (self.state === 'paused') self.resume(); };
     // menu
     $('btnStart').addEventListener('click', () => { Audio.unlock(); if (!Net.requireName()) return; self.start(); });
+    // a cache-busted URL forces a real network fetch of index.html (and re-evaluates the CDN
+    // <script> tags fresh too) — a plain location.reload() can still be served straight out of
+    // the browser's HTTP cache, which is exactly the stale-build problem this button exists to
+    // route around.
+    const btnSync = $('btnSync');
+    if (btnSync) btnSync.addEventListener('click', () => {
+      location.href = location.pathname + '?v=' + Date.now() + location.hash;
+    });
     $('btnResume').addEventListener('click', () => self.resume()); $('btnQuit').addEventListener('click', () => self.toMenu());
     $('btnBackPause').addEventListener('click', () => self.toMenu());
     $('btnBackGameover').addEventListener('click', () => self.toMenu());
