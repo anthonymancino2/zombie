@@ -71,7 +71,6 @@ button{font-family:inherit;color:inherit;}
 .hudtcRow{display:flex;align-items:center;justify-content:center;gap:10px;}
 .hudtcText{text-align:center;min-width:0;}
 .hudtr{position:absolute;right:calc(112px + var(--sar));top:calc(10px + var(--sat));text-align:right;}
-.hudbr{position:absolute;right:calc(14px + var(--sar));bottom:calc(202px + var(--sab));text-align:right;}
 .lbl{font-size:11px;letter-spacing:.18em;color:var(--accent2);text-shadow:0 0 8px var(--glow),0 1px 3px #000;opacity:.95;}
 #hpBar{width:min(42vw,220px);height:14px;border:2px solid var(--accent);background:rgba(0,0,0,.45);border-radius:3px;
   box-shadow:0 0 12px var(--glow),inset 0 0 8px rgba(0,0,0,.6);margin-top:4px;overflow:hidden;position:relative;}
@@ -166,9 +165,9 @@ button{font-family:inherit;color:inherit;}
 #btnMedkit small{font-size:13px;letter-spacing:0;margin-top:1px;font-weight:bold;}
 #btnMedkit.empty{opacity:.45;}
 #btnSwitch{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(136px + var(--sab));font-size:12px;}
-/* ultimate-move button, stacked above SWAP WEAPON in the same right-edge column — high enough to
-   clear .hudbr (the ammo/weapon-name text block, right-anchored at the same bottom:202 the old
-   heavy-weapon-swap button used to share that slot with) */
+/* ultimate-move button, stacked above SWAP WEAPON in the same right-edge column — this slot used
+   to also clear the ammo/weapon-name text block before that moved to the left side (see #coopWrap
+   /.hudAmmo), but the same heavy-weapon-swap button it replaced still wanted the same tall offset */
 #btnUlt{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(268px + var(--sab));font-size:9px;letter-spacing:.06em;border-color:#8a5cff;}
 #btnUlt small{font-size:8px;letter-spacing:.1em;margin-top:1px;}
 #btnUlt.ready{border-color:#ffd83b;box-shadow:0 0 18px rgba(255,216,59,.85);animation:ultpulse 1s ease-in-out infinite;}
@@ -303,7 +302,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnSprint{width:50px;height:50px;right:calc(88px + var(--sar));bottom:calc(100px + var(--sab));}
   #joyHint{left:calc(42px + var(--sal));bottom:calc(42px + var(--sab));width:104px;height:104px;}
   #layoutBar{top:calc(56px + var(--sat));}
-  .hudbr{bottom:calc(186px + var(--sab));} #ammoMag{font-size:30px;} #ammoRes{font-size:11px;} #wpnName{font-size:10px;} #reloadHint{font-size:10px;}
+  #ammoMag{font-size:30px;} #ammoRes{font-size:11px;} #wpnName{font-size:10px;} #reloadHint{font-size:10px;}
   #points{font-size:22px;} #waveNum{font-size:22px;} #hpBar{width:32vw;height:12px;} #hpNum{font-size:17px;} #zLeft{font-size:10px;} #matchClock{font-size:11px;margin-top:3px;}
   #subtitle{font-size:12px;bottom:calc(16px + var(--sab));max-width:44vw;left:38%;}
 }
@@ -386,9 +385,14 @@ h1.title em{font-style:normal;color:var(--accent2);}
   background:rgba(6,3,1,.78);z-index:1000;padding:16px;}
 #testModePopup.show{display:flex;}
 
-/* teammate strip in the HUD */
-#coop{position:absolute;left:calc(12px + var(--sal));top:calc(96px + var(--sat));display:none;flex-direction:column;gap:5px;pointer-events:none;}
+/* teammate strip + ammo/weapon-name readout, stacked together on the left under the player's own
+   HP/shield/ult bars (.hudtl) — #coopWrap is always visible (ammo has to be, even solo) and #coop
+   itself still hides in solo, collapsing to zero height so .hudAmmo sits flush under .hudtl until
+   there's an actual squad list above it. */
+#coopWrap{position:absolute;left:calc(12px + var(--sal));top:calc(96px + var(--sat));display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+#coop{display:none;flex-direction:column;gap:5px;}
 #coop.show{display:flex;}
+.hudAmmo{text-align:left;}
 .mate{background:rgba(12,6,3,.6);border:1px solid rgba(255,255,255,.13);border-radius:7px;padding:4px 8px;min-width:132px;}
 .mate .mn{font-family:var(--hud-font);font-size:11px;letter-spacing:.14em;color:var(--sand);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:132px;}
 .mate .mb{height:5px;background:rgba(0,0,0,.55);border-radius:3px;overflow:hidden;margin-top:3px;}
@@ -545,18 +549,20 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div id="netPill"></div>
     </div>
     <button id="btnPause" aria-label="Pause">II</button>
-    <div class="hudbr">
-      <div id="reloadHint"></div>
-      <div id="ammoMag">12</div>
-      <div id="ammoRes">∞ RESERVE</div>
-      <div id="wpnName">M9 PISTOL</div>
-      <div id="wpnClass">LIGHT</div>
-    </div>
     <div id="subtitle"><b id="subName">HANK</b><span id="subText"></span></div>
     <div id="banner"><div id="bannerTitle">WAVE 1</div><div id="bannerSub">THEY'RE COMING</div></div>
     <div id="midScores"></div>
     <div id="toast"></div>
-    <div id="coop"></div>
+    <div id="coopWrap">
+      <div id="coop"></div>
+      <div class="hudAmmo">
+        <div id="reloadHint"></div>
+        <div id="ammoMag">12</div>
+        <div id="ammoRes">∞ RESERVE</div>
+        <div id="wpnName">M9 PISTOL</div>
+        <div id="wpnClass">LIGHT</div>
+      </div>
+    </div>
     <div id="downed"><div class="dt">YOU ARE DOWN</div><div class="ds" id="downedSub">HOLD ON — A TEAMMATE CAN REVIVE YOU</div><div class="dbar"><i id="downedBar"></i></div></div>
     <div id="revive"><div class="rt" id="reviveText">REVIVING</div><div class="rbar"><i id="reviveBar"></i></div></div>
     <div id="boss"><div class="bn" id="bossName">TANK</div><div class="bb"><i id="bossBar"></i></div></div>
@@ -789,7 +795,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.56.0';
+const GAME_VERSION = 'v1.57.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
