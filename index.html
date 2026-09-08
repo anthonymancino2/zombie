@@ -803,7 +803,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.62.0';
+const GAME_VERSION = 'v1.63.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -6994,7 +6994,7 @@ const Net = {
   hostRecv(m) {
     const id = m.id; if (!id || id === this.id) return;
     if (m.k === 'join') {
-      let peer = this.peers[id], isNew = false;
+      let peer = this.peers[id], isNew = false, changed = false;
       if (!peer) {
         if (this.roomSize() >= NET.MAX) { this.send({ k: 'full', to: id }); return; }
         peer = this.mkPeer(id, m.n, m.ch); this.peers[id] = peer; isNew = true;
@@ -7006,11 +7006,23 @@ const Net = {
         // a new face changes who "everyone" means — restart the confirmation rather than let a
         // vote finish without them having any say in it
         if (this.startVote) this.cancelStartVote('A NEW SURVIVOR JOINED');
+      } else {
+        // a rejoin — a reconnect after a dropped connection, or the client resending 'join' after
+        // picking a different character and re-entering the same room code before the match
+        // actually started. This used to fall straight through without touching `peer` at all, so
+        // whatever character/name they connected with FIRST silently stuck for the whole match —
+        // if an earlier, abandoned join attempt ever created this peer with the default 'cloud'
+        // (e.g. they backed out before finishing character select, then rejoined with their real
+        // pick), that's exactly how someone ends up looking like Cloud despite choosing someone
+        // else. Refresh both fields here instead of only ever setting them once in mkPeer().
+        const newName = (String(m.n || 'SURVIVOR').slice(0, 14) || 'SURVIVOR').toUpperCase();
+        const newChar = (m.ch && AVATARS[m.ch]) ? m.ch : peer.char;
+        if (peer.name !== newName || peer.char !== newChar) { peer.name = newName; peer.char = newChar; changed = true; this.refreshLobby(); }
       }
       peer.last = this.clock;
       this.send({ k: 'welcome', to: id, h: this.id, seed: this.seed, host: this.displayName(), st: this.started ? 'playing' : 'lobby', roster: this.roster(), t: this.lobbyT });
       if (this.started) this.send({ k: 'go', to: id, seed: this.seed });
-      else if (isNew) this.send({ k: 'roster', roster: this.roster() });   // everyone already waiting needs the update
+      else if (isNew || changed) this.send({ k: 'roster', roster: this.roster() });   // everyone already waiting needs the update
       return;
     }
     const peer = this.peers[id]; if (!peer) return;
