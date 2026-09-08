@@ -789,7 +789,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.55.0';
+const GAME_VERSION = 'v1.56.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -903,6 +903,14 @@ const CFG = {
   // same aggressive-hunter treatment as Chopper/Dudu's clones, just freeze instead of a kill
   ultFlameCount: 6, ultFlameInterval: 0.6, ultFlameRange: 200, ultFlameFreezeSec: 3, ultFlameOrbitR: 1.6,
   ultFlameDashSpeed: 22,
+  // shared damage-over-time slot on Zombie (see this.dotT/applyDot/update()) — one weapon's DoT
+  // application overwrites another's rather than stacking, same "simplest thing that reads
+  // clearly" call as reusing stunT for hard stuns elsewhere. dotTickRate is how often (seconds
+  // between hits) any DoT actually applies damage, independent of which kind is active.
+  dotTickRate: 0.4,
+  burnDps: 9, burnDuration: 3.5,
+  shockDps: 7, shockDuration: 2.5, shockStun: 1.1,
+  burnColor: 0xff7a20, shockColor: 0x7ad8ff,
   // sprint: a full meter buys ~4s of running, and refills in ~7s once you stop leaning on it
   sprintMul: 1.62, sprintDrain: 0.25, sprintRegen: 0.145, sprintHold: 0.7, sprintMin: 0.12,
   // third-person boom: behind and over the right shoulder, camera axis parallel to the aim ray.
@@ -2600,6 +2608,14 @@ const Particles = {
       this.add.spawn(x, y, z, Math.cos(a) * sp * (1 - b * b), rnd(1, 6), Math.sin(a) * sp * (1 - b * b), rnd(0.15, 0.4), rnd(0.05, 0.1), 1, 0.8, 0.3, 12, 1.5, 2, 1);
     }
   },
+  // chain lightning gun's electric crackle — same additive-sparks pool as sparks() above, tinted
+  // cyan so it reads as "electricity" instead of gunfire metal debris (see Game.chainLightning).
+  zap(x, y, z, n) {
+    for (let i = 0; i < n; i++) {
+      const a = rnd(0, TAU), b = rnd(-1, 1), sp = rnd(2, 7);
+      this.add.spawn(x, y, z, Math.cos(a) * sp * (1 - b * b), rnd(0.5, 3.5), Math.sin(a) * sp * (1 - b * b), rnd(0.12, 0.3), rnd(0.04, 0.08), 0.55, 0.85, 1, 10, 1.8, 2, 1);
+    }
+  },
   emergeDust(x, z, s) {
     for (let i = 0; i < 14; i++) {
       const a = rnd(0, TAU), r = rnd(0.2, 0.7) * s;
@@ -2611,6 +2627,19 @@ const Particles = {
   },
   shell(x, y, z, rx, rz) {
     this.add.spawn(x, y, z, rx * rnd(1.5, 2.5), rnd(1.5, 2.5), rz * rnd(1.5, 2.5), 0.7, 0.045, 1, 0.75, 0.25, 12, 0.5, 2, 0.9);
+  },
+  // flamethrower's stream/impact fire — same additive-fireball colors as explosion() below but a
+  // small, cheap burst instead of a full blast, spawned along the pellet's flight and on impact
+  // (see Bullets.fire/update) plus a few gray smoke wisps for extra weight.
+  flame(x, y, z, n) {
+    for (let i = 0; i < n; i++) {
+      const a = rnd(0, TAU), sp = rnd(0.4, 1.6), t = Math.random();
+      this.add.spawn(x, y, z, Math.cos(a) * sp, rnd(1.0, 2.6), Math.sin(a) * sp, rnd(0.28, 0.5), rnd(0.16, 0.3), 1, t < 0.5 ? 0.55 : 0.75, t < 0.5 ? 0.08 : 0.18, 3, 1.8, 0, 0.95);
+    }
+    for (let i = 0; i < Math.ceil(n * 0.4); i++) {
+      const a = rnd(0, TAU), sp = rnd(0.2, 0.9);
+      this.norm.spawn(x, y + 0.08, z, Math.cos(a) * sp, rnd(0.8, 1.8), Math.sin(a) * sp, rnd(0.5, 0.9), rnd(0.16, 0.3), c2l(0.35), c2l(0.32), c2l(0.28), -0.2, 1.4, 1, 0.4);
+    }
   },
   explosion(x, y, z) {
     for (let i = 0; i < 70; i++) {
@@ -2750,6 +2779,7 @@ const Bullets = {
     b.on = true; b.x = x; b.y = y; b.z = z; b.vx = dx * speed; b.vy = dy * speed; b.vz = dz * speed; b.life = range / speed; b.dmg = dmg; b.kind = kind; b.falloff = falloff || null; b.dist = 0; b.by = by || null;
     b.instakill = !!instakill; b.chain = chain || null;
     b.mesh.visible = true; b.mesh.position.set(x, y, z); this._t.set(x + dx, y + dy, z + dz); b.mesh.lookAt(this._t);
+    if (kind === 'flamethrower' || kind === 'dualflamethrower') Particles.flame(x, y, z, 4);
   },
   clear() { for (const b of this.pool) { b.on = false; b.mesh.visible = false; } },
   update(dt) {
@@ -2775,18 +2805,26 @@ const Bullets = {
         if (b.instakill) dmg = bestZ.hp + 1; // guaranteed lethal regardless of wave-scaled HP, bosses included
         else if (b.falloff) { const d = b.dist + L * bestT; if (d > b.falloff.s) dmg *= Math.max(b.falloff.min, 1 - (d - b.falloff.s) / (b.falloff.e - b.falloff.s)); }
         Game.onBulletHit(bestZ, dmg, hx, hy, hz, head, ex / L, ez / L, b.by);
-        if (b.chain) Game.chainLightning(bestZ, dmg, hx, hy, hz, b.chain, b.by);
+        if (b.kind === 'flamethrower' || b.kind === 'dualflamethrower') { Game.applyDot(bestZ, 'burn', CFG.burnDps, CFG.burnDuration, CFG.burnColor); Particles.flame(hx, hy, hz, 6); }
+        if (b.chain) {
+          Game.applyDot(bestZ, 'shock', CFG.shockDps, CFG.shockDuration, CFG.shockColor);
+          bestZ.stunT = Math.max(bestZ.stunT, CFG.shockStun);
+          Particles.zap(hx, hy, hz, 8);
+          Game.chainLightning(bestZ, dmg, hx, hy, hz, b.chain, b.by);
+        }
         b.on = false; b.by = null; b.chain = null; b.mesh.visible = false; continue;
       }
       if (wt >= 0) {
         const hx = ax + ex * wt, hy = ay + ey * wt, hz = az + ez * wt;
         if (World.hitBarrel) Game.explodeBarrel(World.hitBarrel);
+        else if (b.kind === 'flamethrower' || b.kind === 'dualflamethrower') Particles.flame(hx, hy, hz, 5);
         else { Particles.dustPuff(hx, hy, hz, 4, 0.7); if (Math.random() < 0.5) Particles.sparks(hx, hy, hz, 3); }
         b.on = false; b.mesh.visible = false; continue;
       }
       b.x = nx; b.y = ny; b.z = nz; b.dist += Math.sqrt(L2 + ey * ey); b.life -= dt;
       if (b.life <= 0 || b.y < 0) { b.on = false; b.mesh.visible = false; continue; }
       b.mesh.position.set(nx, ny, nz);
+      if (b.kind === 'flamethrower' || b.kind === 'dualflamethrower') Particles.flame(nx, ny, nz, 1);
     }
   }
 };
@@ -2994,6 +3032,7 @@ function buildZombieGeometries() {
   // Zombie.pose) so it doesn't clutter a fight that's already right in front of you.
   ZG.markerMat = new THREE.SpriteMaterial({ map: TEX.glow, color: 0xff3018, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.95 });
 }
+const _dotTint = new THREE.Color(); // scratch reused by every Zombie's burn/shock tint each frame
 class Zombie {
   constructor(idx) {
     this.idx = idx; this.on = false; this.state = 'dead';
@@ -3185,7 +3224,29 @@ class Zombie {
     // ...except a hunter mid-leap or mid-ride, which stays with the survivor it committed to
     let P = (this.pinTarget && (st === 'crouch' || st === 'pounce' || st === 'pin')) ? this.pinTarget
       : (Net.isHost() ? Net.targetFor(this) : (Bots.on ? Bots.targetFor(this) : Player));
-    if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) { this.skinMat.emissive.setHex(0); this.clothMat.emissive.setHex(0); } }
+    if (this.flashT > 0) { this.flashT -= dt; }
+    // shared burn/shock damage-over-time tick (see Game.applyDot) — silent hits so the periodic
+    // damage doesn't spam blood/audio on top of the persistent glow below; the glow IS the tell.
+    if (st !== 'dead' && this.dotT > 0) {
+      this.dotT -= dt; this.dotTick -= dt;
+      if (this.dotTick <= 0) {
+        this.dotTick += CFG.dotTickRate;
+        const tickDmg = Math.round(this.dotDps * CFG.dotTickRate);
+        if (tickDmg > 0) {
+          const was = this.hp;
+          if (!this.hit(tickDmg, this.x, this.y + this.height * 0.6, this.z, false, 0, 0, true)) {
+            Floaties.accumulate(this, 'd', Math.round(Math.min(was, tickDmg)), this.x, this.y + this.height * 0.7, this.z, '', '#' + this.dotColor.toString(16).padStart(6, '0'), 13, 0.7);
+          }
+        }
+      }
+      if (this.dotT <= 0) { this.dotT = 0; this.dotDps = 0; this.dotColor = null; this.dotKind = null; }
+    }
+    // persistent burn/shock glow (independent of the hit-flash above) so a status effect reads
+    // clearly even between ticks — hit-flash still wins the frame it happens on.
+    if (this.flashT <= 0) {
+      if (this.dotT > 0 && this.dotColor != null) { _dotTint.setHex(this.dotColor).multiplyScalar(0.55); this.skinMat.emissive.copy(_dotTint); this.clothMat.emissive.copy(_dotTint); }
+      else { this.skinMat.emissive.setHex(0); this.clothMat.emissive.setHex(0); }
+    }
     if (st === 'emerge') {
       this.t += dt; const k = Math.min(1, this.t / 1.1); this.y = -2.4 + 2.4 * easeOut(k);
       if (this.t > 1.1) { this.state = 'chase'; this.y = 0; }
@@ -3531,30 +3592,78 @@ const Explosions = {
   }
 };
 
-// chain lightning gun's visual bolt — a handful of short-lived line segments between the primary
-// hit and each zombie it chains to (see Game.chainLightning). Pure cosmetic, same pooled/timed
-// pattern as Explosions above.
+// chain lightning gun's visual bolt — a jagged, multi-segment glowing beam (thick box segments,
+// not a 1px THREE.Line: those render inconsistently thin/near-invisible in WebGL, which is why
+// the old version was unreadable) between the primary hit and each zombie it chains to (see
+// Game.chainLightning/applyDot). Every bolt is two overlapping meshes per segment — a bright thin
+// "core" plus a wider, dimmer "glow" — the same cheap fake-bloom trick used nowhere else in this
+// file but easy to reason about: no post-processing pipeline exists to do it for real.
 const ChainFX = {
-  pool: [],
+  pool: [], SEGMENTS: 6, LIFE: 0.32,
   init() {
-    const mat = new THREE.LineBasicMaterial({ color: 0x7ad8ff, transparent: true, opacity: 0.9, fog: false });
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xeaffff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0x4ac8ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const flashMat = new THREE.SpriteMaterial({ map: TEX.glow, color: 0xaee8ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const geo = new THREE.BoxGeometry(1, 1, 1);
     for (let i = 0; i < CFG.chainFx; i++) {
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
-      const line = new THREE.Line(g, mat.clone()); line.visible = false; line.frustumCulled = false; R.scene.add(line);
-      this.pool.push({ on: false, t: 0, line: line });
+      const core = [], glow = [];
+      for (let s = 0; s < this.SEGMENTS; s++) {
+        const c = new THREE.Mesh(geo, coreMat.clone()); c.visible = false; c.frustumCulled = false; R.scene.add(c); core.push(c);
+        const g = new THREE.Mesh(geo, glowMat.clone()); g.visible = false; g.frustumCulled = false; R.scene.add(g); glow.push(g);
+      }
+      const flashA = new THREE.Sprite(flashMat.clone()); flashA.visible = false; R.scene.add(flashA);
+      const flashB = new THREE.Sprite(flashMat.clone()); flashB.visible = false; R.scene.add(flashB);
+      this.pool.push({ on: false, t: 0, core: core, glow: glow, flashA: flashA, flashB: flashB });
     }
+  },
+  // stretches+orients a unit box between two points, `thick` world units wide/tall
+  _orient(mesh, x1, y1, z1, x2, y2, z2, thick) {
+    const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1, len = Math.max(0.02, Math.sqrt(dx * dx + dy * dy + dz * dz));
+    mesh.position.set((x1 + x2) * 0.5, (y1 + y2) * 0.5, (z1 + z2) * 0.5);
+    mesh.scale.set(thick, thick, len);
+    mesh.lookAt(x2, y2, z2);
   },
   spawn(x1, y1, z1, x2, y2, z2) {
     let e = null; for (const q of this.pool) if (!q.on) { e = q; break; }
     if (!e) e = this.pool[0];
-    e.on = true; e.t = 0; e.line.visible = true; e.line.material.opacity = 0.9;
-    const pos = e.line.geometry.attributes.position; pos.setXYZ(0, x1, y1, z1); pos.setXYZ(1, x2, y2, z2); pos.needsUpdate = true;
+    e.on = true; e.t = 0;
+    const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1, len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    // perpendicular jitter axis (world-up crossed with the bolt direction) so the zigzag stays
+    // roughly planar instead of corkscrewing — reads more like electricity, less like noise
+    let px = -dz / len, pz = dx / len, pl = Math.sqrt(px * px + pz * pz) || 1; px /= pl; pz /= pl;
+    const n = this.SEGMENTS, jitterAmp = clamp(len * 0.16, 0.05, 0.7);
+    let lastX = x1, lastY = y1, lastZ = z1;
+    for (let s = 0; s < n; s++) {
+      const last = s === n - 1, t = last ? 1 : (s + 1) / n;
+      const jit = last ? 0 : rnd(-jitterAmp, jitterAmp);
+      const nx = x1 + dx * t + px * jit, ny = y1 + dy * t + rnd(-1, 1) * jitterAmp * 0.5, nz = z1 + dz * t + pz * jit;
+      this._orient(e.core[s], lastX, lastY, lastZ, nx, ny, nz, 0.05);
+      this._orient(e.glow[s], lastX, lastY, lastZ, nx, ny, nz, 0.15);
+      e.core[s].visible = true; e.glow[s].visible = true;
+      e.core[s].material.opacity = 1; e.glow[s].material.opacity = 0.55;
+      lastX = nx; lastY = ny; lastZ = nz;
+    }
+    e.flashA.position.set(x1, y1, z1); e.flashA.scale.set(0.55, 0.55, 1); e.flashA.material.opacity = 1; e.flashA.visible = true;
+    e.flashB.position.set(x2, y2, z2); e.flashB.scale.set(0.5, 0.5, 1); e.flashB.material.opacity = 1; e.flashB.visible = true;
   },
   update(dt) {
     for (const e of this.pool) {
       if (!e.on) continue; e.t += dt;
-      if (e.t >= 0.16) { e.on = false; e.line.visible = false; continue; }
-      e.line.material.opacity = 0.9 * (1 - e.t / 0.16);
+      if (e.t >= this.LIFE) {
+        e.on = false;
+        for (const m of e.core) m.visible = false;
+        for (const m of e.glow) m.visible = false;
+        e.flashA.visible = e.flashB.visible = false;
+        continue;
+      }
+      const k = e.t / this.LIFE;
+      // a quick electric flicker on top of the fade reads as "current," not just "dissolving"
+      const flicker = 0.65 + 0.35 * Math.sin(e.t * 90);
+      const fade = Math.max(0, 1 - k * k);
+      for (const m of e.core) m.material.opacity = fade * flicker;
+      for (const m of e.glow) m.material.opacity = 0.55 * fade;
+      e.flashA.material.opacity = fade * 0.9; e.flashB.material.opacity = fade * 0.9;
+      const fs = 0.55 + k * 0.3; e.flashA.scale.set(fs, fs, 1); e.flashB.scale.set(fs * 0.9, fs * 0.9, 1);
     }
   }
 };
@@ -6149,6 +6258,14 @@ const Game = {
     if (!by && this.streak % 8 === 0) this.say('streak');
     HUD.last.left = null;
   },
+  // shared damage-over-time application — the flamethrower's burn and the lightning gun's shock
+  // both route through here (see CFG.dotTickRate/burn*/shock* and Zombie.dotT/update()'s tick).
+  // A fresh hit refreshes duration and overwrites color/kind rather than stacking two DoTs at once.
+  applyDot(zb, kind, dps, duration, color) {
+    if (!zb || !zb.on || zb.state === 'dead') return;
+    if (zb.dotT <= 0) zb.dotTick = 0; // starting fresh: let the first tick land right away
+    zb.dotT = duration; zb.dotDps = dps; zb.dotColor = color; zb.dotKind = kind;
+  },
   // chain lightning gun's secondary zap: up to chain.count other nearby zombies take reduced
   // damage. Reuses z.hit() directly (like explodeBarrel's own zombie loop) rather than the
   // reportHit round-trip onBulletHit uses for the primary target — known limitation: on a coop
@@ -6163,9 +6280,12 @@ const Game = {
       if (!zb.on || zb.state === 'dead' || zb === fromZ) continue;
       const dx = zb.x - x, dz = zb.z - z, d = Math.sqrt(dx * dx + dz * dz); if (d > chain.radius) continue;
       ChainFX.spawn(x, y, z, zb.x, zb.y + zb.height * 0.6, zb.z);
+      Particles.zap(zb.x, zb.y + zb.height * 0.6, zb.z, 8);
       const was = zb.hp, hd = attacker.insta > 0 ? zb.hp + 1 : dmg;
       if (!zb.hit(hd, zb.x, zb.y + zb.height * 0.6, zb.z, false, dx / (d || 1), dz / (d || 1), true)) {
         Floaties.accumulate(zb, 'd', Math.round(Math.min(was, hd)), zb.x, zb.y + zb.height * 0.7, zb.z, '', '#7ad8ff', 14, 0.8);
+        this.applyDot(zb, 'shock', CFG.shockDps, CFG.shockDuration, CFG.shockColor);
+        zb.stunT = Math.max(zb.stunT, CFG.shockStun);
       }
       hit++;
     }
