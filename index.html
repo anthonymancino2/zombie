@@ -789,7 +789,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.53.0';
+const GAME_VERSION = 'v1.54.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1152,18 +1152,24 @@ const Avatars = {
     f.scale.set(0.4, 0.4, 1); f.position.set(0.16, 1.35, -0.3); f.visible = false;
     return f;
   },
-  // finds the one bone that's the RIGHT hand across every rig naming scheme in the roster
-  // (RightHand_630_012, RightHand_gr, r_hand, hand_r, Bip001_R_Hand_025) while rejecting the left
-  // hand and finger sub-bones (RightHand_tip_gr) that would otherwise also match "right"/"hand".
-  findHandBone(root) {
+  // finds the one bone that's the RIGHT (or, with wantRight:false, the LEFT) hand across every rig
+  // naming scheme in the roster (RightHand_630_012, RightHand_gr, r_hand, hand_r,
+  // Bip001_R_Hand_025 / their Left/L/l mirrors) while rejecting the OTHER side and finger
+  // sub-bones (RightHand_tip_gr) that would otherwise also match "right"/"hand". Left lookup only
+  // matters for dual-wield weapons (see setGun) — every single-wield gun still only ever touches
+  // the right-hand slot, unchanged from before this existed.
+  findHandBone(root, wantRight) {
+    wantRight = wantRight !== false;
     let best = null;
     root.traverse(o => {
       if (!o.isBone) return;
       const n = o.name;
       if (/tip|thumb|index|middle|pinky|finger/i.test(n)) return;
-      if (/left/i.test(n) || /(^|_)l(_|$)/i.test(n)) return;
       const isRight = /right/i.test(n) || /(^|_)r(_|$)/i.test(n);
-      if (isRight && /hand/i.test(n) && (!best || n.length < best.name.length)) best = o;
+      const isLeft = /left/i.test(n) || /(^|_)l(_|$)/i.test(n);
+      const wantSide = wantRight ? isRight : isLeft, otherSide = wantRight ? isLeft : isRight;
+      if (otherSide || !wantSide || !/hand/i.test(n)) return;
+      if (!best || n.length < best.name.length) best = o;
     });
     return best;
   },
@@ -1189,7 +1195,7 @@ const Avatars = {
     // bone happens to carry in THIS rig — otherwise the same gun prop that looks right in one
     // champion's hand renders comically large or tiny in another's, since the per-champion
     // normalization scale cascades multiplicatively down through every bone in the skeleton.
-    const handBone = this.findHandBone(inner);
+    const handBone = this.findHandBone(inner, true);
     let gunSlot = null;
     if (handBone) {
       gunSlot = new THREE.Group();
@@ -1197,16 +1203,36 @@ const Avatars = {
       gunSlot.scale.set(ws.x ? 1 / ws.x : 1, ws.y ? 1 / ws.y : 1, ws.z ? 1 / ws.z : 1);
       handBone.add(gunSlot);
     }
-    return { kind: 'gltf', g: root, mixer: mixer, actions: actions, current: 'idle', flash: flash, avatarId: av.id, gunSlot: gunSlot, gunMesh: null, gunKind: null };
+    // second attachment point on the LEFT hand — only ever used for a dual-wield weapon's second
+    // gun (see setGun/DUAL_BASE); every single-wield weapon still only touches gunSlot above
+    const handBoneL = this.findHandBone(inner, false);
+    let gunSlot2 = null;
+    if (handBoneL) {
+      gunSlot2 = new THREE.Group();
+      const ws2 = new THREE.Vector3(); handBoneL.getWorldScale(ws2);
+      gunSlot2.scale.set(ws2.x ? 1 / ws2.x : 1, ws2.y ? 1 / ws2.y : 1, ws2.z ? 1 / ws2.z : 1);
+      handBoneL.add(gunSlot2);
+    }
+    return { kind: 'gltf', g: root, mixer: mixer, actions: actions, current: 'idle', flash: flash, avatarId: av.id, gunSlot: gunSlot, gunSlot2: gunSlot2, gunMesh: null, gunMesh2: null, gunKind: null };
   },
-  // attaches (or swaps) whatever gun `kind` ('pistol'/'shotgun'/'rifle'/null) belongs in this
-  // body's hand — reuses the same buildGun() the first-person viewmodel already uses, so it's
-  // always visually whatever weapon that character actually has equipped.
+  // attaches (or swaps) whatever gun `kind` belongs in this body's hand(s) — reuses the same
+  // buildGun() the first-person viewmodel already uses, so it's always visually whatever weapon
+  // that character actually has equipped. A dual-wield kind (see DUAL_BASE) attaches one full
+  // copy of the BASE single weapon to EACH hand slot instead of one fused two-barrel prop
+  // crammed into the right hand alone — so it genuinely reads as one gun per arm.
   setGun(m, kind) {
     if (!m.gunSlot || m.gunKind === kind) return;
     m.gunKind = kind;
     if (m.gunMesh) { m.gunSlot.remove(m.gunMesh); m.gunMesh = null; }
+    if (m.gunMesh2) { if (m.gunSlot2) m.gunSlot2.remove(m.gunMesh2); m.gunMesh2 = null; }
     if (!kind) return;
+    const baseId = DUAL_BASE[kind];
+    if (baseId && m.gunSlot2) {
+      const baseDef = WEAPONS.find(w => w.id === baseId); if (!baseDef) return;
+      const gR = buildGun(baseDef); gR.scale.setScalar(0.85); m.gunSlot.add(gR); m.gunMesh = gR;
+      const gL = buildGun(baseDef); gL.scale.setScalar(0.85); m.gunSlot2.add(gL); m.gunMesh2 = gL;
+      return;
+    }
     const def = WEAPONS.find(w => w.id === kind); if (!def) return;
     const g = buildGun(def);
     // buildGun() sizes/orients for the first-person viewmodel's own hand — a generic scale-down
@@ -3533,19 +3559,34 @@ const ChainFX = {
 // to the weapon name in the ammo HUD (see HUD.update).
 // unlock/cost/buyWave are spread across the 30-wave run as a first-pass balance guess, easy to
 // retune later since it's just a data table.
+// dual-wield weapons run noticeably wider spread than their single counterpart, on top of already
+// being wider than a flat "same spread, more pellets" upgrade would be — two guns diverging from
+// two different hands is a wide hit pattern, not a tight one, and DUAL_BASE below is what
+// Avatars.setGun uses to know which single weapon's body/hand geometry to show in each hand.
+const DUAL_BASE = {
+  dualpistol: 'pistol', dualshotgun: 'shotgun', dualuzi: 'uzi', dualrifle: 'rifle',
+  dualflamethrower: 'flamethrower', duallightning: 'lightning', dualgrenade: 'grenade', dualsniper: 'sniper'
+};
 const WEAPONS = [
   { id: 'pistol', name: 'M9 PISTOL', weightClass: 'light', dmg: 26, rate: 4.2, mag: 12, reserve: Infinity, maxReserve: Infinity, reload: 1.15, spread: 0.7, bloom: 0, pellets: 1, speed: 150, range: 95, recoil: 1.0, unlock: 1, falloff: null },
   { id: 'shotgun', name: 'PUMP SHOTGUN', weightClass: 'heavy', dmg: 14, rate: 1.25, mag: 6, reserve: 36, maxReserve: 54, reload: 2.1, spread: 6.5, bloom: 0, pellets: 8, speed: 120, range: 48, recoil: 2.2, unlock: 3, cost: 1500, buyWave: 2, falloff: { s: 9, e: 28, min: 0.3 } },
   { id: 'uzi', name: 'UZI SMG', weightClass: 'light', dmg: 11, rate: 13, mag: 32, reserve: 224, maxReserve: 320, reload: 1.5, spread: 2.0, bloom: 2.6, pellets: 1, speed: 170, range: 95, recoil: 0.4, unlock: 5, cost: 2200, buyWave: 3, falloff: null },
+  { id: 'dualpistol', name: 'DUAL M9 PISTOLS', weightClass: 'light', dmg: 26, rate: 4.2, mag: 24, reserve: Infinity, maxReserve: Infinity, reload: 1.15, spread: 1.4, bloom: 0, pellets: 2, speed: 150, range: 95, recoil: 1.4, unlock: 6, cost: 2600, buyWave: 4, falloff: null },
   // range is deliberately 1.5x the pistol/uzi's 95 (owner's spec), everything else unchanged
   { id: 'rifle', name: 'AR-15 RIFLE', weightClass: 'heavy', dmg: 19, rate: 10, mag: 30, reserve: 150, maxReserve: 270, reload: 1.9, spread: 1.3, bloom: 2.4, pellets: 1, speed: 190, range: 142.5, recoil: 0.55, unlock: 7, cost: 4200, buyWave: 5, falloff: null },
-  { id: 'dualshotgun', name: 'DUAL SHOTGUN', weightClass: 'heavy', dmg: 14, rate: 1.0, mag: 8, reserve: 48, maxReserve: 72, reload: 2.6, spread: 7.5, bloom: 0, pellets: 16, speed: 120, range: 50, recoil: 3.2, unlock: 10, cost: 6500, buyWave: 8, falloff: { s: 9, e: 26, min: 0.3 } },
-  { id: 'dualuzi', name: 'DUAL UZI', weightClass: 'light', dmg: 11, rate: 13, mag: 64, reserve: 320, maxReserve: 480, reload: 2.0, spread: 3.2, bloom: 3.6, pellets: 2, speed: 170, range: 95, recoil: 0.6, unlock: 13, cost: 8500, buyWave: 11, falloff: null },
+  { id: 'dualshotgun', name: 'DUAL SHOTGUN', weightClass: 'heavy', dmg: 14, rate: 1.0, mag: 8, reserve: 48, maxReserve: 72, reload: 2.6, spread: 10.5, bloom: 0, pellets: 16, speed: 120, range: 50, recoil: 3.2, unlock: 10, cost: 6500, buyWave: 8, falloff: { s: 9, e: 26, min: 0.3 } },
+  { id: 'dualuzi', name: 'DUAL UZI', weightClass: 'light', dmg: 11, rate: 13, mag: 64, reserve: 320, maxReserve: 480, reload: 2.0, spread: 4.5, bloom: 3.6, pellets: 2, speed: 170, range: 95, recoil: 0.6, unlock: 13, cost: 8500, buyWave: 11, falloff: null },
   { id: 'flamethrower', name: 'FLAMETHROWER', weightClass: 'light', dmg: 6, rate: 20, mag: 140, reserve: 280, maxReserve: 420, reload: 3.0, spread: 9, bloom: 0, pellets: 3, speed: 90, range: 13, recoil: 0.3, unlock: 16, cost: 11000, buyWave: 14, falloff: { s: 4, e: 12, min: 0.25 } },
+  { id: 'dualflamethrower', name: 'DUAL FLAMETHROWERS', weightClass: 'light', dmg: 6, rate: 20, mag: 280, reserve: 560, maxReserve: 840, reload: 3.0, spread: 12, bloom: 0, pellets: 6, speed: 90, range: 13, recoil: 0.4, unlock: 18, cost: 15000, buyWave: 16, falloff: { s: 4, e: 12, min: 0.25 } },
   { id: 'lightning', name: 'CHAIN LIGHTNING GUN', weightClass: 'light', dmg: 26, rate: 5.5, mag: 20, reserve: 100, maxReserve: 160, reload: 2.2, spread: 0.4, bloom: 0, pellets: 1, speed: 260, range: 60, recoil: 0.7, unlock: 19, cost: 14000, buyWave: 17, falloff: null, chain: { count: 2, radius: 6, mult: 0.5 } },
+  { id: 'duallightning', name: 'DUAL CHAIN LIGHTNING GUNS', weightClass: 'light', dmg: 26, rate: 5.5, mag: 40, reserve: 200, maxReserve: 320, reload: 2.2, spread: 0.6, bloom: 0, pellets: 2, speed: 260, range: 60, recoil: 0.9, unlock: 21, cost: 19000, buyWave: 19, falloff: null, chain: { count: 2, radius: 6, mult: 0.5 } },
   { id: 'grenade', name: 'GRENADE LAUNCHER', weightClass: 'heavy', dmg: 0, rate: 0.9, mag: 4, reserve: 16, maxReserve: 24, reload: 2.8, spread: 1.0, bloom: 0, pellets: 1, speed: 34, range: 60, recoil: 2.6, unlock: 22, cost: 17000, buyWave: 20, falloff: null, grenade: { dmg: 260, radius: 6.5, fuse: 1.6, gravity: 9.5 } },
+  // twin-linked rather than truly firing two shells at once (tryFire()'s grenade branch is a
+  // single-projectile path, not the pellet loop) — the dual upgrade here is rate/mag/reserve
+  { id: 'dualgrenade', name: 'DUAL GRENADE LAUNCHERS', weightClass: 'heavy', dmg: 0, rate: 1.3, mag: 8, reserve: 32, maxReserve: 48, reload: 2.8, spread: 1.4, bloom: 0, pellets: 1, speed: 34, range: 60, recoil: 2.8, unlock: 24, cost: 23000, buyWave: 22, falloff: null, grenade: { dmg: 260, radius: 6.5, fuse: 1.6, gravity: 9.5 } },
   { id: 'sniper', name: 'SNIPER RIFLE', weightClass: 'heavy', dmg: 999999, rate: 0.85, mag: 5, reserve: 25, maxReserve: 40, reload: 2.6, spread: 0.15, bloom: 0, pellets: 1, speed: 400, range: 220, recoil: 2.0, unlock: 25, cost: 20000, buyWave: 23, falloff: null, instakill: true },
-  { id: 'dualrifle', name: 'DUAL RIFLE', weightClass: 'heavy', dmg: 19, rate: 10, mag: 60, reserve: 300, maxReserve: 480, reload: 2.3, spread: 1.8, bloom: 3.0, pellets: 2, speed: 190, range: 142.5, recoil: 0.8, unlock: 28, cost: 24000, buyWave: 26, falloff: null }
+  { id: 'dualsniper', name: 'DUAL SNIPER RIFLES', weightClass: 'heavy', dmg: 999999, rate: 0.85, mag: 10, reserve: 50, maxReserve: 80, reload: 2.6, spread: 0.22, bloom: 0, pellets: 2, speed: 400, range: 220, recoil: 2.6, unlock: 27, cost: 27000, buyWave: 25, falloff: null, instakill: true },
+  { id: 'dualrifle', name: 'DUAL RIFLE', weightClass: 'heavy', dmg: 19, rate: 10, mag: 60, reserve: 300, maxReserve: 480, reload: 2.3, spread: 2.5, bloom: 3.0, pellets: 2, speed: 190, range: 142.5, recoil: 0.8, unlock: 28, cost: 24000, buyWave: 26, falloff: null }
 ];
 // a downed-but-not-dead player can still work a sidearm one-handed (see Player.downedWeaponIndex)
 // — the pistol always, the uzi too if that's what was already out and it's not dry
@@ -3605,16 +3646,60 @@ function addRifleBody(g, xo) {
   g.add(box(0.04, 0.06, 0.2, M.poly, xo, -0.005, 0.22)); g.add(box(0.012, 0.03, 0.05, M.metal, xo, -0.058, 0.02));
   g.add(box(0.058, 0.014, 0.05, M.rust, xo, 0.04, 0.03));
 }
+// same xo-offsettable pattern as addShotgunBody/addUziBody/addRifleBody above — extracted so the
+// dual-wield first-person viewmodels below (dualpistol/dualflamethrower/duallightning/
+// dualgrenade/dualsniper) can lay two of these side by side exactly like the original three duals
+// already did, instead of duplicating each weapon's geometry inline a second time.
+function addPistolBody(g, xo) {
+  const M = GUNMAT;
+  g.add(box(0.05, 0.05, 0.22, M.metal, xo, 0.02, -0.08)); g.add(box(0.046, 0.042, 0.16, M.poly, xo, -0.02, -0.03));
+  g.add(box(0.042, 0.125, 0.052, M.poly, xo, -0.095, 0.035, 0.3, 0, 0)); g.add(box(0.012, 0.028, 0.05, M.metal, xo, -0.055, -0.03));
+  g.add(cyl(0.012, 0.05, M.metal2, xo, 0.02, -0.19)); g.add(box(0.01, 0.016, 0.01, M.metal2, xo, 0.053, -0.17)); g.add(box(0.03, 0.012, 0.012, M.metal2, xo, 0.051, 0.02));
+  g.add(box(0.008, 0.008, 0.008, M.sight, xo, 0.062, -0.17));
+  g.add(box(0.05, 0.02, 0.03, M.rust, xo, 0.02, 0.04));
+}
+function addFlamethrowerBody(g, xo) {
+  const M = GUNMAT;
+  g.add(box(0.09, 0.11, 0.28, M.metal2, xo, -0.01, -0.02));
+  g.add(cyl(0.024, 0.34, M.metal, xo, 0.01, -0.34));
+  g.add(box(0.02, 0.02, 0.02, M.accent, xo, 0.02, -0.5));
+  g.add(box(0.05, 0.05, 0.1, M.poly, xo, -0.03, 0.14));
+  g.add(box(0.045, 0.02, 0.03, M.rust, xo, 0.05, -0.02));
+}
+function addLightningBody(g, xo) {
+  const M = GUNMAT;
+  g.add(box(0.05, 0.065, 0.26, M.metal, xo, 0, -0.04));
+  g.add(cyl(0.022, 0.05, M.accent, xo, 0.01, -0.32)); g.add(cyl(0.018, 0.05, M.accent, xo, 0.01, -0.42));
+  g.add(cyl(0.01, 0.2, M.metal2, xo, 0.01, -0.46));
+  g.add(box(0.03, 0.14, 0.05, M.poly, xo, -0.1, -0.03, -0.25, 0, 0));
+  g.add(box(0.012, 0.012, 0.012, M.accent, xo, 0.05, -0.03));
+}
+function addGrenadeBody(g, xo) {
+  const M = GUNMAT;
+  g.add(cyl(0.05, 0.34, M.metal, xo, 0.01, -0.18));
+  g.add(box(0.07, 0.08, 0.16, M.poly, xo, -0.02, 0.06));
+  g.add(box(0.008, 0.008, 0.008, M.sight, xo, 0.055, -0.3));
+  g.add(box(0.05, 0.02, 0.03, M.rust, xo, 0.05, 0.02));
+  g.add(box(0.035, 0.12, 0.05, M.poly, xo, -0.1, 0.02, -0.25, 0, 0));
+}
+function addSniperBody(g, xo) {
+  const M = GUNMAT;
+  g.add(box(0.05, 0.065, 0.42, M.metal, xo, 0, -0.08));
+  g.add(cyl(0.012, 0.34, M.metal2, xo, 0.012, -0.62));
+  g.add(box(0.03, 0.03, 0.16, M.poly, xo, 0.05, -0.12));
+  g.add(box(0.034, 0.02, 0.02, M.sight, xo, 0.05, -0.19)); g.add(box(0.034, 0.02, 0.02, M.sight, xo, 0.05, -0.06));
+  g.add(box(0.035, 0.14, 0.06, M.poly, xo, -0.1, 0.06, -0.22, 0, 0)); g.add(box(0.035, 0.1, 0.05, M.poly, xo, -0.09, 0.2, 0.3, 0, 0));
+}
 function buildGun(def) {
   const g = new THREE.Group(); const M = GUNMAT; g.userData.muzzle = new THREE.Vector3(0, 0.02, -0.21); g.userData.pump = null;
   if (def.id === 'pistol') {
-    g.add(box(0.05, 0.05, 0.22, M.metal, 0, 0.02, -0.08)); g.add(box(0.046, 0.042, 0.16, M.poly, 0, -0.02, -0.03));
-    g.add(box(0.042, 0.125, 0.052, M.poly, 0, -0.095, 0.035, 0.3, 0, 0)); g.add(box(0.012, 0.028, 0.05, M.metal, 0, -0.055, -0.03));
-    g.add(cyl(0.012, 0.05, M.metal2, 0, 0.02, -0.19)); g.add(box(0.01, 0.016, 0.01, M.metal2, 0, 0.053, -0.17)); g.add(box(0.03, 0.012, 0.012, M.metal2, 0, 0.051, 0.02));
-    g.add(box(0.008, 0.008, 0.008, M.sight, 0, 0.062, -0.17));
-    g.add(box(0.05, 0.02, 0.03, M.rust, 0, 0.02, 0.04));
+    addPistolBody(g, 0);
     g.userData.muzzle.set(0, 0.02, -0.22);
     buildHand(g, 0.0, -0.1, 0.06, [0.25, 0, 0], false);
+  } else if (def.id === 'dualpistol') {
+    addPistolBody(g, -0.075); addPistolBody(g, 0.075);
+    g.userData.muzzle.set(0, 0.02, -0.22);
+    buildHand(g, -0.075, -0.1, 0.06, [0.25, 0, 0], false); buildHand(g, 0.075, -0.1, 0.06, [0.25, 0, 0], true);
   } else if (def.id === 'shotgun') {
     const pump = addShotgunBody(g, 0); g.userData.pump = pump;
     g.userData.muzzle.set(0, 0.03, -0.63);
@@ -3637,37 +3722,37 @@ function buildGun(def) {
     g.userData.muzzle.set(0, 0.02, -0.42);
     buildHand(g, -0.075, -0.11, 0.02, [0.3, 0, 0], false); buildHand(g, 0.075, -0.11, 0.02, [0.3, 0, 0], true);
   } else if (def.id === 'flamethrower') {
-    g.add(box(0.09, 0.11, 0.28, M.metal2, 0, -0.01, -0.02));
-    g.add(cyl(0.024, 0.34, M.metal, 0, 0.01, -0.34));
-    g.add(box(0.02, 0.02, 0.02, M.accent, 0, 0.02, -0.5));
-    g.add(box(0.05, 0.05, 0.1, M.poly, 0, -0.03, 0.14));
-    g.add(box(0.045, 0.02, 0.03, M.rust, 0, 0.05, -0.02));
+    addFlamethrowerBody(g, 0);
     g.userData.muzzle.set(0, 0.01, -0.52);
     buildHand(g, 0.0, -0.09, 0.12, [0.3, 0, 0], false); buildHand(g, 0.0, -0.06, -0.18, [0.22, 0, 0], true);
+  } else if (def.id === 'dualflamethrower') {
+    addFlamethrowerBody(g, -0.09); addFlamethrowerBody(g, 0.09);
+    g.userData.muzzle.set(0, 0.01, -0.52);
+    buildHand(g, -0.09, -0.09, 0.12, [0.3, 0, 0], false); buildHand(g, 0.09, -0.09, 0.12, [0.3, 0, 0], true);
   } else if (def.id === 'lightning') {
-    g.add(box(0.05, 0.065, 0.26, M.metal, 0, 0, -0.04));
-    g.add(cyl(0.022, 0.05, M.accent, 0, 0.01, -0.32)); g.add(cyl(0.018, 0.05, M.accent, 0, 0.01, -0.42));
-    g.add(cyl(0.01, 0.2, M.metal2, 0, 0.01, -0.46));
-    g.add(box(0.03, 0.14, 0.05, M.poly, 0, -0.1, -0.03, -0.25, 0, 0));
-    g.add(box(0.012, 0.012, 0.012, M.accent, 0, 0.05, -0.03));
+    addLightningBody(g, 0);
     g.userData.muzzle.set(0, 0.01, -0.58);
     buildHand(g, 0.0, -0.1, 0.08, [0.3, 0, 0], false); buildHand(g, 0.0, -0.06, -0.24, [0.22, 0, 0], true);
+  } else if (def.id === 'duallightning') {
+    addLightningBody(g, -0.08); addLightningBody(g, 0.08);
+    g.userData.muzzle.set(0, 0.01, -0.58);
+    buildHand(g, -0.08, -0.1, 0.08, [0.3, 0, 0], false); buildHand(g, 0.08, -0.1, 0.08, [0.3, 0, 0], true);
   } else if (def.id === 'grenade') {
-    g.add(cyl(0.05, 0.34, M.metal, 0, 0.01, -0.18));
-    g.add(box(0.07, 0.08, 0.16, M.poly, 0, -0.02, 0.06));
-    g.add(box(0.008, 0.008, 0.008, M.sight, 0, 0.055, -0.3));
-    g.add(box(0.05, 0.02, 0.03, M.rust, 0, 0.05, 0.02));
-    g.add(box(0.035, 0.12, 0.05, M.poly, 0, -0.1, 0.02, -0.25, 0, 0));
+    addGrenadeBody(g, 0);
     g.userData.muzzle.set(0, 0.01, -0.36);
     buildHand(g, 0.0, -0.1, 0.14, [0.3, 0, 0], false); buildHand(g, 0.0, -0.06, -0.1, [0.22, 0, 0], true);
+  } else if (def.id === 'dualgrenade') {
+    addGrenadeBody(g, -0.11); addGrenadeBody(g, 0.11);
+    g.userData.muzzle.set(0, 0.01, -0.36);
+    buildHand(g, -0.11, -0.1, 0.14, [0.3, 0, 0], false); buildHand(g, 0.11, -0.1, 0.14, [0.3, 0, 0], true);
   } else if (def.id === 'sniper') {
-    g.add(box(0.05, 0.065, 0.42, M.metal, 0, 0, -0.08));
-    g.add(cyl(0.012, 0.34, M.metal2, 0, 0.012, -0.62));
-    g.add(box(0.03, 0.03, 0.16, M.poly, 0, 0.05, -0.12));
-    g.add(box(0.034, 0.02, 0.02, M.sight, 0, 0.05, -0.19)); g.add(box(0.034, 0.02, 0.02, M.sight, 0, 0.05, -0.06));
-    g.add(box(0.035, 0.14, 0.06, M.poly, 0, -0.1, 0.06, -0.22, 0, 0)); g.add(box(0.035, 0.1, 0.05, M.poly, 0, -0.09, 0.2, 0.3, 0, 0));
+    addSniperBody(g, 0);
     g.userData.muzzle.set(0, 0.012, -0.82);
     buildHand(g, 0.0, -0.11, 0.22, [0.3, 0, 0], false); buildHand(g, 0.0, -0.062, -0.16, [0.22, 0, 0], true);
+  } else if (def.id === 'dualsniper') {
+    addSniperBody(g, -0.09); addSniperBody(g, 0.09);
+    g.userData.muzzle.set(0, 0.012, -0.82);
+    buildHand(g, -0.09, -0.11, 0.22, [0.3, 0, 0], false); buildHand(g, 0.09, -0.11, 0.22, [0.3, 0, 0], true);
   } else if (def.id === 'dualrifle') {
     addRifleBody(g, -0.085); addRifleBody(g, 0.085);
     g.userData.muzzle.set(0, 0.012, -0.66);
@@ -4967,7 +5052,7 @@ const Bots = {
       if (b.avatarId !== myAvatarId || b._avGen !== gen) { R.scene.remove(body.g); return; }
       for (const c of b.vis.g.children.slice()) { if (c !== b.vis.flash) b.vis.g.remove(c); }
       b.vis.g.add(body.g); b.vis.mixer = body.mixer; b.vis.actions = body.actions; b.vis.current = body.current;
-      b.vis.gunSlot = body.gunSlot; b.vis.gunMesh = null; b.vis.gunKind = null;
+      b.vis.gunSlot = body.gunSlot; b.vis.gunSlot2 = body.gunSlot2; b.vis.gunMesh = null; b.vis.gunMesh2 = null; b.vis.gunKind = null;
     }).catch(e => console.error('bot avatar failed to load', e));
   },
 
@@ -7181,7 +7266,7 @@ const Net = {
     // the champion model loads async — this wrapper goes up immediately (empty) so position,
     // shadow, name tag and the muzzle flash all work from frame one; the real body is added as a
     // child of m.g the moment Avatars.spawn resolves
-    const m = { kind: 'gltf', g: new THREE.Group(), mixer: null, actions: {}, current: 'idle', ready: false, gunSlot: null, gunMesh: null, gunKind: null };
+    const m = { kind: 'gltf', g: new THREE.Group(), mixer: null, actions: {}, current: 'idle', ready: false, gunSlot: null, gunSlot2: null, gunMesh: null, gunMesh2: null, gunKind: null };
     R.scene.add(m.g);
     m.flash = Avatars._flash(); m.g.add(m.flash);
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.52, 14), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
@@ -7192,7 +7277,7 @@ const Net = {
     Avatars.spawn(peer.char).then(body => {
       if (peer.vis !== m) { R.scene.remove(body.g); return; } // peer left/rejoined before this landed
       m.g.add(body.g); m.mixer = body.mixer; m.actions = body.actions; m.ready = true;
-      m.gunSlot = body.gunSlot;
+      m.gunSlot = body.gunSlot; m.gunSlot2 = body.gunSlot2;
     }).catch(e => console.error('peer avatar failed to load', e));
     return peer.vis;
   },
