@@ -814,7 +814,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.64.0';
+const GAME_VERSION = 'v1.65.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -894,16 +894,14 @@ const CFG = {
     { at: 0.50, dmg: 1.25, reload: 1.25 }
   ],
   // per-character ultimate (see Player.tryUltimate / Game.ult*): meter fills off kills, a button
-  // fires it once full. Every one of the 5 moves shares the same duration curve (see
-  // Game.ultDurationForWave) — 5s at wave 1, ramping linearly up to 30s by wave 20 and holding
-  // there for the rest of the run — and every one grants full immunity for 3s after it ends
-  // (ultImmuneT) — Cloud/Ranger/Fox ALSO get full immunity for the move's own duration (ultImmune),
-  // while Chopper/Dudu instead only take 1/4 damage during theirs (ultReduced), a tankier-not-
-  // invincible window per their brief. The cooldown floor is always half the current duration (see
-  // Game.ultCooldownForWave — this is what pins a 20s duration to a 10s cooldown), so a shorter,
-  // weaker early-game burst comes back around quickly while the full 30s version late-game still
-  // can't be chained back-to-back.
-  ultDurationMin: 5, ultDurationMax: 30, ultDurationMaxWave: 20, ultImmunePostTime: 3, ultReducedMul: 0.25,
+  // fires it once full. Every one of the 5 champions' moves (2 distinct moves total — see below)
+  // shares the same duration curve (see Game.ultDurationForWave) — 5s at wave 1, ramping linearly
+  // up to 30s by wave 20 and holding there for the rest of the run — and every one grants full
+  // immunity for the move's own duration (ultImmune) plus 3s after it ends (ultImmuneT). The
+  // cooldown floor is always half the current duration (see Game.ultCooldownForWave — this is what
+  // pins a 20s duration to a 10s cooldown), so a shorter, weaker early-game burst comes back around
+  // quickly while the full 30s version late-game still can't be chained back-to-back.
+  ultDurationMin: 5, ultDurationMax: 30, ultDurationMaxWave: 20, ultImmunePostTime: 3,
   ultMeterPerKill: 5, ultMeterPerHeadshot: 8, ultMeterPerSpecialKill: 18,
   // Cloud & Green Ranger share one move: a continuous spinning whirlwind attack for the whole
   // 30s, fully automatic (no FIRE needed). Camera is left exactly as the player has it — no
@@ -927,16 +925,12 @@ const CFG = {
   // bigger — otherwise a bigger, farther-out weapon would leave a dead zone right around the
   // caster that the old, closer orbit used to cover
   ultWhirlwindOrbitR: 4.0, ultWhirlwindWeaponReach: 4.5,
-  // Chopper & Dudu share one move: 8 clones orbit them, but now hunt aggressively — the seek
-  // range covers the whole map (no more waiting for something to wander close) and they close in
-  // fast once locked on. Still detonate (instakill, bosses take ultCloneBossDmg instead) the
-  // instant the move ends rather than just despawning quietly.
-  ultCloneCount: 8, ultCloneOrbitR: 2.4, ultCloneSeekFt: 1000, ultCloneSeekSpeed: 15,
-  ultCloneHitR: 0.7, ultCloneExplodeR: 3.2, ultCloneBossDmg: 900,
-  // Nine-Tail Fox: invisible to the horde's targeting (see Net.targetFor/Bots.targetFor) while 6
-  // flame familiars orbit her, now darting out map-wide on a much shorter timer to freeze (stun)
-  // the nearest enemy in range and immediately reappear at her side (see Ultimates.tickFox) —
-  // same aggressive-hunter treatment as Chopper/Dudu's clones, just freeze instead of a kill
+  // Nine-Tail Fox, Chopper & Dudu all share one move (astral veil): invisible to the horde's
+  // targeting (see Net.targetFor/Bots.targetFor) while 6 flame familiars orbit the caster, darting
+  // out map-wide on a short timer to freeze (stun) the nearest enemy in range and immediately
+  // reappear at their side (see Ultimates.tickFox). Kills on anything frozen this way also credit
+  // the caster's kill count/score (see Game.onZombieKilled), on top of whoever actually finished
+  // it off.
   ultFlameCount: 6, ultFlameInterval: 0.6, ultFlameRange: 200, ultFlameFreezeSec: 3, ultFlameOrbitR: 1.6,
   ultFlameDashSpeed: 22,
   // shared damage-over-time slot on Zombie (see this.dotT/applyDot/update()) — one weapon's DoT
@@ -4123,7 +4117,7 @@ const Player = {
     this.x = 0; this.z = 0; this.yaw = rnd(0, TAU); this.pitch = 0; this.maxHp = char.hp; this.hp = char.hp; this.alive = true; this.speed = char.speed;
     this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
     this.ultCharge = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0; this.ultDurationUsed = 0;
-    this.ultImmune = false; this.ultImmuneT = 0; this.ultReduced = false; this.ultInvisible = false;
+    this.ultImmune = false; this.ultImmuneT = 0; this.ultInvisible = false;
     this.ultPreCamMode = null; this.whirlPulseT = 0; this.whirlSpinAngle = 0;
     Ultimates.cleanup(this);
     this.downed = false; this.downT = 0; this.spectating = false;
@@ -4498,8 +4492,7 @@ const Player = {
   hurt(amount, fx, fz) {
     if (!this.alive || Game.state !== 'playing') return;
     if (Game.invincible > 0) return;
-    if (this.ultImmune || this.ultImmuneT > 0) return; // Cloud/Ranger/Fox's own move, or anyone's 3s after
-    if (this.ultReduced) amount *= CFG.ultReducedMul;   // Chopper/Dudu take 1/4 during their own move
+    if (this.ultImmune || this.ultImmuneT > 0) return; // any champion's own move, or anyone's 3s after
     this.shieldRegenT = CFG.shieldRegenDelay;
     if (this.shield > 0) { const absorb = Math.min(this.shield, amount); this.shield -= absorb; amount -= absorb; }
     this.hp -= amount; this.lastHurt = Game.time; Game.shake = Math.max(Game.shake, 0.9);
@@ -4633,11 +4626,10 @@ const Player = {
 };
 
 /* ------------------------------------------------------------------ ultimates
-   One unique move per champion, gated behind a meter that fills off kills (see
+   2 distinct moves across the 5 champions, gated behind a meter that fills off kills (see
    Game.onZombieKilled) and a cooldown floor that scales with wave (see Player.tryUltimate).
-   Every move runs a flat 30s and grants full immunity for 3s after it ends (ultImmuneT) — Cloud/
-   Ranger/Fox ALSO get full immunity for the 30s itself (ultImmune), while Chopper/Dudu instead
-   only take 1/4 damage during their own 30s (ultReduced), per their own brief.
+   Every move runs a flat 30s and grants full immunity throughout (ultImmune) plus 3s after it
+   ends (ultImmuneT).
    Instakill AoEs go through applyAoeKillAuthoritative on the host or solo machine directly; a
    coop CLIENT instead sends a dedicated 'ultKill' request and only applies a cosmetic-only local
    kill (Zombie.hit's own client branch, silent=true) — reusing the normal bullet-hit report here
@@ -4646,8 +4638,8 @@ const Player = {
    straight through Game.onBulletHit instead, which already has that same host/client split built
    in, so _dmgStunAt below needs no separate network path of its own.
    Known gap: every one of these moves is simulated purely on the caster's own machine (same as
-   the old Cloud/Fox/Dudu visuals always were) — another client never sees a peer's clones/flames/
-   whirlwind spin, and a stun or Fox's freeze-kill-credit tag only actually lands when the caster
+   the old Cloud/Fox/Dudu visuals always were) — another client never sees a peer's flame swarm/
+   whirlwind spin, and a stun or the freeze-kill-credit tag only actually lands when the caster
    IS the host (or playing solo), since a client's own zombie objects aren't authoritative. Consistent
    with the barrel-attribution gap already accepted elsewhere in this file, not a new regression. */
 const Ultimates = {
@@ -4656,31 +4648,28 @@ const Ultimates = {
   start(P) {
     const id = P.char.id;
     if (id === 'cloud' || id === 'rhino') this.startWhirlwind(P);
-    else if (id === 'chopper' || id === 'corsair') this.startCloneSwarm(P);
-    else if (id === 'mage') this.startFox(P);
+    else if (id === 'mage' || id === 'chopper' || id === 'corsair') this.startFox(P);
   },
   tick(P, dt) {
     const id = P.char.id;
     if (id === 'cloud' || id === 'rhino') this.tickWhirlwind(P, dt);
-    else if (id === 'chopper' || id === 'corsair') this.tickCloneSwarm(P, dt);
-    else if (id === 'mage') this.tickFox(P, dt);
+    else if (id === 'mage' || id === 'chopper' || id === 'corsair') this.tickFox(P, dt);
   },
   end(P) {
-    P.ultActive = false; P.ultImmune = false; P.ultReduced = false; P.ultInvisible = false;
+    P.ultActive = false; P.ultImmune = false; P.ultInvisible = false;
     P.ultImmuneT = CFG.ultImmunePostTime;
     if (P.ultPreCamMode) { Game.camMode = P.ultPreCamMode; P.ultPreCamMode = null; HUD.refreshOptions(); }
-    const id = P.char.id;
-    if (id === 'chopper' || id === 'corsair') this.detonateClones(P);
     this.cleanup(P);
   },
   cleanup(P) {
-    if (P._ultClones) { for (const c of P._ultClones) { R.scene.remove(c.g); c.g.geometry.dispose(); c.g.material.dispose(); } P._ultClones = null; }
     if (P._ultFlames) { for (const f of P._ultFlames) { R.scene.remove(f.g); f.g.geometry.dispose(); f.g.material.dispose(); } P._ultFlames = null; }
     if (P._whirlWeapon) { R.scene.remove(P._whirlWeapon); P._whirlWeapon.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } }); P._whirlWeapon = null; }
     if (P._whirlRing) { R.scene.remove(P._whirlRing); P._whirlRing.geometry.dispose(); P._whirlRing.material.dispose(); P._whirlRing = null; }
   },
 
-  /* ---------------- shared AoE instakill (Chopper/Dudu's clone detonation) ---------------- */
+  /* ---------------- shared AoE instakill helper (no ultimate calls aoeKill anymore since the
+     clone swarm move was retired in favor of giving Chopper/Dudu the Fox's astral veil instead —
+     kept only as the authoritative side of the 'ultKill' network message below) ---------------- */
   applyAoeKillAuthoritative(x, z, r, opts) {
     for (const zb of Zombies.pool) {
       if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
@@ -4842,83 +4831,25 @@ const Ultimates = {
     if (hits) { Audio.powerup(); Game.shake = Math.max(Game.shake, 0.6); FX.hit(true); }
   },
 
-  /* ---------------- Chopper & Dudu: clone swarm ----------------
-     8 clones orbit, and each independently hunts down the nearest zombie ANYWHERE on the map
-     (ultCloneSeekFt is effectively unlimited) at ultCloneSeekSpeed, killing on contact — same
-     instakill hitbox the old Dudu-only orbit had, bosses untouched by it same as before.
-     Aggressive on purpose: once a clone drops a target (it died) it immediately re-acquires the
-     next-nearest zombie rather than drifting back to orbit, so a full swarm reads as a relentless
-     hunter-killer pack, not a passive perimeter. The instant the move ends, every clone detonates
-     (instakill in ultCloneExplodeR, bosses take ultCloneBossDmg instead) rather than just
-     despawning quietly. Only 1/4 damage taken during the 30s itself (ultReduced) — full immunity
-     only kicks in for the 3s after, same as the other three moves. */
-  // shared mesh factories — used for the caster's own (logic-driving) swarm below AND for
-  // painting the same swarm onto a peer's avatar elsewhere on the network (see
-  // Net.updateAvatars/syncPeerVisual), which only ever gets positions, never the seek/orbit logic
-  _makeCloneMesh() {
-    const geo = new THREE.SphereGeometry(0.34, 10, 8);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x5dffe0, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
-    const g = new THREE.Mesh(geo, mat); R.scene.add(g); return g;
-  },
   _makeFlameMesh() {
     const geo = new THREE.SphereGeometry(0.22, 8, 6);
     const mat = new THREE.MeshBasicMaterial({ color: 0xff6a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
     const g = new THREE.Mesh(geo, mat); R.scene.add(g); return g;
   },
-  // this client's own active clone/flame positions, for the network packet that lets every other
+  // this client's own active flame positions, for the network packet that lets every other
   // client paint the same swarm onto this player's avatar (see Net.sendInput/sendSnapshot)
   exportPositions(P) {
-    if (P._ultClones) return P._ultClones.map(c => [r2(c.x), r2(c.z)]);
     if (P._ultFlames) return P._ultFlames.map(f => [r2(f.x), r2(f.z)]);
     return null;
   },
-  startCloneSwarm(P) {
-    P.ultReduced = true;
-    const n = CFG.ultCloneCount, clones = [];
-    for (let i = 0; i < n; i++) {
-      const g = this._makeCloneMesh();
-      clones.push({ g: g, ang: (i / n) * TAU, x: P.x, z: P.z, target: null });
-    }
-    P._ultClones = clones;
-    Particles.sparks(P.x, 1.2, P.z, 30); Audio.powerup();
-    HUD.toast('CLONE SWARM!', 1.8);
-  },
-  tickCloneSwarm(P, dt) {
-    if (!P._ultClones) return;
-    const seekR = CFG.ultCloneSeekFt * 0.3048, seekR2 = seekR * seekR;
-    for (const c of P._ultClones) {
-      c.ang += dt * 1.6;
-      const homeX = P.x + Math.cos(c.ang) * CFG.ultCloneOrbitR, homeZ = P.z + Math.sin(c.ang) * CFG.ultCloneOrbitR;
-      if (c.target && (!c.target.on || c.target.state === 'dead')) c.target = null;
-      if (c.target) { const dx = c.target.x - c.x, dz = c.target.z - c.z; if (dx * dx + dz * dz > seekR2 * 2.25) c.target = null; }
-      if (!c.target) {
-        let best = null, bd = seekR2;
-        for (const zb of Zombies.pool) {
-          if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
-          const dx = zb.x - c.x, dz = zb.z - c.z, d2 = dx * dx + dz * dz;
-          if (d2 < bd) { bd = d2; best = zb; }
-        }
-        c.target = best;
-      }
-      const tx = c.target ? c.target.x : homeX, tz = c.target ? c.target.z : homeZ;
-      const dx = tx - c.x, dz = tz - c.z, d = Math.sqrt(dx * dx + dz * dz);
-      if (d > 0.05) { const k = Math.min(1, dt * (c.target ? CFG.ultCloneSeekSpeed : 4) / d); c.x += dx * k; c.z += dz * k; }
-      c.g.position.set(c.x, 1.1, c.z); c.g.rotation.y += dt * 4;
-      if (c.target) this.aoeKill(c.x, c.z, CFG.ultCloneHitR, {});
-    }
-  },
-  detonateClones(P) {
-    if (!P._ultClones) return;
-    for (const c of P._ultClones) { this.aoeKill(c.x, c.z, CFG.ultCloneExplodeR, { bossDamage: CFG.ultCloneBossDmg }); Explosions.spawn(c.x, c.z); }
-    Audio.explosion(P.x, P.z);
-  },
 
-  /* ---------------- Nine-Tail Fox: astral veil ----------------
-     Invisible to the horde's targeting (see Net.targetFor/Bots.targetFor) and fully immune for
-     the duration. 6 flame familiars orbit her; each keeps its own ultFlameInterval timer, darts to
-     the nearest enemy anywhere in ultFlameRange (map-wide) when it fires, freezes (stuns) it on
-     contact, and immediately reappears at her side. Kills on anything she's frozen also credit
-     her kill count/score (see Game.onZombieKilled), on top of whoever actually finished it off. */
+  /* ---------------- Nine-Tail Fox, Chopper & Dudu: astral veil ----------------
+     All three share this one move. Invisible to the horde's targeting (see Net.targetFor/
+     Bots.targetFor) and fully immune for the duration. 6 flame familiars orbit the caster; each
+     keeps its own ultFlameInterval timer, darts to the nearest enemy anywhere in ultFlameRange
+     (map-wide) when it fires, freezes (stuns) it on contact, and immediately reappears at the
+     caster's side. Kills on anything frozen this way also credit the caster's kill count/score
+     (see Game.onZombieKilled), on top of whoever actually finished it off. */
   startFox(P) {
     P.ultImmune = true; P.ultInvisible = true;
     const n = CFG.ultFlameCount, flames = [];
@@ -4968,17 +4899,16 @@ const Ultimates = {
      Everything above is the CASTER's own machine deciding what happens (damage, freeze, kill
      credit) — this half is purely cosmetic, run by every OTHER client for every peer/bot in
      Net.updateAvatars. It never touches gameplay, only what a peer's avatar looks like: the
-     clone/flame swarm at the positions the caster's own machine already computed and broadcast
-     (see Ultimates.exportPositions/Net.sendInput). Cloud/Ranger's whirlwind spin itself isn't
-     synced here — a peer's Net.updateAvatars sets v.g.rotation.y straight from their broadcast
-     yaw right after this runs, so a peer whirlwinding shows up to you holding their normal gun,
-     not visibly spinning; same accepted caster-only-simulation gap as the clone/flame seek logic
-     above (only positions cross the network, never the local animation state driving them). */
+     flame swarm at the positions the caster's own machine already computed and broadcast (see
+     Ultimates.exportPositions/Net.sendInput). Cloud/Ranger's whirlwind spin itself isn't synced
+     here — a peer's Net.updateAvatars sets v.g.rotation.y straight from their broadcast yaw right
+     after this runs, so a peer whirlwinding shows up to you holding their normal gun, not visibly
+     spinning; same accepted caster-only-simulation gap as the flame seek logic above (only
+     positions cross the network, never the local animation state driving them). */
   syncPeerVisual(peer, v) {
     const id = peer.char, active = !!peer.ultActive;
     Avatars.setGun(v, WEAPONS[peer.w] ? WEAPONS[peer.w].id : null);
-    if (id === 'chopper' || id === 'corsair') this._syncPeerSwarm(peer, active && peer.ultPos);
-    else if (id === 'mage') this._syncPeerSwarm(peer, active && peer.ultPos);
+    if (id === 'mage' || id === 'chopper' || id === 'corsair') this._syncPeerSwarm(peer, active && peer.ultPos);
     else this._syncPeerSwarm(peer, null);
   },
   _syncPeerSwarm(peer, pos) {
@@ -4986,12 +4916,8 @@ const Ultimates = {
       if (peer._ultVis) { for (const m of peer._ultVis) { R.scene.remove(m); m.geometry.dispose(); m.material.dispose(); } peer._ultVis = null; }
       return;
     }
-    if (!peer._ultVis) {
-      const isFlame = peer.char === 'mage';
-      peer._ultVis = pos.map(() => isFlame ? this._makeFlameMesh() : this._makeCloneMesh());
-    }
-    const y = peer.char === 'mage' ? 1.3 : 1.1;
-    for (let i = 0; i < pos.length && i < peer._ultVis.length; i++) peer._ultVis[i].position.set(pos[i][0], y, pos[i][1]);
+    if (!peer._ultVis) peer._ultVis = pos.map(() => this._makeFlameMesh());
+    for (let i = 0; i < pos.length && i < peer._ultVis.length; i++) peer._ultVis[i].position.set(pos[i][0], 1.3, pos[i][1]);
   }
 };
 
