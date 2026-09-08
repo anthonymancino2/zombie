@@ -789,7 +789,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.54.0';
+const GAME_VERSION = 'v1.55.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3010,6 +3010,11 @@ class Zombie {
     // set by Nine-Tail Fox's flame familiars (see Ultimates.tickFox/_dmgStunAt) — whoever froze
     // this also gets kill credit whenever it dies, on top of the real killer (see onZombieKilled)
     this.foxFrozenBy = null;
+    // one damage-over-time slot shared by the flamethrower's burn and the chain lightning gun's
+    // shock (see Game.applyDot/update() below) — a fresh application refreshes duration/tick and
+    // overwrites color/kind rather than stacking two DoTs at once, same "simplest thing that
+    // reads clearly" call as reusing stunT for hard stuns elsewhere.
+    this.dotT = 0; this.dotTick = 0; this.dotDps = 0; this.dotColor = null; this.dotKind = null;
     const g = new THREE.Group(); this.group = g;
     this.skinMat = new THREE.MeshLambertMaterial({ map: TEX.skin[0] }); this.clothMat = new THREE.MeshLambertMaterial({ map: TEX.cloth[0] });
     this.legL = new THREE.Mesh(ZG.leg, this.clothMat); this.legL.position.set(-0.15, 1.04, 0);
@@ -3038,6 +3043,7 @@ class Zombie {
     const wm = Math.pow(T.hpWave || CFG.hpMul, wave - 1), sm = Math.pow(CFG.speedMul, wave - 1);
     this.boss = !!T.boss; this.stunT = 0; this.pinTarget = null; this.pinId = 0; this.pinT = 0; this.pinHitT = -99; this.pvx = this.pvy = this.pvz = 0;
     this.dmgBy = {}; this.foxFrozenBy = null;
+    this.dotT = 0; this.dotTick = 0; this.dotDps = 0; this.dotColor = null; this.dotKind = null;
     this.maxHp = this.hp = Math.round(CFG.zombieBaseHp * wm * T.hpMul);
     this.speed = Math.min(7.6, CFG.zombieBaseSpeed * sm * T.speedMul) * rnd(0.92, 1.08);
     this.variant = Math.floor(Math.random() * TEX.skin.length);
@@ -3697,9 +3703,11 @@ function buildGun(def) {
     g.userData.muzzle.set(0, 0.02, -0.22);
     buildHand(g, 0.0, -0.1, 0.06, [0.25, 0, 0], false);
   } else if (def.id === 'dualpistol') {
-    addPistolBody(g, -0.075); addPistolBody(g, 0.075);
+    // dual-wield viewmodels are one gun per screen-side now (see buildGunLeft/Player.vm.rootL) —
+    // this "right" copy is deliberately identical to the single pistol's own geometry.
+    addPistolBody(g, 0);
     g.userData.muzzle.set(0, 0.02, -0.22);
-    buildHand(g, -0.075, -0.1, 0.06, [0.25, 0, 0], false); buildHand(g, 0.075, -0.1, 0.06, [0.25, 0, 0], true);
+    buildHand(g, 0.0, -0.1, 0.06, [0.25, 0, 0], false);
   } else if (def.id === 'shotgun') {
     const pump = addShotgunBody(g, 0); g.userData.pump = pump;
     g.userData.muzzle.set(0, 0.03, -0.63);
@@ -3713,55 +3721,94 @@ function buildGun(def) {
     g.userData.muzzle.set(0, 0.012, -0.66);
     buildHand(g, 0.0, -0.11, 0.1, [0.3, 0, 0], false); buildHand(g, 0.0, -0.062, -0.29, [0.22, 0, 0], true);
   } else if (def.id === 'dualshotgun') {
-    const pumpL = addShotgunBody(g, -0.09), pumpR = addShotgunBody(g, 0.09);
-    g.userData.pump = pumpL; g.userData.pump2 = pumpR;
+    const pump = addShotgunBody(g, 0); g.userData.pump = pump;
     g.userData.muzzle.set(0, 0.03, -0.63);
-    buildHand(g, -0.09, -0.1, 0.09, [0.3, 0, 0], false); buildHand(g, 0.09, -0.1, 0.09, [0.3, 0, 0.15], true);
+    buildHand(g, 0.0, -0.1, 0.09, [0.3, 0, 0.15], false);
   } else if (def.id === 'dualuzi') {
-    addUziBody(g, -0.075); addUziBody(g, 0.075);
+    addUziBody(g, 0);
     g.userData.muzzle.set(0, 0.02, -0.42);
-    buildHand(g, -0.075, -0.11, 0.02, [0.3, 0, 0], false); buildHand(g, 0.075, -0.11, 0.02, [0.3, 0, 0], true);
+    buildHand(g, 0.0, -0.11, 0.02, [0.3, 0, 0], false);
   } else if (def.id === 'flamethrower') {
     addFlamethrowerBody(g, 0);
     g.userData.muzzle.set(0, 0.01, -0.52);
     buildHand(g, 0.0, -0.09, 0.12, [0.3, 0, 0], false); buildHand(g, 0.0, -0.06, -0.18, [0.22, 0, 0], true);
   } else if (def.id === 'dualflamethrower') {
-    addFlamethrowerBody(g, -0.09); addFlamethrowerBody(g, 0.09);
+    addFlamethrowerBody(g, 0);
     g.userData.muzzle.set(0, 0.01, -0.52);
-    buildHand(g, -0.09, -0.09, 0.12, [0.3, 0, 0], false); buildHand(g, 0.09, -0.09, 0.12, [0.3, 0, 0], true);
+    buildHand(g, 0.0, -0.09, 0.12, [0.3, 0, 0], false);
   } else if (def.id === 'lightning') {
     addLightningBody(g, 0);
     g.userData.muzzle.set(0, 0.01, -0.58);
     buildHand(g, 0.0, -0.1, 0.08, [0.3, 0, 0], false); buildHand(g, 0.0, -0.06, -0.24, [0.22, 0, 0], true);
   } else if (def.id === 'duallightning') {
-    addLightningBody(g, -0.08); addLightningBody(g, 0.08);
+    addLightningBody(g, 0);
     g.userData.muzzle.set(0, 0.01, -0.58);
-    buildHand(g, -0.08, -0.1, 0.08, [0.3, 0, 0], false); buildHand(g, 0.08, -0.1, 0.08, [0.3, 0, 0], true);
+    buildHand(g, 0.0, -0.1, 0.08, [0.3, 0, 0], false);
   } else if (def.id === 'grenade') {
     addGrenadeBody(g, 0);
     g.userData.muzzle.set(0, 0.01, -0.36);
     buildHand(g, 0.0, -0.1, 0.14, [0.3, 0, 0], false); buildHand(g, 0.0, -0.06, -0.1, [0.22, 0, 0], true);
   } else if (def.id === 'dualgrenade') {
-    addGrenadeBody(g, -0.11); addGrenadeBody(g, 0.11);
+    addGrenadeBody(g, 0);
     g.userData.muzzle.set(0, 0.01, -0.36);
-    buildHand(g, -0.11, -0.1, 0.14, [0.3, 0, 0], false); buildHand(g, 0.11, -0.1, 0.14, [0.3, 0, 0], true);
+    buildHand(g, 0.0, -0.1, 0.14, [0.3, 0, 0], false);
   } else if (def.id === 'sniper') {
     addSniperBody(g, 0);
     g.userData.muzzle.set(0, 0.012, -0.82);
     buildHand(g, 0.0, -0.11, 0.22, [0.3, 0, 0], false); buildHand(g, 0.0, -0.062, -0.16, [0.22, 0, 0], true);
   } else if (def.id === 'dualsniper') {
-    addSniperBody(g, -0.09); addSniperBody(g, 0.09);
+    addSniperBody(g, 0);
     g.userData.muzzle.set(0, 0.012, -0.82);
-    buildHand(g, -0.09, -0.11, 0.22, [0.3, 0, 0], false); buildHand(g, 0.09, -0.11, 0.22, [0.3, 0, 0], true);
+    buildHand(g, 0.0, -0.11, 0.22, [0.3, 0, 0], false);
   } else if (def.id === 'dualrifle') {
-    addRifleBody(g, -0.085); addRifleBody(g, 0.085);
+    addRifleBody(g, 0);
     g.userData.muzzle.set(0, 0.012, -0.66);
-    buildHand(g, -0.085, -0.11, 0.1, [0.3, 0, 0], false); buildHand(g, 0.085, -0.11, 0.1, [0.3, 0, 0], true);
+    buildHand(g, 0.0, -0.11, 0.1, [0.3, 0, 0], false);
   } else {
     // safety net for any future weapon id that forgets a branch — rifle-shaped rather than invisible
     addRifleBody(g, 0);
     g.userData.muzzle.set(0, 0.012, -0.66);
     buildHand(g, 0.0, -0.11, 0.1, [0.3, 0, 0], false); buildHand(g, 0.0, -0.062, -0.29, [0.22, 0, 0], true);
+  }
+  return g;
+}
+// left-hand-only companion to buildGun's dual-wield branches, rendered under Player.vm.rootL so a
+// dual weapon reads as one gun per arm instead of two guns clustered in the same hand (see
+// updateViewmodel). Every non-dual id returns an empty, never-shown group.
+function buildGunLeft(def) {
+  const g = new THREE.Group(); g.userData.muzzle = new THREE.Vector3(0, 0.02, -0.21); g.userData.pump = null;
+  if (def.id === 'dualpistol') {
+    addPistolBody(g, 0);
+    g.userData.muzzle.set(0, 0.02, -0.22);
+    buildHand(g, 0.0, -0.1, 0.06, [0.25, 0, 0], true);
+  } else if (def.id === 'dualshotgun') {
+    const pump = addShotgunBody(g, 0); g.userData.pump = pump;
+    g.userData.muzzle.set(0, 0.03, -0.63);
+    buildHand(g, 0.0, -0.1, 0.09, [0.3, 0, 0], true);
+  } else if (def.id === 'dualuzi') {
+    addUziBody(g, 0);
+    g.userData.muzzle.set(0, 0.02, -0.42);
+    buildHand(g, 0.0, -0.11, 0.02, [0.3, 0, 0], true);
+  } else if (def.id === 'dualflamethrower') {
+    addFlamethrowerBody(g, 0);
+    g.userData.muzzle.set(0, 0.01, -0.52);
+    buildHand(g, 0.0, -0.09, 0.12, [0.3, 0, 0], true);
+  } else if (def.id === 'duallightning') {
+    addLightningBody(g, 0);
+    g.userData.muzzle.set(0, 0.01, -0.58);
+    buildHand(g, 0.0, -0.1, 0.08, [0.3, 0, 0], true);
+  } else if (def.id === 'dualgrenade') {
+    addGrenadeBody(g, 0);
+    g.userData.muzzle.set(0, 0.01, -0.36);
+    buildHand(g, 0.0, -0.1, 0.14, [0.3, 0, 0], true);
+  } else if (def.id === 'dualsniper') {
+    addSniperBody(g, 0);
+    g.userData.muzzle.set(0, 0.012, -0.82);
+    buildHand(g, 0.0, -0.11, 0.22, [0.3, 0, 0], true);
+  } else if (def.id === 'dualrifle') {
+    addRifleBody(g, 0);
+    g.userData.muzzle.set(0, 0.012, -0.66);
+    buildHand(g, 0.0, -0.11, 0.1, [0.3, 0, 0], true);
   }
   return g;
 }
@@ -3816,12 +3863,13 @@ const Player = {
   // fastmove already worked this way since they only ever get read inside Player's own methods
   insta: 0, dbl: 0,
   stats: { shots: 0, hits: 0, kills: 0, head: 0, score: 0 },
-  vm: { root: null, models: [], flash: null, flashT: 0 },
+  vm: { root: null, models: [], rootL: null, modelsL: [], flash: null, flashT: 0 },
   body: null, bodyAnim: 0, _bodyGen: 0,
   autoTarget: null, lowSaid: false,
   _mv: { x: 0, y: 0 }, _lk: { x: 0, y: 0 }, _dir: new THREE.Vector3(), _right: new THREE.Vector3(), _up: new THREE.Vector3(), _v: new THREE.Vector3(),
   init() {
     this.vm.root = new THREE.Group(); this.vm.root.scale.setScalar(0.88); R.gunScene.add(this.vm.root);
+    this.vm.rootL = new THREE.Group(); this.vm.rootL.scale.setScalar(0.88); this.vm.rootL.visible = false; R.gunScene.add(this.vm.rootL);
     this.vm.flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, color: 0xffe0b0 }));
     this.vm.flash.visible = false; this.vm.flash.scale.set(0.16, 0.16, 1); R.gunScene.add(this.vm.flash);
     this.buildModels();
@@ -3847,6 +3895,8 @@ const Player = {
     buildGunMaterials(this.char);
     for (const m of this.vm.models) this.vm.root.remove(m);
     this.vm.models = WEAPONS.map(def => { const g = buildGun(def); g.visible = false; this.vm.root.add(g); return g; });
+    for (const m of this.vm.modelsL) this.vm.rootL.remove(m);
+    this.vm.modelsL = WEAPONS.map(def => { const g = buildGunLeft(def); g.visible = false; this.vm.rootL.add(g); return g; });
   },
   reset(char) {
     if (this.char !== char) { this.char = char; this.buildModels(); this.buildBody(); }
@@ -3867,6 +3917,7 @@ const Player = {
     this.cur = 0; this.cooldown = 0; this.reloading = false; this.reloadT = 0; this.switchT = 0; this.bloom = 0; this.bobT = 0; this.stepD = 0; this.lastHurt = -99; this.recoil = 0;
     this.stats = { shots: 0, hits: 0, kills: 0, head: 0, score: 0 }; this.autoTarget = null; this.lowSaid = false;
     this.vm.models.forEach((m, i) => m.visible = i === 0);
+    this.vm.modelsL.forEach((m, i) => m.visible = i === 0);
   },
   // downed-aware so the ammo HUD (the only other caller) reflects whichever sidearm is actually
   // about to fire — the first-person gun mesh itself still shows whatever was equipped standing
@@ -4191,7 +4242,9 @@ const Player = {
   switchTo(i) {
     if (i < 0 || i >= this.weapons.length || !this.weapons[i].owned || i === this.cur || !this.alive) return;
     this.cur = i; this.reloading = false; this.switchT = 0.42; this.bloom = 0;
-    this.vm.models.forEach((m, k) => m.visible = k === i); Audio.reload('pistol'); HUD.dirty = true;
+    this.vm.models.forEach((m, k) => m.visible = k === i);
+    this.vm.modelsL.forEach((m, k) => m.visible = k === i);
+    Audio.reload('pistol'); HUD.dirty = true;
   },
   // one button, cycling forward through whatever's actually been unlocked so far this run —
   // owned-only, so a fresh spawn with just the pistol just re-selects the pistol instead of
@@ -4307,6 +4360,21 @@ const Player = {
     if (!this.alive) { py -= Game.deathK * halfH * 1.6; rx -= Game.deathK * 0.9; rz += Game.deathK * 0.6; }
     py += Math.sin(Game.time * 1.7) * 0.004;
     root.position.x = px; root.position.y = py; root.rotation.set(rx, ry, rz);
+    // second, left-hand-only anchor for dual-wield weapons (see buildGunLeft/DUAL_BASE) — shares
+    // the right hand's height/depth/pitch/roll (both hands ride the same camera bob/recoil/dip)
+    // but mirrors the horizontal position and base look angle, so the two guns visually flank the
+    // crosshair like two arms instead of clustering together in one hand.
+    const isDual = !!DUAL_BASE[def.id];
+    vm.rootL.visible = isDual;
+    if (isDual) {
+      vm.rootL.position.set(-px, py, root.position.z);
+      vm.rootL.rotation.set(rx, 0.045 + this.swayX, -rz);
+      const gL = vm.modelsL[this.cur];
+      if (gL.userData.pump) {
+        if (this.reloading) { const p = 1 - this.reloadT / this.reloadTotal; gL.userData.pump.position.z = -0.32 + Math.max(0, Math.sin(p * Math.PI * 3)) * 0.07; }
+        else gL.userData.pump.position.z = -0.32 + Math.min(0.07, this.recoil * 0.04);
+      }
+    }
     // muzzle flash sprite
     if (vm.flashT > 0) {
       vm.flashT -= dt; const g = vm.models[this.cur];
