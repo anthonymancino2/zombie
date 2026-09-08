@@ -803,7 +803,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.58.0';
+const GAME_VERSION = 'v1.59.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3539,7 +3539,7 @@ const Zombies = {
 
 /* ------------------------------------------------------------------ pickups (floating indicators) */
 const PICKUP_DEFS = {
-  health: { color: 0xff4a4a, label: '+50 HP' }, ammo: { color: 0xffb040, label: 'AMMO' },
+  health: { color: 0xff4a4a, label: '+50 HP' },
   insta: { color: 0xff2a2a, label: 'INSTA-KILL' }, double: { color: 0xffe040, label: '2X POINTS' },
   // later-wave only (CFG.powerupWave+) — see Game.spawnPickup
   noreload: { color: 0x40c4ff, label: 'NO RELOAD' }, infammo: { color: 0x40ff8a, label: '∞ AMMO' },
@@ -4480,16 +4480,6 @@ const Player = {
     }
     if (any) HUD.dirty = true;
     return any;
-  },
-  lowOnAmmo() {
-    for (const w of this.weapons) if (w.owned && w.def.maxReserve !== Infinity && w.reserve + w.mag <= w.def.mag) return true;
-    return false;
-  },
-  refillAmmo() {
-    const w = this.weapon(); let any = false;
-    if (w.def.maxReserve === Infinity) { for (const o of this.weapons) if (o.owned && o.def.maxReserve !== Infinity) { o.reserve = o.def.maxReserve; o.mag = o.def.mag; any = true; } }
-    else { w.reserve = w.def.maxReserve; w.mag = w.def.mag; any = true; }
-    HUD.dirty = true; return any;
   },
   hurt(amount, fx, fz) {
     if (!this.alive || Game.state !== 'playing') return;
@@ -6245,7 +6235,7 @@ const Game = {
     if (w > 1) {
       Player.resupply(0.3);
       World.restockBarrels();
-      if (Pickups.count() < 3 && World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn(Player.lowOnAmmo() ? 'ammo' : (Math.random() < 0.5 ? 'health' : 'ammo'), this._pt.x, this._pt.z);
+      if (Pickups.count() < 3 && World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn('health', this._pt.x, this._pt.z);
     }
     HUD.last = {};
   },
@@ -6288,10 +6278,10 @@ const Game = {
     return this.powerBag.pop();
   },
   spawnPickup() {
-    let type; const r = Math.random(), hasGun = Player.weapons.some(w => w.owned && w.def.maxReserve !== Infinity);
-    if (hasGun && Player.lowOnAmmo() && r < 0.5) type = 'ammo';
-    else if (r < 0.34) type = 'health';
-    else if (r < 0.62) type = hasGun ? 'ammo' : 'health';
+    // ammo refill stations (see AmmoStations) cover ammo scarcity now — this stream is health or
+    // a power-up only
+    let type; const r = Math.random();
+    if (r < 0.55) type = 'health';
     else {
       const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
       type = this.nextPowerType(pool);
@@ -6474,7 +6464,6 @@ const Game = {
     // somebody else on the squad grabbed it — show the pop, keep the effect off our sheet
     if (remote) { Particles.sparks(x, 1.2, z, 12); Floaties.spawn(x, 1.6, z, 'TAKEN', '#ffd8a0', 15, 1.0); return; }
     if (type === 'health') { P.hp = Math.min(P.maxHp, P.hp + 50); Floaties.spawn(x, 1.6, z, '+50 HP', '#5dff7a', 20, 1.2); this.say('health'); HUD.toast('HEALTH +50'); }
-    else if (type === 'ammo') { P.refillAmmo(); Floaties.spawn(x, 1.6, z, 'AMMO REFILLED', '#ffb040', 20, 1.2); this.say('ammo'); HUD.toast('AMMO CRATE — RESERVE REFILLED'); }
     else if (type === 'insta') { P.insta = CFG.instaTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'INSTA-KILL!', '#ff3a3a', 22, 1.3); this.say('insta', true); HUD.toast('INSTA-KILL — ONE SHOT, ONE KILL', 2.5); }
     else if (type === 'double') { P.dbl = CFG.dblTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'DOUBLE POINTS!', '#ffe040', 22, 1.3); this.say('double', true); HUD.toast('DOUBLE POINTS — 30 SECONDS', 2.5); }
     // every power-up below (including insta/double above) is personal — only whoever actually
