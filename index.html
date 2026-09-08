@@ -803,7 +803,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.59.0';
+const GAME_VERSION = 'v1.60.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -883,15 +883,17 @@ const CFG = {
     { at: 0.50, dmg: 1.25, reload: 1.25 }
   ],
   // per-character ultimate (see Player.tryUltimate / Game.ult*): meter fills off kills, a button
-  // fires it once full. Every one of the 5 moves runs a flat 30s, and every one grants full
-  // immunity for 3s after it ends (ultImmuneT) — Cloud/Ranger/Fox ALSO get full immunity for the
-  // 30s itself (ultImmune), while Chopper/Dudu instead only take 1/4 damage during their own 30s
-  // (ultReduced), a tankier-not-invincible window per their brief. The cooldown floor scales with
-  // wave (a full meter earlier than that just has to wait), so the move can't be chained
-  // back-to-back into the late game trivially.
-  ultDuration: 30, ultImmunePostTime: 3, ultReducedMul: 0.25,
+  // fires it once full. Every one of the 5 moves shares the same duration curve (see
+  // Game.ultDurationForWave) — 5s at wave 1, ramping linearly up to 30s by wave 20 and holding
+  // there for the rest of the run — and every one grants full immunity for 3s after it ends
+  // (ultImmuneT) — Cloud/Ranger/Fox ALSO get full immunity for the move's own duration (ultImmune),
+  // while Chopper/Dudu instead only take 1/4 damage during theirs (ultReduced), a tankier-not-
+  // invincible window per their brief. The cooldown floor is always half the current duration (see
+  // Game.ultCooldownForWave — this is what pins a 20s duration to a 10s cooldown), so a shorter,
+  // weaker early-game burst comes back around quickly while the full 30s version late-game still
+  // can't be chained back-to-back.
+  ultDurationMin: 5, ultDurationMax: 30, ultDurationMaxWave: 20, ultImmunePostTime: 3, ultReducedMul: 0.25,
   ultMeterPerKill: 5, ultMeterPerHeadshot: 8, ultMeterPerSpecialKill: 18,
-  ultCooldownBase: 15, ultCooldownPerWave: 2.2, ultCooldownMax: 90,
   // Cloud & Green Ranger share one move: a continuous spinning whirlwind attack for the whole
   // 30s, fully automatic (no FIRE needed). Camera is left exactly as the player has it — no
   // forced third-person — and the caster's own body does not spin; only the orbiting energy
@@ -4109,7 +4111,7 @@ const Player = {
     if (this.char !== char) { this.char = char; this.buildModels(); this.buildBody(); }
     this.x = 0; this.z = 0; this.yaw = rnd(0, TAU); this.pitch = 0; this.maxHp = char.hp; this.hp = char.hp; this.alive = true; this.speed = char.speed;
     this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
-    this.ultCharge = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0;
+    this.ultCharge = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0; this.ultDurationUsed = 0;
     this.ultImmune = false; this.ultImmuneT = 0; this.ultReduced = false; this.ultInvisible = false;
     this.ultPreCamMode = null; this.whirlPulseT = 0; this.whirlSpinAngle = 0;
     Ultimates.cleanup(this);
@@ -4463,8 +4465,9 @@ const Player = {
     if (!this.alive || this.ultActive || this.downed) { Audio.empty(); return; }
     if (this.ultCharge < 100 || this.ultCooldownT > 0) { Audio.empty(); return; }
     this.ultCharge = 0;
-    this.ultCooldownT = clamp(CFG.ultCooldownBase + Game.wave * CFG.ultCooldownPerWave, CFG.ultCooldownBase, CFG.ultCooldownMax);
-    this.ultActive = true; this.ultActiveT = CFG.ultDuration;
+    this.ultDurationUsed = Game.ultDurationForWave(Game.wave);
+    this.ultCooldownT = Game.ultCooldownForWave(Game.wave);
+    this.ultActive = true; this.ultActiveT = this.ultDurationUsed;
     Ultimates.start(this);
     HUD.dirty = true;
   },
@@ -4779,7 +4782,7 @@ const Ultimates = {
     // pathing nudge — Zombies.update() still runs its own AI/collision right after this every
     // frame, this just adds an extra shove on top of it). Stops each zombie just outside the
     // whirlwind's own hit radius so the knockback pulse below still has room to fling it back out.
-    const elapsed = CFG.ultDuration - P.ultActiveT;
+    const elapsed = P.ultDurationUsed - P.ultActiveT;
     if (elapsed <= CFG.ultVortexPullWindow) {
       const pull = CFG.ultVortexPullSpeed * dt;
       for (const zb of Zombies.pool) {
@@ -6205,6 +6208,14 @@ const Game = {
   // point the arena itself finishes growing (arenaGrowWaves: 30), so station count and map size
   // stop climbing together instead of one outrunning the other.
   ammoStationCountForWave(w) { return clamp(1 + Math.floor((w - 1) / 4), 1, CFG.ammoStationMax); },
+  // ultimate duration: linear from ultDurationMin (wave 1) to ultDurationMax (ultDurationMaxWave),
+  // holding at the max from there on — see Player.tryUltimate/Ultimates.tickWhirlwind.
+  ultDurationForWave(w) {
+    return clamp(lerp(CFG.ultDurationMin, CFG.ultDurationMax, (w - 1) / (CFG.ultDurationMaxWave - 1)), CFG.ultDurationMin, CFG.ultDurationMax);
+  },
+  // cooldown is always half the current duration — this is what pins a 20s duration to a 10s
+  // cooldown, and it scales the same way at every other wave without a second curve to keep in sync.
+  ultCooldownForWave(w) { return this.ultDurationForWave(w) / 2; },
   beginWave() {
     this.wave++; const w = this.wave;
     this.growArenaToWave(w);
