@@ -352,6 +352,15 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .pent.me .dot{background:#ffd83b;box-shadow:0 0 8px rgba(255,216,59,.8);}
 .pent .pn{flex:1 1 auto;font-family:var(--hud-font);font-size:14px;letter-spacing:.08em;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pent .pr{font-family:var(--hud-font);font-size:10px;letter-spacing:.2em;color:var(--dim);}
+/* lobby character switcher (see Net.requestCharChange) — a row of tappable chips, one per
+   AVATARS entry: .mine highlights your current pick, .taken greys out one someone else in the
+   room already holds (its label shows who) and blocks the click entirely. */
+.lobbyChars{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:460px;margin:6px auto 4px;}
+.lchar{font-family:var(--hud-font);font-size:11px;letter-spacing:.08em;padding:7px 11px;border-radius:8px;
+  border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:var(--sand);cursor:pointer;
+  transition:border-color .15s,background .15s;}
+.lchar.mine{border-color:var(--accent2);color:#fff;background:rgba(255,255,255,.08);box-shadow:0 0 10px var(--glow);}
+.lchar.taken{opacity:.4;cursor:not-allowed;}
 /* post-run results — a 2x2 quadrant grid, one card per player (real or filler bot), each with
    their own kill count next to the run's shared score. #goCoop overrides its own .plist (flex
    column, used by the lobby roster) by ID specificity, no markup change needed. */
@@ -702,6 +711,8 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="codebig" id="lobbyCode">----</div>
       <div class="help" id="lobbyHint" style="margin-top:6px">Share this code &mdash; or your friends can pick the run out of the list.</div>
       <div class="plist" id="lobbyPlayers"></div>
+      <div class="tag" style="margin-top:10px">YOUR CHARACTER — TAP TO SWITCH</div>
+      <div class="lobbyChars" id="lobbyChars"></div>
       <div id="lobbyTimer" class="best"></div>
       <div id="lobbyStatus" class="best"></div>
       <div class="row">
@@ -803,7 +814,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.63.0';
+const GAME_VERSION = 'v1.64.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -5081,7 +5092,7 @@ const HUD = {
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
       'testModePopup', 'btnTestModeYes', 'btnTestModeNo',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
-      'btnLeaders', 'btnLeadersBack', 'btnLobbyStart', 'btnLobbyLeave', 'lobbyCode', 'lobbyPlayers', 'lobbyStatus', 'lobbyHint', 'lobbyTimer',
+      'btnLeaders', 'btnLeadersBack', 'btnLobbyStart', 'btnLobbyLeave', 'lobbyCode', 'lobbyPlayers', 'lobbyChars', 'lobbyStatus', 'lobbyHint', 'lobbyTimer',
       'startVotePopup', 'startVoteText', 'btnStartVoteYes', 'btnStartVoteNo',
       'btnBackPause', 'btnBackGameover', 'btnBackOnline', 'btnBackLobby', 'btnBackLeaders',
       'coop', 'netPill', 'radar', 'downed', 'downedBar', 'downedSub', 'revive', 'reviveText', 'reviveBar', 'lbWrap', 'lbStatus', 'goCoop', 'goRoom', 'goTestNote',
@@ -6997,7 +7008,13 @@ const Net = {
       let peer = this.peers[id], isNew = false, changed = false;
       if (!peer) {
         if (this.roomSize() >= NET.MAX) { this.send({ k: 'full', to: id }); return; }
-        peer = this.mkPeer(id, m.n, m.ch); this.peers[id] = peer; isNew = true;
+        // two different players can't both be the same champion in one room — if what they asked
+        // for is already held by the host or another peer, silently hand them the next free one
+        // instead of rejecting the join outright, but always tell them (see 'charReassigned' below)
+        // so their own screen never quietly disagrees with what everyone else sees them as.
+        const requested = (m.ch && AVATARS[m.ch]) ? m.ch : 'cloud';
+        const assigned = this.charAvailable(requested, id) ? requested : this.firstFreeChar(id);
+        peer = this.mkPeer(id, m.n, assigned); this.peers[id] = peer; isNew = true;
         HUD.toast(peer.name + ' JOINED', 2.6); Audio.ding();
         this.refreshLobby(); this.beacon();
         // a real player always displaces a filler bot rather than the two ever coexisting past
@@ -7006,6 +7023,7 @@ const Net = {
         // a new face changes who "everyone" means — restart the confirmation rather than let a
         // vote finish without them having any say in it
         if (this.startVote) this.cancelStartVote('A NEW SURVIVOR JOINED');
+        if (assigned !== requested) this.send({ k: 'charReassigned', to: id, ch: assigned });
       } else {
         // a rejoin — a reconnect after a dropped connection, or the client resending 'join' after
         // picking a different character and re-entering the same room code before the match
@@ -7016,8 +7034,10 @@ const Net = {
         // pick), that's exactly how someone ends up looking like Cloud despite choosing someone
         // else. Refresh both fields here instead of only ever setting them once in mkPeer().
         const newName = (String(m.n || 'SURVIVOR').slice(0, 14) || 'SURVIVOR').toUpperCase();
-        const newChar = (m.ch && AVATARS[m.ch]) ? m.ch : peer.char;
-        if (peer.name !== newName || peer.char !== newChar) { peer.name = newName; peer.char = newChar; changed = true; this.refreshLobby(); }
+        const requested = (m.ch && AVATARS[m.ch]) ? m.ch : peer.char;
+        const assigned = this.charAvailable(requested, id) ? requested : peer.char;
+        if (peer.name !== newName || peer.char !== assigned) { peer.name = newName; peer.char = assigned; changed = true; this.refreshLobby(); }
+        if (assigned !== requested) this.send({ k: 'charReassigned', to: id, ch: assigned });
       }
       peer.last = this.clock;
       this.send({ k: 'welcome', to: id, h: this.id, seed: this.seed, host: this.displayName(), st: this.started ? 'playing' : 'lobby', roster: this.roster(), t: this.lobbyT });
@@ -7027,7 +7047,18 @@ const Net = {
     }
     const peer = this.peers[id]; if (!peer) return;
     peer.last = this.clock;
-    if (m.k === 'p') this.applyPeerState(peer, m);
+    // lobby-only character switch (see #lobbyChars/Net.requestCharChange) — a peer already in the
+    // room asking to become a different champion before the match starts. Same exclusivity check
+    // as a fresh join, but this one CAN be flatly denied (unlike a join, there's no "fall back to
+    // something free" here — the player is choosing, not just arriving) since they keep whatever
+    // they already had either way.
+    if (m.k === 'chChar') {
+      if (AVATARS[m.ch] && peer.char !== m.ch) {
+        if (this.charAvailable(m.ch, id)) { peer.char = m.ch; this.refreshLobby(); this.send({ k: 'roster', roster: this.roster() }); }
+        else this.send({ k: 'chCharDenied', to: id, ch: m.ch });
+      }
+    }
+    else if (m.k === 'p') this.applyPeerState(peer, m);
     else if (m.k === 'bye') this.dropPeer(id, ' LEFT THE RUN');
     else if (m.k === 'hit') this.applyRemoteHit(peer, m);
     else if (m.k === 'rev') this.applyRevive(m.to, peer);
@@ -7042,6 +7073,38 @@ const Net = {
     // has to land on the real zombie object to mean anything for the rest of the squad, or to
     // ever pay off in onZombieKilled's foxFrozenBy check
     else if (m.k === 'ultStun') Ultimates._applyStunAuthoritative(m.x, m.z, m.r, m.sec, m.by || null);
+  },
+  // true if nobody ELSE already in the room (host included) holds charId — excludeId is whichever
+  // room member this check is FOR, so a member's own current pick never blocks itself. Host-only:
+  // only the host ever has the full roster to check against.
+  charAvailable(charId, excludeId) {
+    if (!AVATARS[charId]) return false;
+    if (excludeId !== this.id && Game.charId === charId) return false;
+    for (const k in this.peers) { if (k !== excludeId && this.peers[k].char === charId) return false; }
+    return true;
+  },
+  // first avatar nobody else in the room already holds. NET.MAX (4) is always below AVATARS' own
+  // count (5), so this can never actually fail to find one — 'cloud' is just a last-resort floor.
+  firstFreeChar(excludeId) {
+    for (const cid in AVATARS) if (this.charAvailable(cid, excludeId)) return cid;
+    return 'cloud';
+  },
+  // lobby-only character switch (see #lobbyChars), called the same way whether this machine is
+  // the host (applies immediately, no round trip needed) or a client (the host is authoritative —
+  // optimistically apply it here too so the UI feels instant, then roll back on 'chCharDenied').
+  requestCharChange(charId) {
+    if (!AVATARS[charId] || charId === Game.charId || this.started) return;
+    if (this.mode === 'host') {
+      if (!this.charAvailable(charId, this.id)) { HUD.toast('THAT CHARACTER IS ALREADY TAKEN', 2.4); return; }
+      Game.selectChar(charId); this.refreshLobby();
+      if (this.roomSize() > 1) this.send({ k: 'roster', roster: this.roster() });
+    } else if (this.mode === 'client') {
+      this._pendingChar = Game.charId;
+      Game.selectChar(charId); this.refreshLobby();
+      this.send({ k: 'chChar', id: this.id, ch: charId });
+    } else {
+      Game.selectChar(charId); // solo, not in any room yet — just a normal character-select click
+    }
   },
   mkPeer(id, name, ch) {
     const self = this;
@@ -7192,7 +7255,21 @@ const Net = {
       if (m.st !== 'playing') this.showLobby();
       return;
     }
+    // the character sent with our own 'join' collided with someone already in the room — the host
+    // picked something free instead, so this machine's own Game.charId has to catch up to match
+    // (otherwise this player would see themselves as one champion while everyone else's screen,
+    // built from the host's roster, shows them as whatever the host actually assigned)
+    if (m.k === 'charReassigned') {
+      Game.selectChar(m.ch); this.refreshLobby();
+      HUD.toast('YOUR CHARACTER WAS TAKEN — SWITCHED TO ' + (AVATARS[m.ch] ? AVATARS[m.ch].label : m.ch.toUpperCase()), 3.2);
+      return;
+    }
     if (!this.inRoom) return;
+    if (m.k === 'chCharDenied') {
+      if (this._pendingChar) { Game.selectChar(this._pendingChar); this._pendingChar = null; this.refreshLobby(); }
+      HUD.toast('THAT CHARACTER IS ALREADY TAKEN', 2.4);
+      return;
+    }
     if (m.k === 'go') { this.started = true; this.startVote = null; this.hideStartVotePopup(); Game.start(m.seed != null ? m.seed : this.seed); return; }
     if (m.k === 'roster') { this.applyRoster(m.roster); this.refreshLobby(); return; }
     if (m.k === 'lobbyT') { this.lobbyT = m.t || 0; this.refreshLobby(); return; }
@@ -7768,6 +7845,10 @@ const Net = {
     DOM.inpCode.addEventListener('keydown', function (e) { if (e.key === 'Enter') { Audio.unlock(); self.join(DOM.inpCode.value); } });
     DOM.btnLobbyStart.addEventListener('click', function () { Audio.unlock(); self.requestInstantStart(); });
     DOM.btnLobbyLeave.addEventListener('click', function () { self.leave(); self.openOnline(); });
+    if (DOM.lobbyChars) DOM.lobbyChars.addEventListener('click', function (e) {
+      const el = e.target.closest('.lchar'); if (!el || el.classList.contains('taken')) return;
+      Audio.unlock(); self.requestCharChange(el.dataset.char);
+    });
     DOM.btnLeaders.addEventListener('click', function () { Board.open(); });
     DOM.btnLeadersBack.addEventListener('click', function () { Board.close(); });
     DOM.btnBackLeaders.addEventListener('click', function () { Board.close(); });
@@ -7800,12 +7881,25 @@ const Net = {
     if (!DOM.lobbyPlayers) return;
     const host = this.mode === 'host';
     // the host is already in `peers` on a client, so it must not be prepended a second time
-    const rows = [{ id: this.id, name: this.displayName(), me: true, host: host }];
-    for (const k in this.peers) rows.push({ id: k, name: this.peers[k].name, me: false, host: k === this.hostId });
+    const rows = [{ id: this.id, name: this.displayName(), me: true, host: host, ch: Game.charId }];
+    for (const k in this.peers) rows.push({ id: k, name: this.peers[k].name, me: false, host: k === this.hostId, ch: this.peers[k].char });
     DOM.lobbyPlayers.innerHTML = rows.map(function (r) {
+      const av = AVATARS[r.ch];
       return '<div class="pent' + (r.me ? ' me' : '') + '"><span class="dot"></span><span class="pn">' +
-        Net.esc(r.name) + '</span><span class="pr">' + (r.host ? 'HOST' : 'SURVIVOR') + '</span></div>';
+        Net.esc(r.name) + '</span><span class="pr">' + (av ? av.short + ' · ' : '') + (r.host ? 'HOST' : 'SURVIVOR') + '</span></div>';
     }).join('');
+    // your own switchable character row (see Net.requestCharChange) — greys out and blocks
+    // whatever any OTHER row above already claimed, always leaves your own current pick clickable
+    if (DOM.lobbyChars) {
+      const takenBy = {};
+      for (const k in this.peers) takenBy[this.peers[k].char] = this.peers[k].name;
+      DOM.lobbyChars.innerHTML = Object.keys(AVATARS).map(function (cid) {
+        const av = AVATARS[cid], mine = Game.charId === cid, taken = !mine && takenBy[cid];
+        const cls = 'lchar' + (mine ? ' mine' : '') + (taken ? ' taken' : '');
+        const label = taken ? av.short + ' · ' + Net.esc(takenBy[cid]) : av.short;
+        return '<div class="' + cls + '" data-char="' + cid + '">' + label + '</div>';
+      }).join('');
+    }
     // countdown to the automatic (no-confirmation-needed) start
     if (DOM.lobbyTimer) {
       const remain = Math.max(0, NET.LOBBY_AUTOSTART - this.lobbyT);
