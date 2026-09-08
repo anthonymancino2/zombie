@@ -803,7 +803,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.61.0';
+const GAME_VERSION = 'v1.62.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -829,7 +829,7 @@ const CFG = {
   // wave-30 zombie count (~300) stays pinned to the old ~4.28x-from-58 density curve, or wave 30
   // would try to field over a thousand zombies.
   maxZombies: 300, bullets: 96, grenades: 8, chainFx: 12, particles: 1800, floaties: 48, pickups: 24, decals: 40, explosions: 5,
-  zombieBaseHp: 60, zombieBaseSpeed: 2.35, countBase: 6,
+  zombieBaseHp: 60, zombieBaseSpeed: 2.35, countBase: 12, // 2x the original round-1 count (6); every later wave scales up from here by the same countMul curve
   countMul: 1.25, speedMul: 1.05, hpMul: 1.15,
   ptsHit: 10, ptsKill: 100, ptsHead: 25,
   // individual score (see Game.awardScore) is separate from the pooled team points above — a
