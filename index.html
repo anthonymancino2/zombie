@@ -437,6 +437,13 @@ h1.title em{font-style:normal;color:var(--accent2);}
 #revive .rt{font-family:var(--hud-font);font-size:14px;letter-spacing:.2em;color:#5dff7a;text-shadow:0 0 14px rgba(93,255,122,.7);}
 #revive .rbar{height:7px;width:170px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.18);border-radius:4px;overflow:hidden;margin:6px auto 0;}
 #revive .rbar i{display:block;height:100%;background:#5dff7a;transform-origin:left;transform:scaleX(0);}
+/* ammo refill station channel meter — same layout as #revive, sat lower so the two can never
+   overlap on the rare chance both somehow show at once, tinted amber to match the ammo icon */
+#ammoStation{position:absolute;left:50%;top:66%;transform:translateX(-50%);text-align:center;pointer-events:none;display:none;}
+#ammoStation.show{display:block;}
+#ammoStation .ast{font-family:var(--hud-font);font-size:13px;letter-spacing:.2em;color:#ffb040;text-shadow:0 0 14px rgba(255,176,64,.7);}
+#ammoStation .asbar{height:7px;width:170px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.18);border-radius:4px;overflow:hidden;margin:6px auto 0;}
+#ammoStation .asbar i{display:block;height:100%;background:#ffb040;transform-origin:left;transform:scaleX(0);}
 
 /* boss bar + hunter pin. The bar sits under the toast rather than beside the corner clusters,
    which is the only band of the top strip that is free in both orientations. */
@@ -565,6 +572,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     </div>
     <div id="downed"><div class="dt">YOU ARE DOWN</div><div class="ds" id="downedSub">HOLD ON — A TEAMMATE CAN REVIVE YOU</div><div class="dbar"><i id="downedBar"></i></div></div>
     <div id="revive"><div class="rt" id="reviveText">REVIVING</div><div class="rbar"><i id="reviveBar"></i></div></div>
+    <div id="ammoStation"><div class="ast" id="ammoStationText">REFILLING AMMO</div><div class="asbar"><i id="ammoStationBar"></i></div></div>
     <div id="boss"><div class="bn" id="bossName">TANK</div><div class="bb"><i id="bossBar"></i></div></div>
     <div id="pinned"><div class="pt">PINNED!</div><div class="ps" id="pinnedSub">MASH FIRE · SWIPE TO THROW IT OFF</div><div class="pb"><i id="pinnedBar"></i></div></div>
     <div id="fpsTag"></div>
@@ -795,7 +803,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.57.0';
+const GAME_VERSION = 'v1.58.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -853,6 +861,15 @@ const CFG = {
   healthKitMax: 3, healthKitHeal: 50, healthKitSpawnMin: 20, healthKitSpawnMax: 35, healthKitCap: 2,
   // coop: how long you bleed out on the sand, and what it costs a teammate to pick you back up
   downTime: 45, reviveTime: 3.5, reviveRange: 2.4, reviveHp: 0.4,
+  // ammo refill stations: channel near one (same idea as reviving a teammate) and every owned
+  // weapon's mag+reserve fills toward full over ammoStationFillTime seconds, in ammoStationTick
+  // chunks — walk away early and whatever fraction landed by then simply stays banked, nothing is
+  // lost or rolled back. Station count is a pure function of wave (see Game.ammoStationCountForWave),
+  // capped at ammoStationMax and revealed the same "pure function, zero network sync" way arena
+  // growth already works (see Game.growArenaToWave/AmmoStations.ensureCount) — positions themselves
+  // are pre-generated once per match in World.generate (World.ammoStationSpots) so every coop
+  // machine reveals the exact same 8 spots without a single network message.
+  ammoStationRange: 2.6, ammoStationFillTime: 6, ammoStationTick: 0.5, ammoStationMax: 8,
   // shield: a regenerating buffer in front of HP, same idea for every survivor (player, peer, or
   // bot) — absorbs damage first, stops regenerating the moment something lands, then refills
   // over shieldRegenTime once shieldRegenDelay has passed with nothing new taken.
@@ -2288,6 +2305,25 @@ const World = {
       this.setInst(this.rockMesh, ri++, x, -s * 0.25, z, rng() * TAU, s, s, srnd(0.72, 1.18));
     }
     this.rockMesh.count = ri; this.rockMesh.instanceMatrix.needsUpdate = true;
+    // ---- ammo refill station spots: all CFG.ammoStationMax of them are placed now, spread across
+    // the WHOLE eventual map with the golden angle for even coverage — only the first N are ever
+    // revealed at once as the wave count climbs (see Game.ammoStationCountForWave/AmmoStations.
+    // ensureCount). Same seeded rng() as everything else above, so every coop machine computes the
+    // identical 8 spots with zero network sync, same trick arena growth itself already relies on.
+    this.ammoStationSpots = [];
+    const GA = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < CFG.ammoStationMax; i++) {
+      // the very first slot is biased close enough in that it already sits inside the tiny
+      // wave-1 arena (arenaR0: 14.5) rather than waiting for wave 2's growth to reach it
+      const bandR = 7 + (RA - 16) * ((i + 0.5) / CFG.ammoStationMax), baseA = i * GA;
+      let spot = null;
+      for (let t = 0; t < 40 && !spot; t++) {
+        const a = baseA + (t ? rng() * 0.6 - 0.3 : 0), r = bandR + (t ? rng() * 6 - 3 : 0);
+        const x = Math.cos(a) * r, z = Math.sin(a) * r;
+        if (this.freeSpot(x, z, 1.6)) spot = { x: x, z: z };
+      }
+      this.ammoStationSpots.push(spot || { x: Math.cos(baseA) * bandR, z: Math.sin(baseA) * bandR });
+    }
     this.rebuildGrid();
     this.flowX = 1e9; this.flowZ = 1e9;
   },
@@ -3563,6 +3599,61 @@ const Pickups = {
   }
 };
 
+/* ------------------------------------------------------------------ ammo refill stations
+   Fixed map structures (not consumables) — stand within CFG.ammoStationRange and every owned
+   weapon's mag+reserve fills toward full over CFG.ammoStationFillTime seconds (see
+   Player.updateAmmoStation). Positions are pre-generated once per match in World.generate
+   (World.ammoStationSpots); only the count actually revealed changes over the run, via
+   ensureCount() below, called from Game.growArenaToWave — no network message needed since both
+   the position list and the reveal count are pure, deterministic functions every machine computes
+   identically (same trick arena growth itself already uses). */
+const AmmoStations = {
+  pool: [], active: 0,
+  init() {
+    const crateMat = new THREE.MeshStandardMaterial({ color: 0x5a4a2a, metalness: 0.08, roughness: 0.85 });
+    const bandMat = new THREE.MeshStandardMaterial({ color: 0x2c2410, metalness: 0.3, roughness: 0.55 });
+    const ringGeo = new THREE.RingGeometry(0.95, 1.25, 28); ringGeo.rotateX(-Math.PI / 2);
+    const beamGeo = new THREE.CylinderGeometry(0.3, 0.7, 4.2, 12, 1, true); beamGeo.translate(0, 2.1, 0);
+    for (let i = 0; i < CFG.ammoStationMax; i++) {
+      const grp = new THREE.Group();
+      grp.add(box(1.1, 0.62, 1.1, crateMat, 0, 0.31, 0), box(1.16, 0.09, 1.16, bandMat, 0, 0.16, 0), box(1.16, 0.09, 1.16, bandMat, 0, 0.5, 0));
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.icons.ammo, transparent: true, depthWrite: false, fog: false }));
+      sprite.scale.set(1.0, 1.0, 1); sprite.position.y = 1.5; grp.add(sprite);
+      const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffb040, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      ring.position.y = 0.03; grp.add(ring);
+      const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xffb040, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+      grp.add(beam);
+      grp.visible = false; R.scene.add(grp);
+      this.pool.push({ on: false, x: 0, z: 0, t: rnd(0, 6), grp: grp, sprite: sprite, ring: ring, beam: beam });
+    }
+  },
+  clear() { for (const s of this.pool) { s.on = false; s.grp.visible = false; } this.active = 0; },
+  // (re)applies this match's fixed spots (World.ammoStationSpots) — called once from Game.start(),
+  // right after World.generate() computes them. Everything starts hidden; ensureCount() reveals.
+  applyLayout() {
+    const spots = World.ammoStationSpots || [];
+    for (let i = 0; i < this.pool.length; i++) {
+      const s = this.pool[i], p = spots[i]; if (!s || !p) continue;
+      s.x = p.x; s.z = p.z; s.on = false; s.grp.visible = false; s.grp.position.set(p.x, 0, p.z);
+    }
+    this.active = 0;
+  },
+  ensureCount(n) {
+    n = clamp(n, 0, this.pool.length);
+    for (let i = this.active; i < n; i++) { const s = this.pool[i]; if (!s) break; s.on = true; s.grp.visible = true; }
+    this.active = Math.max(this.active, n);
+  },
+  update(dt) {
+    for (let i = 0; i < this.active; i++) {
+      const s = this.pool[i]; if (!s.on) continue;
+      s.t += dt; s.ring.rotation.y = s.t * 1.2; s.ring.scale.setScalar(1 + Math.sin(s.t * 2.4) * 0.06);
+      s.beam.material.opacity = 0.1 + Math.sin(s.t * 2) * 0.05;
+      s.sprite.position.y = 1.5 + Math.sin(s.t * 1.6) * 0.06;
+    }
+    Player.updateAmmoStation(dt);
+  }
+};
+
 /* ------------------------------------------------------------------ explosions (fireball + shockwave + light) */
 const Explosions = {
   pool: [], lights: [],
@@ -3977,6 +4068,7 @@ const Player = {
   // benefits (see Game.onBulletHit/awardScore/addPoints); noreload/infammo/invincible/rapidfire/
   // fastmove already worked this way since they only ever get read inside Player's own methods
   insta: 0, dbl: 0,
+  stationTickT: 0,
   stats: { shots: 0, hits: 0, kills: 0, head: 0, score: 0 },
   vm: { root: null, models: [], rootL: null, modelsL: [], flash: null, flashT: 0 },
   body: null, bodyAnim: 0, _bodyGen: 0,
@@ -4024,7 +4116,7 @@ const Player = {
     this.downed = false; this.downT = 0; this.spectating = false;
     this.pinnedBy = null; this.escape = 0; this.escSend = 0;
     this.stamina = 1; this.sprintOn = false; this.sprinting = false; this.staminaHold = 0;
-    this.insta = 0; this.dbl = 0;
+    this.insta = 0; this.dbl = 0; this.stationTickT = 0;
     // squadmates would otherwise all boot up inside each other at the origin
     if (Net.mode !== 'off') { const a = rnd(0, TAU); this.x = Math.cos(a) * 2.6; this.z = Math.sin(a) * 2.6; }
     this.weapons = WEAPONS.map((def, i) => ({ def: def, owned: i === 0 || Game.testModeActive(), mag: def.mag, reserve: def.reserve }));
@@ -4451,6 +4543,42 @@ const Player = {
     this.spectating = true; Audio.death();
     HUD.toast('YOU BLED OUT — WAITING ON THE SQUAD', 4);
     if (Net.isHost()) Net.checkTeamWipe();
+  },
+  // ammo refill stations: purely local (ammo was never networked in the first place — ammo pickups
+  // already only ever affect the client that grabbed one), so this needs no host/client branching
+  // at all. Grants land in discrete CFG.ammoStationTick chunks (same pattern as the DoT ticks in
+  // Zombie.update) rather than a smooth per-frame fraction, so mag/reserve stay plain integers —
+  // walking away mid-fill keeps whatever whole-chunk progress already landed, nothing is reverted.
+  updateAmmoStation(dt) {
+    if (!this.alive || this.downed) { if (DOM.ammoStation) DOM.ammoStation.classList.remove('show'); return; }
+    let best = null, bd = CFG.ammoStationRange * CFG.ammoStationRange;
+    const pool = AmmoStations.pool, n = AmmoStations.active;
+    for (let i = 0; i < n; i++) {
+      const s = pool[i]; if (!s.on) continue;
+      const dx = s.x - this.x, dz = s.z - this.z, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = s; }
+    }
+    if (!best) { if (DOM.ammoStation) DOM.ammoStation.classList.remove('show'); return; }
+    this.stationTickT -= dt;
+    if (this.stationTickT <= 0) {
+      this.stationTickT += CFG.ammoStationTick;
+      const frac = CFG.ammoStationTick / CFG.ammoStationFillTime;
+      let any = false;
+      for (const w of this.weapons) {
+        if (!w.owned) continue;
+        if (w.mag < w.def.mag) { w.mag = Math.min(w.def.mag, w.mag + Math.max(1, Math.round(w.def.mag * frac))); any = true; }
+        if (w.def.maxReserve !== Infinity && w.reserve < w.def.maxReserve) { w.reserve = Math.min(w.def.maxReserve, w.reserve + Math.max(1, Math.round(w.def.maxReserve * frac))); any = true; }
+      }
+      if (any) HUD.dirty = true;
+    }
+    if (DOM.ammoStation) {
+      const w = this.weapon(), infR = w.def.maxReserve === Infinity;
+      const maxTot = w.def.mag + (infR ? 0 : w.def.maxReserve), curTot = w.mag + (infR ? 0 : w.reserve);
+      const pct = maxTot > 0 ? clamp(curTot / maxTot, 0, 1) : 1;
+      DOM.ammoStation.classList.add('show');
+      DOM.ammoStationText.textContent = pct >= 0.999 ? 'AMMO FULL' : 'REFILLING AMMO';
+      DOM.ammoStationBar.style.transform = 'scaleX(' + pct.toFixed(3) + ')';
+    }
   },
   updateViewmodel(dt) {
     const vm = this.vm, root = vm.root, w = this.weapon(), def = w.def;
@@ -4964,7 +5092,7 @@ const HUD = {
       'startVotePopup', 'startVoteText', 'btnStartVoteYes', 'btnStartVoteNo',
       'btnBackPause', 'btnBackGameover', 'btnBackOnline', 'btnBackLobby', 'btnBackLeaders',
       'coop', 'netPill', 'radar', 'downed', 'downedBar', 'downedSub', 'revive', 'reviveText', 'reviveBar', 'lbWrap', 'lbStatus', 'goCoop', 'goRoom', 'goTestNote',
-      'boss', 'bossName', 'bossBar', 'pinned', 'pinnedSub', 'pinnedBar'
+      'boss', 'bossName', 'bossBar', 'pinned', 'pinnedSub', 'pinnedBar', 'ammoStation', 'ammoStationText', 'ammoStationBar'
     ].forEach(id => DOM[id] = $(id));
     DOM.lowhp.style.backgroundImage = 'url(' + TEX.lowhpUrl + ')';
   },
@@ -5993,6 +6121,7 @@ const Game = {
     // grows wave-by-wave (see growArenaToWave), unlocking pre-placed structures as it goes.
     CFG.arenaR = CFG.arenaRMax;
     World.generate(this.seed);
+    AmmoStations.applyLayout();
     CFG.arenaR = CFG.arenaR0;
     World.layoutBoundary(CFG.arenaR); World.rebuildGrid();
     // pull the haze in to match — see fogForR: without this the wave-1 pen sits inside fog tuned
@@ -6016,6 +6145,7 @@ const Game = {
     HUD.last = {}; HUD.dirty = true; HUD.showScreen(null); HUD.showHud(true); HUD.refreshOptions();
     DOM.joyHint.classList.toggle('hide', !('ontouchstart' in window)); DOM.dmg.style.opacity = '0'; DOM.lowhp.classList.remove('on');
     DOM.downed.classList.remove('show'); DOM.revive.classList.remove('show'); DOM.pinned.classList.remove('show'); DOM.boss.classList.remove('show');
+    DOM.ammoStation.classList.remove('show');
     this.interT = 4; HUD.banner('GET READY', 'THE SAND IS HUNGRY', false);
     this.say('start', true); World.computeFlow(0, 0);
     if (!Input.touchSeen && $('c').requestPointerLock && !Input.pointerLocked) { try { $('c').requestPointerLock(); } catch (e) { } }
@@ -6043,6 +6173,7 @@ const Game = {
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
     Director.reset(); Bots.clear(); Player.pinnedBy = null; Player.escape = 0;
     DOM.boss.classList.remove('show'); DOM.pinned.classList.remove('show'); DOM.revive.classList.remove('show'); this.hideMidScores();
+    DOM.ammoStation.classList.remove('show'); AmmoStations.clear();
     if (Player.body) { Player.body.g.visible = false; Player.body.shadow.visible = false; }
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
     try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { }
@@ -6077,7 +6208,13 @@ const Game = {
       CFG.arenaR = r; World.rebuildGrid(); World.layoutBoundary(r);
       applyDrawDistance(r);
     }
+    AmmoStations.ensureCount(this.ammoStationCountForWave(w));
   },
+  // 1 station from the very first wave, +1 every 4 waves after that (3 by wave 9, matching the
+  // requested "3 by round 10"), capped at ammoStationMax — reached right around wave 29, the same
+  // point the arena itself finishes growing (arenaGrowWaves: 30), so station count and map size
+  // stop climbing together instead of one outrunning the other.
+  ammoStationCountForWave(w) { return clamp(1 + Math.floor((w - 1) / 4), 1, CFG.ammoStationMax); },
   beginWave() {
     this.wave++; const w = this.wave;
     this.growArenaToWave(w);
@@ -6383,6 +6520,7 @@ const Game = {
     if (this.state === 'gameover' || this.state === 'dying') return;
     this.state = 'dying'; this.deathT = 0; this.deathK = 0; this.timeScale = 0.5;
     DOM.lowhp.classList.remove('on'); DOM.downed.classList.remove('show'); DOM.revive.classList.remove('show');
+    DOM.ammoStation.classList.remove('show');
     this.recordBest();
     Input.reset();
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
@@ -6492,7 +6630,7 @@ const Game = {
     else World.updateFlow(P.x, P.z, dt);
     P.update(dt);
     Bots.update(dt);          // after the player, so a bot's pickup text wins the downed line
-    Zombies.update(dt); Bullets.update(dt); Grenades.update(dt); ChainFX.update(dt); Pickups.update(dt); Explosions.update(dt); Particles.update(dt); Floaties.update(dt);
+    Zombies.update(dt); Bullets.update(dt); Grenades.update(dt); ChainFX.update(dt); Pickups.update(dt); AmmoStations.update(dt); Explosions.update(dt); Particles.update(dt); Floaties.update(dt);
     Dust.update(dt, P.x, P.z);
     HUD.update(dt);
   },
@@ -7834,7 +7972,7 @@ function boot() {
   try {
     buildTextures(); R.init(); World.init(); Particles.init(); Dust.init(); Floaties.init(); Decals.init(); Bullets.init();
     Grenades.init(); ChainFX.init();
-    Zombies.init(); Pickups.init(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
+    Zombies.init(); Pickups.init(); AmmoStations.init(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
   } catch (e) {
     console.error(e);
     const el = $('loadErr'); el.classList.add('show'); el.querySelector('h3').textContent = 'COULD NOT START THE ARENA'; el.querySelector('p').textContent = 'WebGL may be unavailable on this device. (' + (e && e.message ? e.message : e) + ')';
