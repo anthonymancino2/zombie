@@ -7,8 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1a0f08">
-<meta name="description" content="Dust & Dead — a first-person zombie wave survival shooter set in a sun-baked desert arena. Touch-first, single file, no downloads.">
-<title>Dust &amp; Dead</title>
+<meta name="description" content="Wild West Z — a first-person zombie wave survival shooter set in a sun-baked desert arena. Touch-first, single file, no downloads.">
+<title>Wild West Z</title>
 <!-- App icon: a sun-bleached skull against the desert sun. This inline SVG is the tab icon —
      boot() draws a richer 180px version onto a canvas for the iOS home screen (makeAppIcon). -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a1508'/%3E%3Ccircle cx='32' cy='31' r='23' fill='%23ff7a1a'/%3E%3Ccircle cx='32' cy='31' r='15' fill='%23ffc36b'/%3E%3Cpath d='M2 50c9-5 16 2 30-1s21-6 30-1v17H2z' fill='%238f3c06'/%3E%3Cpath d='M2 57c11-4 18 2 30 0s19-4 30-1v11H2z' fill='%235c2405'/%3E%3Cpath d='M32 9c-11 0-18 7-18 17 0 6 2 11 6 14v6c0 2 2 4 4 4h16c2 0 4-2 4-4v-6c4-3 6-8 6-14 0-10-7-17-18-17z' fill='%23f2e3c4'/%3E%3Cellipse cx='24' cy='26' rx='6' ry='6.6' fill='%23200f04'/%3E%3Cellipse cx='40' cy='26' rx='6' ry='6.6' fill='%23200f04'/%3E%3Ccircle cx='24' cy='27' r='2.1' fill='%23ff5a10'/%3E%3Ccircle cx='40' cy='27' r='2.1' fill='%23ff5a10'/%3E%3Cpath d='M32 31l-3.4 7h6.8z' fill='%23200f04'/%3E%3Cpath d='M25 43h14M29 42v8M35 42v8' stroke='%23200f04' stroke-width='2.4'/%3E%3C/svg%3E">
@@ -581,7 +581,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   <!-- Main menu -->
   <div id="menu" class="screen show">
     <div class="scroll"><div class="panel">
-      <h1 class="title">DUST <em>&amp;</em> DEAD</h1>
+      <h1 class="title">WILD WEST <em>Z</em></h1>
       <div class="tag">DESERT ARENA SURVIVAL</div>
       <div class="netfield" id="nameFieldMenu">
         <label for="inpNameMenu">CALLSIGN</label>
@@ -737,7 +737,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     </div></div>
   </div>
 
-  <div id="rotateBlock"><div class="icon">📱</div><h3>ROTATE YOUR DEVICE</h3><p>DUST &amp; DEAD is landscape only — turn your phone sideways to keep playing.</p></div>
+  <div id="rotateBlock"><div class="icon">📱</div><h3>ROTATE YOUR DEVICE</h3><p>WILD WEST Z is landscape only — turn your phone sideways to keep playing.</p></div>
 
   <!-- confirm before TEST MODE actually goes on — reachable from the main menu or the pause
        menu, so this sits at the top level rather than nested inside either screen -->
@@ -763,7 +763,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
 function DND_MAIN() {
 'use strict';
 /* =====================================================================================
-   DUST & DEAD — Desert Zombie Wave Survival
+   WILD WEST Z — Desert Zombie Wave Survival
    Single-file, touch-first, first-person wave shooter. Three.js (WebGL) renderer,
    procedural textures, Web Audio synthesized SFX, pooled entities, flow-field zombie AI.
    ===================================================================================== */
@@ -803,7 +803,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.60.0';
+const GAME_VERSION = 'v1.61.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -5938,7 +5938,7 @@ const Game = {
     // per-callsign key and override the plain-device defaults loaded above wherever this exact
     // name has its own saved value (see playerPrefKey)
     this.loadPlayerPrefs();
-    const ver = $('verLine'); if (ver) ver.textContent = 'DUST & DEAD ' + GAME_VERSION;
+    const ver = $('verLine'); if (ver) ver.textContent = 'WILD WEST Z ' + GAME_VERSION;
   },
   // Landscape only, enforced rather than just suggested: iOS Safari has no orientation-lock API
   // for a plain web page (screen.orientation.lock throws/no-ops there), so a full-screen block is
