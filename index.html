@@ -270,6 +270,15 @@ h1.title em{font-style:normal;color:var(--accent2);}
 #pause .panel h2{text-shadow:0 0 30px var(--glow),0 0 6px var(--accent),0 4px 2px #000;}
 .statgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px auto 16px;max-width:520px;}
 .stat{background:var(--panel);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px 8px;}
+/* Solo/Coop Challenges: mode-select + level-select tiles, same panel/opt language as the rest of
+   the menu rather than a new visual system */
+.tiertitle{font-family:var(--hud-font);font-size:12px;letter-spacing:.26em;color:var(--dim);margin:14px 0 6px;text-align:left;}
+.levelgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;margin:0 0 4px;}
+.leveltile{background:var(--panel);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:10px 8px;font-family:var(--hud-font);color:#fff;cursor:pointer;touch-action:manipulation;text-align:center;}
+.leveltile .ln{font-size:20px;color:var(--accent2);text-shadow:0 0 8px var(--glow);}
+.leveltile .lt{font-size:11px;letter-spacing:.06em;margin-top:2px;line-height:1.15;min-height:2.3em;}
+.leveltile .la{font-size:9px;letter-spacing:.16em;color:var(--dim);margin-top:4px;text-transform:uppercase;}
+.leveltile.locked{opacity:.4;cursor:default;}
 .stat .v{font-family:var(--hud-font);font-size:28px;color:#fff;text-shadow:0 0 12px var(--glow);}
 .stat .k{font-family:var(--hud-font);font-size:10px;letter-spacing:.22em;color:var(--dim);margin-top:2px;}
 .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:8px;}
@@ -625,6 +634,9 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <button class="bigbtn neon" id="btnOnline">COOP MODE</button>
         <button class="bigbtn secondary" id="btnLeaders">GLOBAL LEADERBOARD</button>
       </div>
+      <div class="row" style="margin-top:10px">
+        <button class="bigbtn secondary" id="btnChallenges">CHALLENGES</button>
+      </div>
       <div class="best" id="bestLine"></div>
       <div class="help">
         <b>Touch:</b> left side = move (joystick) · right side = swipe to look · FIRE button (drag it to aim while shooting) · SPRINT for a burst of speed. Pause → MOVE BUTTONS to drag the controls where your thumbs want them.<br>
@@ -632,6 +644,48 @@ h1.title em{font-style:normal;color:var(--accent2);}
         Shotgun unlocks at wave 3, assault rifle at wave 6. Shoot the red barrels. Grab the glowing drops.
       </div>
       <div class="help" id="verLine" style="opacity:.5"></div>
+    </div></div>
+  </div>
+
+  <!-- Solo/Coop Challenges: mode select -->
+  <div id="modeselect" class="screen">
+    <button class="backbtn" id="btnBackModeselect">← BACK</button>
+    <div class="scroll"><div class="panel">
+      <h1 class="title" style="font-size:clamp(30px,7vw,58px)">CHALLENGES</h1>
+      <div class="tag">30 HAND-BUILT MISSIONS &middot; EACH ONE ITS OWN FIGHT</div>
+      <div class="row" style="margin-top:14px">
+        <button class="bigbtn" id="btnSoloChallenges">SOLO CHALLENGES</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="bigbtn secondary" id="btnCoopChallenges">COOP CHALLENGES</button>
+      </div>
+      <div class="help">Coop Challenges are coming in a future update — Solo Challenges are ready now.</div>
+    </div></div>
+  </div>
+
+  <!-- Solo Challenges: level select -->
+  <div id="levelselect" class="screen">
+    <button class="backbtn" id="btnBackLevelselect">← BACK</button>
+    <div class="scroll"><div class="panel">
+      <h1 class="title" style="font-size:clamp(26px,6vw,46px)">SOLO <em>CHALLENGES</em></h1>
+      <div id="levelselectBody"></div>
+      <div class="row" style="margin-top:10px"><button class="bigbtn secondary" id="btnLevelselectBack">BACK</button></div>
+    </div></div>
+  </div>
+
+  <!-- Solo/Coop Challenges: level result (win or fail) -->
+  <div id="levelresult" class="screen">
+    <div class="scroll"><div class="panel">
+      <h2 id="levelResultTitle">LEVEL COMPLETE</h2>
+      <div class="tag" id="levelResultSub"></div>
+      <div class="row" style="margin-top:14px">
+        <button class="bigbtn" id="btnLevelRetry">RETRY</button>
+        <button class="bigbtn secondary" id="btnLevelNext">NEXT LEVEL</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="bigbtn secondary" id="btnLevelBackSelect">LEVEL SELECT</button>
+        <button class="bigbtn secondary" id="btnLevelMenu">MAIN MENU</button>
+      </div>
     </div></div>
   </div>
 
@@ -826,7 +880,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.66.0';
+const GAME_VERSION = 'v1.67.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -2385,6 +2439,35 @@ const World = {
     br.alive = false; this.setInst(this.barrelMesh, br.idx, br.x, -5, br.z, 0, 0.001, 0.001); this.barrelMesh.instanceMatrix.needsUpdate = true;
     this.unblockBarrel(br); this.flowX = 1e9;
   },
+  // Challenge-level "demolition" targets — reuses the barrel pool/mesh/collision/explosion
+  // pipeline wholesale (same instanced mesh, same World.collide/segHit circle test, same
+  // Game.explodeBarrel blast) rather than a parallel destructible-object system. Scaled up and
+  // tagged isObjective so Game.explodeBarrel can report it to Levels; spare instance slots exist
+  // because World.generate only ever fills ~40-55 of the barrelMesh's 96 capacity (see the nBar
+  // comment above). Not host/client-synced beyond what explodeBarrel already relays (br.idx) —
+  // fine since challenge levels are solo-only through Phase 5.
+  spawnObjectiveBarrel(x, z) {
+    const idx = this.barrels.length; if (idx >= 96) return null;
+    const br = { x: x, z: z, r: 0.85, h: 1.7, alive: true, idx: idx, isObjective: true };
+    this.barrels.push(br);
+    this.setInst(this.barrelMesh, idx, x, 0, z, 0, 1.5, 1.5);
+    this.barrelMesh.count = this.barrels.length; this.barrelMesh.instanceMatrix.needsUpdate = true;
+    this.rebuildGrid(); this.flowX = 1e9;
+    return br;
+  },
+  // called when a challenge level ends/restarts — trims any objective barrels back off the pool
+  // (decorative ones are fully regenerated by World.generate on the next Game.start anyway, but
+  // that also throws away and rebuilds barrelMesh.count/this.barrels, so this only matters for
+  // returning to the menu/retrying without a full regenerate in between)
+  clearObjectiveBarrels() {
+    if (!this.barrels.length) return;
+    const kept = this.barrels.filter(b => !b.isObjective);
+    if (kept.length === this.barrels.length) return;
+    this.barrels = kept;
+    for (let i = 0; i < this.barrels.length; i++) { const b = this.barrels[i]; b.idx = i; this.setInst(this.barrelMesh, i, b.alive ? b.x : b.x, b.alive ? 0 : -5, b.z, 0, b.alive ? 1 : 0.001, b.alive ? 1 : 0.001); }
+    this.barrelMesh.count = this.barrels.length; this.barrelMesh.instanceMatrix.needsUpdate = true;
+    this.rebuildGrid(); this.flowX = 1e9;
+  },
   // destroying a barrel only ever REMOVES a small blocked disc from the grid — the full
   // rebuildGrid() this used to call re-scans every box AND every barrel across the entire 256x256
   // grid plus a fresh reachability BFS over up to 65,536 cells, EVERY single time a barrel dies.
@@ -2976,7 +3059,10 @@ const ZTYPES = {
   // The tank gets its own hp curve: the wave scaling that keeps walkers honest turns a boss into
   // a five-minute magazine dump by wave 15.
   hunter: { hpMul: 0.85, speedMul: 1.45, scale: 0.94, dmg: 10, radius: 0.42, height: 1.86, reach: 1.7, big: false, lean: 0.42, special: true, pounce: true, pts: 3 },
-  tank: { hpMul: 14, hpWave: 1.09, speedMul: 0.78, scale: 2.0, dmg: 40, radius: 0.95, height: 3.9, reach: 3.1, big: true, lean: 0.02, special: true, boss: true, pts: 14 }
+  tank: { hpMul: 14, hpWave: 1.09, speedMul: 0.78, scale: 2.0, dmg: 40, radius: 0.95, height: 3.9, reach: 3.1, big: true, lean: 0.02, special: true, boss: true, pts: 14 },
+  // Challenge-level mini-boss: fast and comparatively fragile rather than a slow damage sponge —
+  // gives Boss Hunt levels a distinct feel from the Tank/Goliath fight without a bespoke model.
+  scout: { hpMul: 3.2, speedMul: 1.95, scale: 0.95, dmg: 14, radius: 0.42, height: 1.86, reach: 1.7, big: false, lean: 0.3, special: true, boss: true, pts: 6 }
 };
 const ZG = {};
 /* Merged box-cluster geometry: many boxes -> ONE BufferGeometry, so a detailed
@@ -3683,6 +3769,66 @@ const AmmoStations = {
     }
     Player.updateAmmoStation(dt);
   }
+};
+
+/* ------------------------------------------------------------------ capture zones (challenge levels)
+   Generalizes AmmoStations' pool-of-pre-placed-markers pattern into occupancy/hold-tracked
+   capture zones for the Domination archetype. "Held" means the player OR an active squad bot is
+   standing inside — so a squad-dependent objective (hold two zones at once) is reachable solo
+   with the 3-bot squad on, same as the design spec assumes; a lone player with the squad off
+   can only ever hold one zone at a time, same as reality. Coop ownership/contest lands in Phase 5. */
+const Zones = {
+  pool: [], MAX: 4,
+  init() {
+    const ringGeo = new THREE.RingGeometry(0.92, 1, 40); ringGeo.rotateX(-Math.PI / 2);
+    const discGeo = new THREE.CircleGeometry(1, 40); discGeo.rotateX(-Math.PI / 2);
+    for (let i = 0; i < this.MAX; i++) {
+      const grp = new THREE.Group();
+      const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      ring.position.y = 0.04; grp.add(ring);
+      const disc = new THREE.Mesh(discGeo, new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide }));
+      disc.position.y = 0.03; grp.add(disc);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.icons.ammo, color: 0xffb347, transparent: true, depthWrite: false, fog: false }));
+      sprite.scale.set(0.9, 0.9, 1); sprite.position.y = 1.4; grp.add(sprite);
+      grp.visible = false; R.scene.add(grp);
+      this.pool.push({ on: false, id: '', x: 0, z: 0, r: 3, name: '', held: false, holdT: 0, vt: rnd(0, 6), grp: grp, ring: ring, disc: disc, sprite: sprite });
+    }
+  },
+  clear() { for (const z of this.pool) { z.on = false; z.grp.visible = false; z.held = false; z.holdT = 0; } },
+  place(id, x, z, r, name) {
+    const z0 = this.pool.find(function (z) { return !z.on; }); if (!z0) return null;
+    z0.on = true; z0.id = id; z0.x = x; z0.z = z; z0.r = r; z0.name = name || id; z0.held = false; z0.holdT = 0;
+    z0.grp.position.set(x, 0, z); z0.ring.scale.set(r, r, 1); z0.disc.scale.set(r, r, 1); z0.grp.visible = true;
+    return z0;
+  },
+  get(id) { for (const z of this.pool) if (z.on && z.id === id) return z; return null; },
+  friendlyCount(zone) {
+    let n = 0;
+    if (Player.alive) { const dx = Player.x - zone.x, dz = Player.z - zone.z; if (dx * dx + dz * dz <= zone.r * zone.r) n++; }
+    if (Bots.on) for (const b of Bots.list) { if (!b.squadActive || b.down || b.out) continue; const dx = b.x - zone.x, dz = b.z - zone.z; if (dx * dx + dz * dz <= zone.r * zone.r) n++; }
+    return n;
+  },
+  update(dt) {
+    for (const z of this.pool) {
+      if (!z.on) continue;
+      z.vt += dt; z.ring.rotation.z = z.vt * 0.6;
+      const held = this.friendlyCount(z) > 0;
+      if (held !== z.held) { z.held = held; const c = held ? 0x5cff8a : 0xffb347; z.ring.material.color.setHex(c); z.disc.material.color.setHex(c); z.sprite.material.color.setHex(c); }
+      z.holdT = held ? z.holdT + dt : 0;
+    }
+  }
+};
+
+/* ------------------------------------------------------------------ demolition targets (challenge levels)
+   Thin tracker around World's objective-barrel pool (see World.spawnObjectiveBarrel) — the actual
+   collision/hit/explosion is 100% the existing barrel pipeline, this just remembers which barrels
+   belong to the active level's Demolition objective so Levels can count how many are left. */
+const Structures = {
+  active: [],
+  clear() { World.clearObjectiveBarrels(); this.active.length = 0; },
+  place(x, z) { const br = World.spawnObjectiveBarrel(x, z); if (br) this.active.push(br); return br; },
+  remaining() { let n = 0; for (const b of this.active) if (b.alive) n++; return n; },
+  destroyedCount() { let n = 0; for (const b of this.active) if (!b.alive) n++; return n; }
 };
 
 /* ------------------------------------------------------------------ explosions (fireball + shockwave + light) */
@@ -5111,7 +5257,10 @@ const HUD = {
       'startVotePopup', 'startVoteText', 'btnStartVoteYes', 'btnStartVoteNo',
       'btnBackPause', 'btnBackGameover', 'btnBackOnline', 'btnBackLobby', 'btnBackLeaders',
       'coop', 'netPill', 'radar', 'downed', 'downedBar', 'downedSub', 'revive', 'reviveText', 'reviveBar', 'lbWrap', 'lbStatus', 'goCoop', 'goRoom', 'goTestNote',
-      'boss', 'bossName', 'bossBar', 'pinned', 'pinnedSub', 'pinnedBar', 'ammoStation', 'ammoStationText', 'ammoStationBar'
+      'boss', 'bossName', 'bossBar', 'pinned', 'pinnedSub', 'pinnedBar', 'ammoStation', 'ammoStationText', 'ammoStationBar',
+      'modeselect', 'levelselect', 'levelresult', 'btnChallenges', 'btnBackModeselect', 'btnSoloChallenges', 'btnCoopChallenges',
+      'levelselectBody', 'btnBackLevelselect', 'btnLevelselectBack', 'levelResultTitle', 'levelResultSub',
+      'btnLevelRetry', 'btnLevelNext', 'btnLevelBackSelect', 'btnLevelMenu'
     ].forEach(id => DOM[id] = $(id));
     DOM.lowhp.style.backgroundImage = 'url(' + TEX.lowhpUrl + ')';
   },
@@ -5148,10 +5297,15 @@ const HUD = {
     // live run clock — the same formatter and matchTime the leaderboard submission uses, so what
     // you watch tick during the run is exactly what gets recorded
     this.set('clock', DOM.matchClock, fmtClock(G.matchTime));
-    // wave / zombies left
-    this.set('wave', DOM.waveNum, 'WAVE ' + G.wave);
-    const left = G.toSpawn + Zombies.activeCount();
-    this.set('left', DOM.zLeft, G.waveActive ? (left + (left === 1 ? ' ZOMBIE LEFT' : ' ZOMBIES LEFT')) : (G.wave === 0 ? 'GET READY' : 'NEXT WAVE IN ' + Math.ceil(G.interT) + 's'));
+    // wave / zombies left — a challenge level shows its own name + live objective progress instead
+    if (Levels.active) {
+      this.set('wave', DOM.waveNum, Levels.cfg.name.toUpperCase());
+      this.set('left', DOM.zLeft, Levels.objectiveText());
+    } else {
+      this.set('wave', DOM.waveNum, 'WAVE ' + G.wave);
+      const left = G.toSpawn + Zombies.activeCount();
+      this.set('left', DOM.zLeft, G.waveActive ? (left + (left === 1 ? ' ZOMBIE LEFT' : ' ZOMBIES LEFT')) : (G.wave === 0 ? 'GET READY' : 'NEXT WAVE IN ' + Math.ceil(G.interT) + 's'));
+    }
     // powerups
     const ins = P.insta > 0; if (this.last.ins !== ins) { this.last.ins = ins; DOM.pillInsta.classList.toggle('on', ins); }
     if (ins) this.set('insT', DOM.pillInsta, 'INSTA-KILL ' + Math.ceil(P.insta) + 's');
@@ -5189,7 +5343,7 @@ const HUD = {
     const boss = Zombies.bossAlive(), hasBoss = !!boss;
     if (this.last.boss !== hasBoss) { this.last.boss = hasBoss; DOM.boss.classList.toggle('show', hasBoss); }
     if (hasBoss) {
-      this.set('bossName', DOM.bossName, 'TANK · ' + Math.max(0, Math.ceil(boss.hp)) + ' HP');
+      this.set('bossName', DOM.bossName, (boss.bossDisplayName || 'TANK') + ' · ' + Math.max(0, Math.ceil(boss.hp)) + ' HP');
       const bk = Math.round(clamp(boss.hp / boss.maxHp, 0, 1) * 100) / 100;
       if (this.last.bossK !== bk) { this.last.bossK = bk; DOM.bossBar.style.transform = 'scaleX(' + bk.toFixed(2) + ')'; }
     }
@@ -5239,7 +5393,7 @@ const HUD = {
     DOM.banner.classList.remove('show', 'showlong'); void DOM.banner.offsetWidth; DOM.banner.classList.add(long ? 'showlong' : 'show');
   },
   subtitle(name, text) { DOM.subName.textContent = name + ':'; DOM.subText.textContent = text; DOM.subtitle.classList.add('show'); this.subT = 3.4; },
-  showScreen(id) { ['menu', 'pause', 'gameover', 'online', 'lobby', 'leaders'].forEach(s => DOM[s].classList.toggle('show', s === id)); },
+  showScreen(id) { ['menu', 'pause', 'gameover', 'online', 'lobby', 'leaders', 'modeselect', 'levelselect', 'levelresult'].forEach(s => DOM[s].classList.toggle('show', s === id)); },
   showHud(v) { DOM.hud.classList.toggle('show', v); DOM.controls.classList.toggle('show', v); },
   // called straight from Player.cycleScope/exitScope (not just refreshOptions' menu/pause-driven
   // batch) since the zoom level changes mid-run, far more often than anything else that button
@@ -5880,6 +6034,293 @@ const Director = {
   }
 };
 
+/* ------------------------------------------------------------------ Solo Challenges: level data
+   Pure design data (name/archetype/objective text/win conditions/iPhone perf cap) — the actual
+   per-level layout (zones/structures/checkpoints/spawn table/arena size/boss) lives in
+   LEVEL_BUILDERS below, keyed by level number, so this array stays a clean spec rather than
+   mixing in engine wiring. Only levels 1-10 (Tier 1) have a builder wired up so far; Tiers 2-3
+   are real design data but their tiles show LOCKED in level-select until a later phase gives them
+   a builder (shifting zones, boss traits, dynamic minions, etc. don't exist in the engine yet). */
+const SOLO_CHALLENGES_CONFIG = [
+  { level: 1, name: 'Iron Sights', archetype: 'Survival', objectives: ['Eliminate 15 targets'], winConditions: { kills: 15 }, perfCap: 10 },
+  { level: 2, name: 'Checkpoint Alpha', archetype: 'Domination', objectives: ['Capture and hold Zone A for 45s'], winConditions: { holdTimeA: 45 }, perfCap: 12 },
+  { level: 3, name: 'Barrels of Blood', archetype: 'Demolition', objectives: ['Detonate 3 structural supply caches'], winConditions: { structuresDestroyed: 3 }, perfCap: 12 },
+  { level: 4, name: 'Flanking Maneuver', archetype: 'Domination', objectives: ['Secure Zone A and B simultaneously for 100pts'], winConditions: { victoryPoints: 100 }, perfCap: 15 },
+  { level: 5, name: 'The Scout', archetype: 'Boss Hunt', objectives: ['Navigate past 2 checkpoints and kill The Scout'], winConditions: { bossesKilled: 1 }, perfCap: 10 },
+  { level: 6, name: 'Supply Line Defense', archetype: 'Survival', objectives: ['Defend center Ammo Station for 2 mins'], winConditions: { surviveTime: 120, stationHealthMin: 1 }, perfCap: 15 },
+  { level: 7, name: 'Double Trouble', archetype: 'Demolition', objectives: ['Destroy 2 reinforced radio towers'], winConditions: { structuresDestroyed: 2 }, perfCap: 18 },
+  { level: 8, name: 'Trench Warfare', archetype: 'Domination', objectives: ['Capture and defend Zones A, B, and C for 150pts'], winConditions: { victoryPoints: 150 }, perfCap: 20 },
+  { level: 9, name: 'Speed Run', archetype: 'Survival', objectives: ['Achieve 40 kills before the 90s timer runs out'], winConditions: { kills: 40, timeRemainingMin: 1 }, perfCap: 22 },
+  { level: 10, name: 'The Goliath', archetype: 'Boss Hunt', objectives: ['Advance 3 checkpoints and eliminate the Goliath Tank'], winConditions: { bossesKilled: 1 }, perfCap: 15 },
+  { level: 11, name: 'Crossfire', archetype: 'Domination', objectives: ['Hold capture zones that shift locations every 30s'], winConditions: { victoryPoints: 200 }, perfCap: 20 },
+  { level: 12, name: 'Breaching Party', archetype: 'Demolition', objectives: ['Destroy Structure 1, then plant charges on Structure 2'], winConditions: { structuresDestroyed: 2 }, perfCap: 22 },
+  { level: 13, name: 'Run & Gun', archetype: 'Survival', objectives: ['Pacing Break: Infinite Ammo/Insta-kill active. Get 100 kills'], winConditions: { kills: 100 }, perfCap: 30 },
+  { level: 14, name: 'Sector Lockdown', archetype: 'Hybrid', objectives: ['Hold Zone A for 60s while enemy spawns are quadrupled'], winConditions: { holdTimeA: 60 }, perfCap: 25 },
+  { level: 15, name: 'Phantom Menace', archetype: 'Boss Hunt', objectives: ['Defeat The Phantom (Phases through walls, turns invisible)'], winConditions: { bossesKilled: 1 }, perfCap: 12 },
+  { level: 16, name: 'Shattered Earth', archetype: 'Demolition', objectives: ['Destroy 4 fortified structures in the desert canyon'], winConditions: { structuresDestroyed: 4 }, perfCap: 22 },
+  { level: 17, name: 'Triple Threat', archetype: 'Domination', objectives: ['Points only tick if holding ALL 3 zones. Reach 100pts'], winConditions: { tripleHoldPoints: 100 }, perfCap: 25 },
+  { level: 18, name: 'Extraction Point', archetype: 'Survival', objectives: ['Endure a massive 3-minute siege waiting for helicopter'], winConditions: { surviveTime: 180 }, perfCap: 28 },
+  { level: 19, name: 'The Pyromaniac', archetype: 'Boss Hunt', objectives: ['Defeat the fire-barrage AOE boss (Heavy GPU particles)'], winConditions: { bossesKilled: 1 }, perfCap: 15 },
+  { level: 20, name: 'Overlord', archetype: 'Hybrid', objectives: ['Destroy the shield generator mainframe, then kill the boss'], winConditions: { structuresDestroyed: 1, bossesKilled: 1 }, perfCap: 20 },
+  { level: 21, name: 'Iron Fortress', archetype: 'Domination', objectives: ['Enemy starts with 150pt lead. Reverse it and get 300pts'], winConditions: { victoryPoints: 300 }, perfCap: 25 },
+  { level: 22, name: 'Detonator Gauntlet', archetype: 'Demolition', objectives: ['Destroy 3 structures in order; each kill adds 45s to bomb timer'], winConditions: { structuresDestroyed: 3, masterTimerMin: 1 }, perfCap: 25 },
+  { level: 23, name: 'The Swarm', archetype: 'Survival', objectives: ['Pacing Break: Stress test. Kill 150 low-health crawlers'], winConditions: { kills: 150 }, perfCap: 40 },
+  { level: 24, name: "No Man's Land", archetype: 'Domination', objectives: ['Hold center zone; health drains unless inside the point'], winConditions: { holdTimeCenter: 90 }, perfCap: 25 },
+  { level: 25, name: 'Hive Mother', archetype: 'Boss Hunt', objectives: ['Kill Hive Mother; she spawns dynamic minion waves when hit'], winConditions: { bossesKilled: 1 }, perfCap: 28 },
+  { level: 26, name: 'Total War', archetype: 'Hybrid', objectives: ['Maintain 2 capture zones while destroying 2 hidden supply caches'], winConditions: { victoryPoints: 200, structuresDestroyed: 2 }, perfCap: 28 },
+  { level: 27, name: 'Apocalypse Now', archetype: 'Survival', objectives: ['Get 75 kills without using any ammo boxes or medkits'], winConditions: { kills: 75, medkitsUsed: 0 }, perfCap: 25 },
+  { level: 28, name: "Titan's Wrath", archetype: 'Hybrid', objectives: ['Kill Titan Boss; completely immune unless team holds Zone B'], winConditions: { bossesKilled: 1 }, perfCap: 20 },
+  { level: 29, name: 'Omega Protocol', archetype: 'Hybrid', objectives: ['Clear 4 checkpoints, destroy terminal in each, kill 4 mini-bosses'], winConditions: { structuresDestroyed: 4, miniBossesKilled: 4 }, perfCap: 30 },
+  { level: 30, name: 'The Desert God', archetype: 'Grand Finale', objectives: ['Defeat multi-phase boss. Phase 2: destroy 2 pillars. Phase 3: 60s hold'], winConditions: { bossesKilled: 1, structuresDestroyed: 2, finalHoldComplete: true }, perfCap: 32 }
+];
+
+// Engine-side layout for the levels that are actually wired up (Tier 1, 1-10 — see Phase plan).
+// Each builder returns a plain spec object consumed generically by Levels.start/update; spot
+// coordinates are picked at build time (not hardcoded) via Levels.pickSpots, which only ever
+// hands back reachable, unblocked map cells (see World.randomPoint), so they're safe on every
+// randomly-seeded arena.
+const LEVEL_BUILDERS = {
+  1: function () { return { arenaR: 30, weaponWave: 2, trickle: { min: 1.4, max: 2.3, maxAlive: 6, types: [{ t: 'walker', w: 1 }] } }; },
+  2: function () {
+    const p = Levels.pickSpots(1, 8, 15, 0)[0];
+    return { arenaR: 32, weaponWave: 3, trickle: { min: 1.6, max: 2.6, maxAlive: 8, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] }, zones: [{ id: 'A', x: p.x, z: p.z, r: 4.5, name: 'ZONE A' }] };
+  },
+  3: function () {
+    const spots = Levels.pickSpots(3, 10, 23, 9);
+    return { arenaR: 34, weaponWave: 3, trickle: { min: 1.8, max: 2.8, maxAlive: 8, types: [{ t: 'walker', w: 1 }] }, structures: spots };
+  },
+  4: function () {
+    const spots = Levels.pickSpots(2, 10, 17, 15);
+    return {
+      arenaR: 38, weaponWave: 4, trickle: { min: 1.6, max: 2.4, maxAlive: 10, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
+      zones: [{ id: 'A', x: spots[0].x, z: spots[0].z, r: 4, name: 'ZONE A' }, { id: 'B', x: spots[1].x, z: spots[1].z, r: 4, name: 'ZONE B' }], dualHold: ['A', 'B']
+    };
+  },
+  5: function () {
+    const cps = Levels.pickSpots(2, 9, 24, 9);
+    return {
+      arenaR: 36, weaponWave: 3, trickle: { min: 2.6, max: 4, maxAlive: 4, types: [{ t: 'walker', w: 1 }] },
+      checkpoints: cps.map(function (p) { return { x: p.x, z: p.z, r: 5 }; }), boss: { type: 'scout', wave: 5, label: 'THE SCOUT DOWN' }
+    };
+  },
+  6: function () { return { arenaR: 28, weaponWave: 4, trickle: { min: 1.3, max: 2.1, maxAlive: 10, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] }, station: { x: 0, z: 0, r: 5, hp: 100, dps: 5 } }; },
+  7: function () {
+    const spots = Levels.pickSpots(2, 12, 25, 13);
+    return { arenaR: 36, weaponWave: 5, trickle: { min: 1.1, max: 1.9, maxAlive: 12, types: [{ t: 'walker', w: 0.75 }, { t: 'runner', w: 0.25 }] }, structures: spots };
+  },
+  8: function () {
+    const spots = Levels.pickSpots(3, 12, 28, 13);
+    return {
+      arenaR: 42, weaponWave: 6, trickle: { min: 1.1, max: 1.8, maxAlive: 14, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.25 }, { t: 'brute', w: 0.1 }] },
+      zones: [{ id: 'A', x: spots[0].x, z: spots[0].z, r: 4.5, name: 'ZONE A' }, { id: 'B', x: spots[1].x, z: spots[1].z, r: 4.5, name: 'ZONE B' }, { id: 'C', x: spots[2].x, z: spots[2].z, r: 4.5, name: 'ZONE C' }], anyHold: true
+    };
+  },
+  9: function () { return { arenaR: 34, weaponWave: 6, trickle: { min: 0.7, max: 1.2, maxAlive: 16, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.35 }, { t: 'brute', w: 0.05 }] }, timeLimitFail: 90 }; },
+  10: function () {
+    const cps = Levels.pickSpots(3, 12, 28, 11);
+    return {
+      arenaR: 40, weaponWave: 7, trickle: { min: 1.6, max: 2.6, maxAlive: 8, types: [{ t: 'walker', w: 1 }] },
+      checkpoints: cps.map(function (p) { return { x: p.x, z: p.z, r: 5 }; }), boss: { type: 'tank', wave: 10, label: 'GOLIATH DOWN' }
+    };
+  }
+};
+
+/* ------------------------------------------------------------------ Solo Challenges: engine
+   Runs entirely inside Game.state==='playing' alongside the normal player/zombie/bullet update —
+   Levels.active just means Game.update's own endless-mode wave branch is skipped in favor of
+   Levels.update (see the `if (Levels.active)` guard added there) and Game.onPlayerDeath/
+   explodeBarrel/onZombieKilled report into this module instead of the endless-mode flow. Exits
+   through its own #levelresult screen rather than showGameOver(), since a level's win/lose has
+   nothing to do with the endless-run leaderboard. */
+const Levels = {
+  active: false, cfg: null, spec: null, progress: null,
+  checkpointIdx: 0, bossSpawned: false, stationHp: 0, trickleT: 0, elapsed: 0,
+
+  configFor(n) { for (const c of SOLO_CHALLENGES_CONFIG) if (c.level === n) return c; return null; },
+
+  // reachable, unobstructed spots spread around the arena centre — never hand-placed coordinates,
+  // since map geometry is randomly seeded per run (see World.generate/World.randomPoint)
+  pickSpots(n, minR, maxR, minSep) {
+    const out = [], tmp = { x: 0, z: 0 };
+    for (let i = 0; i < n; i++) {
+      let best = null, bestSep = -1;
+      for (let t = 0; t < 40; t++) {
+        if (!World.randomPoint(0, 0, minR, maxR, false, tmp)) continue;
+        let sep = Infinity;
+        for (const p of out) { const dx = p.x - tmp.x, dz = p.z - tmp.z; sep = Math.min(sep, dx * dx + dz * dz); }
+        if (sep >= minSep * minSep) { best = { x: tmp.x, z: tmp.z }; break; }
+        if (sep > bestSep) { bestSep = sep; best = { x: tmp.x, z: tmp.z }; }
+      }
+      out.push(best || { x: rnd(-10, 10), z: rnd(-10, 10) });
+    }
+    return out;
+  },
+
+  // free unlock, no cost/points involved — challenge levels aren't part of the endless economy
+  grantWeaponsForDifficulty(w) {
+    WEAPONS.forEach(function (def, i) {
+      if (def.unlock > w) return;
+      const wp = Player.weapons[i]; wp.owned = true; wp.mag = def.mag; wp.reserve = def.reserve;
+    });
+    Player.switchTo(0);
+  },
+
+  start(levelNum) {
+    const cfg = this.configFor(levelNum), build = LEVEL_BUILDERS[levelNum];
+    if (!cfg || !build) { HUD.toast('THIS LEVEL IS COMING IN A FUTURE UPDATE', 2.6); return; }
+    this.cfg = cfg;
+    Game.start();
+    this.spec = build();
+    this.active = true;
+    this.progress = { kills: 0, structuresDestroyed: 0, bossesKilled: 0, victoryPoints: 0, holdTimeA: 0, holdTimeB: 0, holdTimeC: 0, surviveTime: 0 };
+    this.checkpointIdx = 0; this.bossSpawned = false; this.trickleT = 1.2; this.elapsed = 0;
+    Zones.clear(); Structures.clear();
+    CFG.arenaR = this.spec.arenaR; World.rebuildGrid(); World.layoutBoundary(CFG.arenaR); applyDrawDistance(CFG.arenaR);
+    this.grantWeaponsForDifficulty(this.spec.weaponWave || 1);
+    if (this.spec.zones) for (const z of this.spec.zones) Zones.place(z.id, z.x, z.z, z.r, z.name);
+    if (this.spec.structures) for (const s of this.spec.structures) Structures.place(s.x, s.z);
+    if (this.spec.station) { this.stationHp = this.spec.station.hp; Zones.place('STATION', this.spec.station.x, this.spec.station.z, this.spec.station.r, 'STATION'); }
+    AmmoStations.ensureCount(1);
+    if (!this.spec.checkpoints && this.spec.boss) this.spawnBoss();
+    HUD.showHud(true); HUD.banner(cfg.name.toUpperCase(), cfg.objectives[0], true);
+  },
+
+  spawnBoss() {
+    if (this.bossSpawned || !this.spec.boss) return;
+    this.bossSpawned = true;
+    const z = Zombies.spawn(this.spec.boss.type, this.spec.boss.wave);
+    if (z) { z.bossLabel = this.spec.boss.label; z.bossDisplayName = this.spec.boss.type === 'scout' ? 'THE SCOUT' : 'GOLIATH'; }
+    HUD.toast('BOSS INCOMING', 2.4);
+  },
+
+  onKill() { if (this.active) this.progress.kills++; },
+  onBossKilled() { if (this.active) this.progress.bossesKilled++; },
+  onStructureDestroyed() { if (this.active) { this.progress.structuresDestroyed++; HUD.toast('STRUCTURE DESTROYED · ' + Structures.destroyedCount() + '/' + Structures.active.length, 2); } },
+
+  checkCheckpoints() {
+    const cps = this.spec.checkpoints; if (!cps || this.checkpointIdx >= cps.length) return;
+    const c = cps[this.checkpointIdx], dx = Player.x - c.x, dz = Player.z - c.z;
+    if (dx * dx + dz * dz <= c.r * c.r) {
+      this.checkpointIdx++;
+      HUD.toast('CHECKPOINT ' + this.checkpointIdx + '/' + cps.length, 2);
+      if (this.checkpointIdx >= cps.length) this.spawnBoss();
+    }
+  },
+
+  tickZones(dt) {
+    if (!this.spec.zones) return;
+    if (this.spec.dualHold) {
+      const a = Zones.get(this.spec.dualHold[0]), b = Zones.get(this.spec.dualHold[1]);
+      if (a && b && a.held && b.held) this.progress.victoryPoints += 10 * dt;
+    } else if (this.spec.anyHold) {
+      let held = 0; for (const zc of this.spec.zones) { const z = Zones.get(zc.id); if (z && z.held) held++; }
+      this.progress.victoryPoints += held * 5 * dt;
+    } else {
+      const zc = this.spec.zones[0], z = Zones.get(zc.id);
+      if (z) this.progress['holdTime' + zc.id] = z.holdT;
+    }
+  },
+
+  tickStation(dt) {
+    const st = this.spec.station; if (!st) return;
+    let inRange = 0;
+    for (const zb of Zombies.pool) { if (!zb.on || zb.state === 'dead') continue; const dx = zb.x - st.x, dz = zb.z - st.z; if (dx * dx + dz * dz <= st.r * st.r) inRange++; }
+    if (inRange > 0) this.stationHp = Math.max(0, this.stationHp - st.dps * inRange * dt);
+  },
+
+  spawnTrickle(dt) {
+    const tk = this.spec.trickle; if (!tk) return;
+    this.trickleT -= dt;
+    if (this.trickleT <= 0 && Zombies.activeCount() < tk.maxAlive) {
+      this.trickleT = rnd(tk.min, tk.max);
+      const total = tk.types.reduce(function (s, o) { return s + o.w; }, 0);
+      const r = Math.random() * total; let acc = 0, pick = tk.types[0].t;
+      for (const o of tk.types) { acc += o.w; if (r <= acc) { pick = o.t; break; } }
+      Zombies.spawn(pick, this.cfg.level);
+    }
+  },
+
+  evalWin() {
+    const wc = this.cfg.winConditions, p = this.progress;
+    if (wc.kills != null && p.kills < wc.kills) return false;
+    if (wc.structuresDestroyed != null && p.structuresDestroyed < wc.structuresDestroyed) return false;
+    if (wc.bossesKilled != null && p.bossesKilled < wc.bossesKilled) return false;
+    if (wc.victoryPoints != null && p.victoryPoints < wc.victoryPoints) return false;
+    if (wc.holdTimeA != null && (p.holdTimeA || 0) < wc.holdTimeA) return false;
+    if (wc.surviveTime != null && this.elapsed < wc.surviveTime) return false;
+    if (wc.stationHealthMin != null && this.stationHp < wc.stationHealthMin) return false;
+    return true;
+  },
+
+  evalLose() {
+    if (this.spec.station && this.stationHp <= 0) return 'THE STATION WAS DESTROYED';
+    if (this.spec.timeLimitFail != null && this.elapsed >= this.spec.timeLimitFail && !this.evalWin()) return 'OUT OF TIME';
+    return null;
+  },
+
+  update(dt) {
+    if (!this.active) return;
+    this.elapsed += dt; this.progress.surviveTime = this.elapsed;
+    this.spawnTrickle(dt);
+    Zones.update(dt); this.tickZones(dt);
+    this.tickStation(dt);
+    this.checkCheckpoints();
+    const lose = this.evalLose();
+    if (lose) { this.finish(false, lose); return; }
+    if (this.evalWin()) { this.finish(true, ''); return; }
+  },
+
+  objectiveText() {
+    const wc = this.cfg.winConditions, p = this.progress, parts = [];
+    if (this.spec.checkpoints && this.checkpointIdx < this.spec.checkpoints.length) return 'CHECKPOINT ' + this.checkpointIdx + '/' + this.spec.checkpoints.length;
+    if (wc.bossesKilled != null) parts.push(!this.bossSpawned ? 'FIND THE BOSS' : (p.bossesKilled >= wc.bossesKilled ? 'BOSS DOWN' : 'BOSS FIGHT'));
+    if (wc.kills != null) parts.push('KILLS ' + Math.min(p.kills, wc.kills) + '/' + wc.kills);
+    if (wc.structuresDestroyed != null) parts.push('STRUCTURES ' + Math.min(p.structuresDestroyed, wc.structuresDestroyed) + '/' + wc.structuresDestroyed);
+    if (wc.victoryPoints != null) parts.push('POINTS ' + Math.floor(Math.min(p.victoryPoints, wc.victoryPoints)) + '/' + wc.victoryPoints);
+    if (wc.holdTimeA != null) parts.push('ZONE A HOLD ' + Math.floor(Math.min(p.holdTimeA || 0, wc.holdTimeA)) + '/' + wc.holdTimeA + 's');
+    if (wc.surviveTime != null) parts.push('SURVIVE ' + Math.floor(Math.min(this.elapsed, wc.surviveTime)) + '/' + wc.surviveTime + 's');
+    if (wc.stationHealthMin != null) parts.push('STATION ' + Math.max(0, Math.round(this.stationHp)) + '%');
+    if (this.spec.timeLimitFail != null) parts.push(Math.max(0, Math.ceil(this.spec.timeLimitFail - this.elapsed)) + 'S LEFT');
+    return parts.join(' · ') || 'IN PROGRESS';
+  },
+
+  finish(won, reason) {
+    if (!this.active) return;
+    this.active = false;
+    Game.state = 'levelresult'; Game.timeScale = 1;
+    Input.reset();
+    if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
+    HUD.showHud(false);
+    DOM.levelResultTitle.textContent = won ? 'LEVEL COMPLETE' : 'LEVEL FAILED';
+    DOM.levelResultSub.textContent = won ? (this.cfg.name.toUpperCase() + ' — CLEARED') : reason;
+    DOM.btnLevelNext.style.display = (won && this.configFor(this.cfg.level + 1) && LEVEL_BUILDERS[this.cfg.level + 1]) ? '' : 'none';
+    if (won) Audio.cleared(); else Audio.death();
+    HUD.showScreen('levelresult');
+  },
+
+  exitToMenu() { World.clearObjectiveBarrels(); Zones.clear(); this.active = false; Game.toMenu(); },
+
+  // level-select UI
+  renderSelect() {
+    const tiers = [[1, 10, 'TIER 1 · BOOT CAMP & BASICS'], [11, 20, 'TIER 2 · TACTICAL OPS & HYBRIDS'], [21, 30, 'TIER 3 · ELITE ARENA & BOSS GAUNTLETS']];
+    let html = '';
+    for (const t of tiers) {
+      html += '<div class="tiertitle">' + t[2] + '</div><div class="levelgrid">';
+      for (let n = t[0]; n <= t[1]; n++) {
+        const c = this.configFor(n), locked = !LEVEL_BUILDERS[n];
+        html += '<div class="leveltile' + (locked ? ' locked' : '') + '" data-level="' + n + '">' +
+          '<div class="ln">' + n + '</div><div class="lt">' + Net.esc(c.name) + '</div>' +
+          '<div class="la">' + (locked ? 'SOON' : Net.esc(c.archetype)) + '</div></div>';
+      }
+      html += '</div>';
+    }
+    DOM.levelselectBody.innerHTML = html;
+    DOM.levelselectBody.querySelectorAll('.leveltile:not(.locked)').forEach(function (el) {
+      el.addEventListener('click', function () { Audio.unlock(); Levels.start(parseInt(el.dataset.level, 10)); });
+    });
+  }
+};
+
 /* ------------------------------------------------------------------ game state, waves, economy, voice lines, main loop */
 const Game = {
   state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0,
@@ -5940,6 +6381,17 @@ const Game = {
       else self.start();
     });
     $('btnMenu').addEventListener('click', () => self.toMenu());
+    // Solo/Coop Challenges navigation: menu -> modeselect -> levelselect -> (Levels.start) -> levelresult
+    if (DOM.btnChallenges) DOM.btnChallenges.addEventListener('click', () => HUD.showScreen('modeselect'));
+    if (DOM.btnBackModeselect) DOM.btnBackModeselect.addEventListener('click', () => HUD.showScreen('menu'));
+    if (DOM.btnSoloChallenges) DOM.btnSoloChallenges.addEventListener('click', () => { Levels.renderSelect(); HUD.showScreen('levelselect'); });
+    if (DOM.btnCoopChallenges) DOM.btnCoopChallenges.addEventListener('click', () => HUD.toast('COOP CHALLENGES ARE COMING IN A FUTURE UPDATE', 2.8));
+    if (DOM.btnBackLevelselect) DOM.btnBackLevelselect.addEventListener('click', () => HUD.showScreen('modeselect'));
+    if (DOM.btnLevelselectBack) DOM.btnLevelselectBack.addEventListener('click', () => HUD.showScreen('modeselect'));
+    if (DOM.btnLevelRetry) DOM.btnLevelRetry.addEventListener('click', () => { Audio.unlock(); Levels.start(Levels.cfg.level); });
+    if (DOM.btnLevelNext) DOM.btnLevelNext.addEventListener('click', () => { Audio.unlock(); Levels.start(Levels.cfg.level + 1); });
+    if (DOM.btnLevelBackSelect) DOM.btnLevelBackSelect.addEventListener('click', () => { self.toMenu(); Levels.renderSelect(); HUD.showScreen('levelselect'); });
+    if (DOM.btnLevelMenu) DOM.btnLevelMenu.addEventListener('click', () => self.toMenu());
     const optToggle = (els, fn) => els.forEach(e => e.addEventListener('click', () => { fn(); HUD.refreshOptions(); }));
     optToggle([DOM.optAuto, DOM.pOptAuto], () => self.setAutoFire(!self.autoFire));
     // turning it OFF needs no ceremony; turning it ON goes through the confirmation popup instead
@@ -6197,6 +6649,7 @@ const Game = {
   },
   toMenu() {
     Net.leave(); this.coopMenu = false;
+    Levels.active = false; Zones.clear(); World.clearObjectiveBarrels();
     this.state = 'menu'; HUD.showScreen('menu'); HUD.showHud(false); Input.reset(); HUD.refreshOptions();
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
     Director.reset(); Bots.clear(); Player.pinnedBy = null; Player.escape = 0;
@@ -6406,6 +6859,7 @@ const Game = {
   },
   onZombieKilled(z, head) {
     const by = this._by;
+    if (Levels.active) Levels.onKill(z, head);
     this.kills++; this.streak++;
     if (by) by.kills++; else Player.stats.kills++;
     // ultimate meter: only for whoever's own kill this was, locally. A peer's kill is credited
@@ -6428,9 +6882,10 @@ const Game = {
     }
     if (z.boss) {
       // a boss is worth a breather as well as the points, so it always leaves a medkit behind
-      HUD.banner('TANK DOWN', 'THE SAND TAKES IT BACK', false);
+      HUD.banner(z.bossLabel || 'TANK DOWN', 'THE SAND TAKES IT BACK', false);
       Particles.blood(z.x, z.y + 1.6, z.z, 30, 0, 0, true);
       if (World.coverPoint(z.x, z.z, this._pt)) Pickups.spawn('health', this._pt.x, this._pt.z);
+      if (Levels.active) Levels.onBossKilled(z);
     }
     if (!by) Audio.killmark();
     if (Net.isHost()) Net.send({ k: 'kill', i: Zombies.pool.indexOf(z), hd: head ? 1 : 0, by: by ? by.id : Net.id, p: Math.round(pts * ((by || Player).dbl > 0 ? 2 : 1)) });
@@ -6471,6 +6926,7 @@ const Game = {
   },
   explodeBarrel(br) {
     if (!br.alive) return;
+    if (br.isObjective && Levels.active) Levels.onStructureDestroyed(br);
     // barrels are host-authoritative: a client asks for the blast, the host confirms it to everyone
     if (Net.isClient()) { if (!br._echo) { Net.send({ k: 'brl', id: Net.id, i: br.idx }); return; } br._echo = false; }
     else if (Net.isHost()) Net.send({ k: 'brl', i: br.idx });
@@ -6536,6 +6992,7 @@ const Game = {
     } catch (e) { }
   },
   onPlayerDeath() {
+    if (Levels.active) { Levels.finish(false, 'YOU DIED'); return; }
     // in a squad run one death does not end the match — you sit it out until the run is called
     if (Net.on()) {
       Player.alive = false; Player.downed = false; Player.spectating = true;
@@ -6637,7 +7094,8 @@ const Game = {
     if (Net.isHost()) for (const k in Net.peers) { const p = Net.peers[k]; if (p.insta > 0) p.insta -= dt; if (p.dbl > 0) p.dbl -= dt; }
     // waves
     if (this.state === 'playing') {
-      if (Net.isClient()) { /* the host owns waves, spawning and pickups — we just render them */ }
+      if (Levels.active) { Levels.update(dt); }
+      else if (Net.isClient()) { /* the host owns waves, spawning and pickups — we just render them */ }
       else if (!this.waveActive) { this.interT -= dt; if (this.interT <= 0) this.beginWave(); Director.update(dt); }
       else {
         Director.update(dt);
@@ -6689,7 +7147,7 @@ const Game = {
     }
     if (this.state === 'menu') this.menuUpdate(dt);
     else if (this.state === 'playing' || this.state === 'dying') this.update(dt * this.timeScale);
-    else if (this.state === 'gameover') { Particles.update(dt); Dust.update(dt, Player.x, Player.z); }
+    else if (this.state === 'gameover' || this.state === 'levelresult') { Particles.update(dt); Dust.update(dt, Player.x, Player.z); }
     this.render(dt);
   },
   render(dt) {
@@ -8104,7 +8562,7 @@ function boot() {
   try {
     buildTextures(); R.init(); World.init(); Particles.init(); Dust.init(); Floaties.init(); Decals.init(); Bullets.init();
     Grenades.init(); ChainFX.init();
-    Zombies.init(); Pickups.init(); AmmoStations.init(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
+    Zombies.init(); Pickups.init(); AmmoStations.init(); Zones.init(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
   } catch (e) {
     console.error(e);
     const el = $('loadErr'); el.classList.add('show'); el.querySelector('h3').textContent = 'COULD NOT START THE ARENA'; el.querySelector('p').textContent = 'WebGL may be unavailable on this device. (' + (e && e.message ? e.message : e) + ')';
@@ -8122,7 +8580,8 @@ function boot() {
   // exposed for debugging / automated testing
   window.DND = { Game: Game, Player: Player, Zombies: Zombies, World: World, Bullets: Bullets, Pickups: Pickups, Audio: Audio, Input: Input,
     R: R, Explosions: Explosions, Particles: Particles, Floaties: Floaties, Decals: Decals, Dust: Dust, FX: FX, HUD: HUD, CFG: CFG, WEAPONS: WEAPONS,
-    Net: Net, Board: Board, Mqtt: Mqtt, Director: Director, Bots: Bots, ZTYPES: ZTYPES, Avatars: Avatars, AVATARS: AVATARS, Ultimates: Ultimates, version: GAME_VERSION };
+    Net: Net, Board: Board, Mqtt: Mqtt, Director: Director, Bots: Bots, ZTYPES: ZTYPES, Avatars: Avatars, AVATARS: AVATARS, Ultimates: Ultimates,
+    Levels: Levels, Zones: Zones, Structures: Structures, SOLO_CHALLENGES_CONFIG: SOLO_CHALLENGES_CONFIG, version: GAME_VERSION };
   requestAnimationFrame(function (t) { lastFrame = t; requestAnimationFrame(loop); });
 }
 boot();
