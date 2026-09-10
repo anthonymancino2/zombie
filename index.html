@@ -281,6 +281,13 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .leveltile.locked{opacity:.4;cursor:default;}
 .leveltile.cleared{border-color:#5cff8a;box-shadow:0 0 10px rgba(92,255,138,.35) inset;}
 .leveltile.cleared .ln::after{content:' \2713';color:#5cff8a;}
+.diffpick{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:12px 0 4px;}
+.diffbtn{background:var(--panel);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:9px 16px;
+  font-family:var(--hud-font);font-size:12px;letter-spacing:.18em;color:var(--dim);cursor:pointer;touch-action:manipulation;}
+.diffbtn.active{color:#fff;border-color:var(--accent2);box-shadow:0 0 12px var(--glow);}
+.diffbtn.active[data-diff="hard"]{border-color:#ff8a00;color:#ff8a00;box-shadow:0 0 12px rgba(255,138,0,.4);}
+.diffbtn.active[data-diff="nightmare"]{border-color:#ff3b3b;color:#ff3b3b;box-shadow:0 0 12px rgba(255,59,59,.45);}
+.diffdesc{font-size:10px;letter-spacing:.06em;color:var(--dim);text-align:center;margin:0 0 4px;line-height:1.5;}
 .stat .v{font-family:var(--hud-font);font-size:28px;color:#fff;text-shadow:0 0 12px var(--glow);}
 .stat .k{font-family:var(--hud-font);font-size:10px;letter-spacing:.22em;color:var(--dim);margin-top:2px;}
 .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:8px;}
@@ -449,6 +456,11 @@ h1.title em{font-style:normal;color:var(--accent2);}
   background:#ff3b3b;box-shadow:0 0 5px rgba(255,59,59,.95);}
 .rdot.boss{width:11px;height:11px;margin:-5.5px 0 0 -5.5px;background:#ff8a00;box-shadow:0 0 7px #ff8a00;}
 .rdot.edge{opacity:.7;}
+/* hold-point / objective-zone marker — a diamond so it reads as distinct from the round enemy dots */
+.zdot{position:absolute;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;background:#ffb347;
+  border:1px solid rgba(255,255,255,.9);transform:rotate(45deg);box-shadow:0 0 6px rgba(255,179,71,.9);}
+.zdot.held{background:#5cff8a;box-shadow:0 0 6px rgba(92,255,138,.9);}
+.zdot.edge{opacity:.75;}
 @media (max-height:440px){ #radar{width:64px;height:64px;} }
 #netPill.bad{color:var(--danger);border-color:rgba(255,59,59,.4);}
 
@@ -881,7 +893,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.76.0';
+const GAME_VERSION = 'v1.77.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3774,6 +3786,10 @@ const Zombies = {
 
 /* ------------------------------------------------------------------ pickups (floating indicators) */
 const PICKUP_DEFS = {
+  // Hard/Nightmare Challenge levels pull the ammo stations (see Levels.start) and drop this into
+  // the regular pickup mix instead (see Game.spawnPickup) — endless survival never spawns it,
+  // AmmoStations covers ammo there
+  ammo: { color: 0xffb347, label: 'AMMO RESUPPLY' },
   health: { color: 0xff4a4a, label: '+50 HP' },
   insta: { color: 0xff2a2a, label: 'INSTA-KILL' }, double: { color: 0xffe040, label: '2X POINTS' },
   // later-wave only (CFG.powerupWave+) — see Game.spawnPickup
@@ -3889,6 +3905,32 @@ const AmmoStations = {
   }
 };
 
+/* ------------------------------------------------------------------ flag marker (shared)
+   A pole + waving cloth, reused by both Domination hold-points (Zones, color-coded to held state)
+   and navigation checkpoints (CheckpointMarker, fixed color) — a "giant flag" is a lot more
+   readable at range than a ground ring alone. The flutter is a cheap rotation/position wobble
+   rather than a per-vertex cloth sim, since this can be on screen the whole length of a level
+   and iPhone is the perf target (see user_mobile_target_iphone13pro). */
+function buildFlagMarker(color, poleH) {
+  poleH = poleH || 5.4;
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x4a3d28, metalness: 0.15, roughness: 0.75 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, poleH, 8), poleMat);
+  pole.position.y = poleH / 2;
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), poleMat);
+  cap.position.y = poleH;
+  const clothMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.96, side: THREE.DoubleSide, depthWrite: false, fog: false });
+  const cloth = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.05, 4, 3), clothMat);
+  const clothBaseX = 0.86;
+  cloth.position.set(clothBaseX, poleH - 0.75, 0);
+  const grp = new THREE.Group(); grp.add(pole, cap, cloth);
+  return { grp: grp, cloth: cloth, mat: clothMat, clothBaseX: clothBaseX, t: rnd(0, 6) };
+}
+function updateFlagMarker(f, dt) {
+  f.t += dt;
+  f.cloth.rotation.y = Math.sin(f.t * 2.2) * 0.22;
+  f.cloth.position.x = f.clothBaseX + Math.sin(f.t * 2.2) * 0.06;
+}
+
 /* ------------------------------------------------------------------ capture zones (challenge levels)
    Generalizes AmmoStations' pool-of-pre-placed-markers pattern into occupancy/hold-tracked
    capture zones for the Domination archetype. "Held" means the player OR an active squad bot is
@@ -3908,8 +3950,10 @@ const Zones = {
       disc.position.y = 0.03; grp.add(disc);
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.icons.ammo, color: 0xffb347, transparent: true, depthWrite: false, fog: false }));
       sprite.scale.set(0.9, 0.9, 1); sprite.position.y = 1.4; grp.add(sprite);
+      // giant flag — the ring/disc/icon above are easy to miss from across the arena, this isn't
+      const flag = buildFlagMarker(0xffb347, 5.8); grp.add(flag.grp);
       grp.visible = false; R.scene.add(grp);
-      this.pool.push({ on: false, id: '', x: 0, z: 0, r: 3, name: '', held: false, holdT: 0, vt: rnd(0, 6), grp: grp, ring: ring, disc: disc, sprite: sprite });
+      this.pool.push({ on: false, id: '', x: 0, z: 0, r: 3, name: '', held: false, holdT: 0, vt: rnd(0, 6), grp: grp, ring: ring, disc: disc, sprite: sprite, flag: flag });
     }
   },
   clear() { for (const z of this.pool) { z.on = false; z.grp.visible = false; z.held = false; z.holdT = 0; } },
@@ -3941,9 +3985,39 @@ const Zones = {
       if (!z.on) continue;
       z.vt += dt; z.ring.rotation.z = z.vt * 0.6;
       const held = this.friendlyCount(z) > 0;
-      if (held !== z.held) { z.held = held; const c = held ? 0x5cff8a : 0xffb347; z.ring.material.color.setHex(c); z.disc.material.color.setHex(c); z.sprite.material.color.setHex(c); }
+      if (held !== z.held) { z.held = held; const c = held ? 0x5cff8a : 0xffb347; z.ring.material.color.setHex(c); z.disc.material.color.setHex(c); z.sprite.material.color.setHex(c); z.flag.mat.color.setHex(c); }
       z.holdT = held ? z.holdT + dt : 0;
+      updateFlagMarker(z.flag, dt);
     }
+  }
+};
+
+/* ------------------------------------------------------------------ checkpoint marker (challenge levels)
+   checkpoints/checkpointStages (see Levels.checkCheckpoints/checkStages) used to be pure invisible
+   trigger volumes — walk to a bare coordinate with nothing to look at. One bright ring + one flag
+   is enough; only ever one checkpoint is "live" at a time (Levels advances checkpointIdx/stageIdx
+   sequentially), so this is a single reusable marker rather than a pool. */
+const CheckpointMarker = {
+  ready: false, t: 0,
+  init() {
+    const ringGeo = new THREE.RingGeometry(0.85, 1, 40); ringGeo.rotateX(-Math.PI / 2);
+    this.ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x40e0ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    this.ring.position.y = 0.05;
+    this.flag = buildFlagMarker(0x40e0ff, 5.2);
+    this.grp = new THREE.Group(); this.grp.add(this.ring, this.flag.grp); this.grp.visible = false;
+    R.scene.add(this.grp);
+    this.t = rnd(0, 6); this.ready = true;
+  },
+  show(x, z, r) {
+    if (!this.ready) return;
+    this.grp.position.set(x, 0, z); this.ring.scale.set(r, r, 1); this.grp.visible = true;
+  },
+  hide() { if (this.ready) this.grp.visible = false; },
+  update(dt) {
+    if (!this.ready || !this.grp.visible) return;
+    this.t += dt; this.ring.rotation.z = this.t * 0.9;
+    this.ring.material.opacity = 0.65 + Math.sin(this.t * 3) * 0.3;
+    updateFlagMarker(this.flag, dt);
   }
 };
 
@@ -4453,7 +4527,7 @@ const Player = {
       if (Input.fire) this.tryFire(); else Input.consumeFireEdge();
       this.cur = savedCur; this.autoTarget = savedAuto;
     }
-    if (this.alive && this.shield < this.maxShield) {
+    if (this.alive && this.shield < this.maxShield && !Game.diffNoShieldRegen) {
       if (this.shieldRegenT > 0) this.shieldRegenT -= dt;
       else this.shield = Math.min(this.maxShield, this.shield + this.maxShield / CFG.shieldRegenTime * dt);
     }
@@ -5450,7 +5524,7 @@ const HUD = {
   // straight from the same yaw/forward-right basis Player.eyeDir() and the aim/movement code use
   // (see Player.eyeDir, line ~3373) — reusing that basis rather than re-deriving one is what keeps
   // this from getting east/west backwards the way a from-scratch compass easily can.
-  _radarDots: [],
+  _radarDots: [], _zoneDots: [],
   renderRadar(P) {
     const el = DOM.radar; if (!el) return;
     const RANGE = 32, cy = Math.cos(P.yaw), sy = Math.sin(P.yaw);
@@ -5476,6 +5550,26 @@ const HUD = {
       n++;
     }
     for (let i = n; i < pool.length; i++) pool[i].style.display = 'none';
+    // objective/hold-point markers (Domination zones, defend/depot/battery points — same Zones pool)
+    const zpool = this._zoneDots; let zn = 0;
+    for (const z of Zones.pool) {
+      if (!z.on) continue;
+      const dx = z.x - P.x, dz = z.z - P.z;
+      if (dx * dx + dz * dz > (RANGE * 1.5) * (RANGE * 1.5)) continue;
+      let r = dx * cy - dz * sy, f = -dx * sy - dz * cy;
+      const d = Math.sqrt(r * r + f * f) || 0.0001;
+      const edge = d > RANGE;
+      if (edge) { const k = RANGE / d; r *= k; f *= k; }
+      let dot = zpool[zn];
+      if (!dot) { dot = document.createElement('i'); dot.className = 'zdot'; el.appendChild(dot); zpool[zn] = dot; }
+      dot.style.display = 'block';
+      dot.style.left = (50 + (r / RANGE) * 50) + '%';
+      dot.style.top = (50 - (f / RANGE) * 50) + '%';
+      dot.classList.toggle('held', z.held);
+      dot.classList.toggle('edge', edge);
+      zn++;
+    }
+    for (let i = zn; i < zpool.length; i++) zpool[i].style.display = 'none';
   },
   toast(msg, dur) { DOM.toast.textContent = msg; DOM.toast.classList.add('show'); this.toastT = dur || 2.2; },
   banner(title, sub, long) {
@@ -5746,7 +5840,7 @@ const Bots = {
       // pinned: frozen and bleeding until a squadmate shoots it off (or CFG.pinMax expires)
       if (b.pinnedBy) { b.gait = 0; b.target = null; b.reviveT = 0; this.draw(b, dt); continue; }
       if (b.hp < b.maxHp && Game.time - b.lastHurt > CFG.botCalm) b.hp = Math.min(b.maxHp, b.hp + CFG.botRegen * dt);
-      if (b.shield < b.maxShield) {
+      if (b.shield < b.maxShield && !Game.diffNoShieldRegen) {
         if (b.shieldRegenT > 0) b.shieldRegenT -= dt;
         else b.shield = Math.min(b.maxShield, b.shield + b.maxShield / CFG.shieldRegenTime * dt);
       }
@@ -6529,6 +6623,35 @@ const COOP_LEVEL_BUILDERS = {
 const Levels = {
   active: false, mode: 'solo', cfg: null, spec: null, progress: null,
   checkpointIdx: 0, bossSpawned: false, stationHp: 0, trickleT: 0, elapsed: 0,
+  // Normal/Hard/Nightmare — unrelated to grantWeaponsForDifficulty's weapon-unlock wave number
+  // below despite the similar name. Persisted across sessions, picked on the level-select screen
+  // (see renderSelect), applied once per run in start(): scales the kills/hold-time win
+  // conditions, swaps ammo stations for ammo pickups, tightens (Hard) or removes (Nightmare)
+  // shield regen, and (Nightmare only) strips every pickup but ammo and triples the enemy count.
+  difficulty: 'normal',
+  DIFF_ORDER: ['normal', 'hard', 'nightmare'],
+  DIFF_MUL: { normal: 1, hard: 1.5, nightmare: 2 },
+  loadDifficulty() {
+    try { const d = localStorage.getItem('dnd_challengeDifficulty'); if (this.DIFF_ORDER.indexOf(d) >= 0) this.difficulty = d; } catch (e) { }
+  },
+  setDifficulty(d) {
+    if (this.DIFF_ORDER.indexOf(d) < 0) return;
+    this.difficulty = d;
+    try { localStorage.setItem('dnd_challengeDifficulty', d); } catch (e) { }
+  },
+  // only the win conditions that map directly to "kill more" or "hold longer" scale — structure/
+  // boss/scavenger counts and fixed timers are left as the level designer set them
+  scaleWinConditions(wc) {
+    const mul = this.DIFF_MUL[this.difficulty] || 1;
+    if (mul === 1) return wc;
+    const out = {};
+    for (const k in wc) {
+      const v = wc[k];
+      const scales = k === 'kills' || k === 'teamKills' || k === 'victoryPoints' || k === 'tripleHoldPoints' || k === 'simultaneousHoldPoints' || k.indexOf('holdTime') === 0;
+      out[k] = (scales && typeof v === 'number') ? Math.round(v * mul) : v;
+    }
+    return out;
+  },
 
   configFor(n) { const list = this.mode === 'coop' ? COOP_CHALLENGES_CONFIG : SOLO_CHALLENGES_CONFIG; for (const c of list) if (c.level === n) return c; return null; },
   builderFor(n) { return (this.mode === 'coop' ? COOP_LEVEL_BUILDERS : LEVEL_BUILDERS)[n]; },
@@ -6570,16 +6693,20 @@ const Levels = {
     this.active = true;
     // hard iPhone perf-budget enforcement: whatever a level's builder asked for, the concurrent
     // trickle cap can never exceed the level's declared perfCap (minus the boss itself, since a
-    // boss is a full extra tracked entity on top of the regular spawn table)
+    // boss is a full extra tracked entity on top of the regular spawn table). Nightmare's "3x
+    // enemy count" raises the budget ceiling right along with the request, or tripling maxAlive
+    // would just get clamped straight back down to the normal-difficulty number.
     if (this.spec.trickle) {
-      const budget = Math.max(1, cfg.perfCap - ((this.spec.boss || this.spec.finale) ? 1 : 0));
-      this.spec.trickle.maxAlive = Math.min(this.spec.trickle.maxAlive, budget);
+      const nightmareX = this.difficulty === 'nightmare' ? 3 : 1;
+      const budget = Math.max(1, cfg.perfCap - ((this.spec.boss || this.spec.finale) ? 1 : 0)) * nightmareX;
+      this.spec.trickle.maxAlive = Math.min(this.spec.trickle.maxAlive * nightmareX, budget);
     }
     this.progress = {
       kills: 0, structuresDestroyed: 0, bossesKilled: 0, miniBossesKilled: 0, victoryPoints: 0, tripleHoldPoints: 0,
       holdTimeA: 0, holdTimeB: 0, holdTimeC: 0, holdTimeCenter: 0, holdTimeFinal: 0, surviveTime: 0, finalHoldComplete: false,
       bombsPlanted: 0, batteriesSecured: 0, turretsRebuilt: 0, holdTimeGate: 0, holdTimeSafe: 0, synchronizedDestruction: false
     };
+    this.wc = this.scaleWinConditions(cfg.winConditions);
     this.headshotCount = 0;
     if (this.spec.startingVictoryPoints) this.progress.victoryPoints = this.spec.startingVictoryPoints;
     this.checkpointIdx = 0; this.stageIdx = 0; this.bossSpawned = false; this.trickleT = 1.2; this.elapsed = 0;
@@ -6618,15 +6745,27 @@ const Levels = {
     // The Deflector: the moving safe bubble's very first position, before tickPatrol starts moving it
     if (this.spec.patrol) { const wp = this.spec.patrol.waypoints[0]; Zones.place('BUBBLE', wp.x, wp.z, this.spec.patrol.r || 6, 'SAFE BUBBLE'); }
     // Apocalypse Now: no ammo stations, no health kits at all — the constraint is enforced by
-    // simply never offering either, rather than a punishing fail-the-instant-you-touch-one trap
-    AmmoStations.ensureCount(this.spec.noKitsOrStations ? 0 : 1);
-    if (this.spec.noKitsOrStations) this.healthKitT = Infinity;
+    // simply never offering either, rather than a punishing fail-the-instant-you-touch-one trap.
+    // Hard/Nightmare pull ammo stations for everyone the same way — see Game.spawnPickup for the
+    // ammo-pickup stream that replaces them.
+    const stationsOff = this.spec.noKitsOrStations || this.difficulty !== 'normal';
+    AmmoStations.ensureCount(stationsOff ? 0 : 1);
+    if (this.spec.noKitsOrStations || this.difficulty === 'nightmare') this.healthKitT = Infinity;
+    // shield: Hard keeps the round's starting shield but stops it from ever refilling mid-run;
+    // Nightmare removes it outright (damage goes straight to HP). Bots share the same duck-typed
+    // shield fields as the player, so they get the same treatment for parity.
+    Game.diffNoShieldRegen = this.difficulty === 'hard';
+    if (this.difficulty === 'nightmare') {
+      Player.maxShield = 0; Player.shield = 0;
+      for (const b of Bots.list) { b.maxShield = 0; b.shield = 0; }
+    }
     // structureGatesBoss (Overlord): the boss only appears once its shield-generator structure is
     // down, same "gate" idea as a checkpoint chain but keyed off demolition instead of navigation
     if (!this.spec.checkpoints && !this.spec.checkpointStages && !this.spec.structureGatesBoss) {
       if (this.spec.boss) this.spawnBoss();
       if (this.spec.bosses) this.spawnBosses();
     }
+    this.updateCheckpointMarker();
     HUD.showHud(true); HUD.banner(cfg.name.toUpperCase(), cfg.objectives[0], true);
   },
 
@@ -6692,12 +6831,23 @@ const Levels = {
     }
   },
 
+  // points CheckpointMarker at whichever checkpoint/stage is currently live, or hides it once
+  // the chain is exhausted (or this level has neither) — call after checkpointIdx/stageIdx change
+  updateCheckpointMarker() {
+    const cps = this.spec.checkpoints;
+    if (cps && this.checkpointIdx < cps.length) { const c = cps[this.checkpointIdx]; CheckpointMarker.show(c.x, c.z, c.r); return; }
+    const stages = this.spec.checkpointStages;
+    if (stages && this.stageIdx < stages.length) { const c = stages[this.stageIdx]; CheckpointMarker.show(c.x, c.z, c.r); return; }
+    CheckpointMarker.hide();
+  },
+
   checkCheckpoints() {
     const cps = this.spec.checkpoints; if (!cps || this.checkpointIdx >= cps.length) return;
     const c = cps[this.checkpointIdx], dx = Player.x - c.x, dz = Player.z - c.z;
     if (dx * dx + dz * dz <= c.r * c.r) {
       this.checkpointIdx++;
       HUD.toast('CHECKPOINT ' + this.checkpointIdx + '/' + cps.length, 2);
+      this.updateCheckpointMarker();
       if (this.checkpointIdx >= cps.length) this.spawnBoss();
     }
   },
@@ -6713,6 +6863,7 @@ const Levels = {
       if (z) { z.bossLabel = c.miniBoss.label; z.bossDisplayName = c.miniBoss.displayName || c.miniBoss.type.toUpperCase(); z.isMiniBoss = true; }
       this.stageIdx++;
       HUD.toast('SECTOR ' + this.stageIdx + '/' + stages.length + ' — TERMINAL EXPOSED', 2.4);
+      this.updateCheckpointMarker();
     }
   },
 
@@ -6917,7 +7068,7 @@ const Levels = {
   },
 
   evalWin() {
-    const wc = this.cfg.winConditions, p = this.progress;
+    const wc = this.wc, p = this.progress;
     if (wc.kills != null && p.kills < wc.kills) return false;
     if (wc.structuresDestroyed != null && p.structuresDestroyed < wc.structuresDestroyed) return false;
     if (wc.bossesKilled != null && p.bossesKilled < wc.bossesKilled) return false;
@@ -6965,6 +7116,7 @@ const Levels = {
     this.elapsed += dt; this.progress.surviveTime = this.elapsed;
     this.spawnTrickle(dt);
     Zones.update(dt); this.tickZones(dt); this.tickZoneDrain(dt);
+    CheckpointMarker.update(dt);
     this.tickStation(dt);
     this.checkCheckpoints(); this.checkStages(); this.tickFinale();
     this.tickPlants(dt); this.tickBatteries(); this.tickPatrol(dt); this.tickDualBossBuff(dt); this.tickCharged(dt);
@@ -6982,7 +7134,7 @@ const Levels = {
   },
 
   objectiveText() {
-    const wc = this.cfg.winConditions, p = this.progress, parts = [];
+    const wc = this.wc, p = this.progress, parts = [];
     if (this.spec.checkpoints && this.checkpointIdx < this.spec.checkpoints.length) return 'CHECKPOINT ' + this.checkpointIdx + '/' + this.spec.checkpoints.length;
     if (wc.bossesKilled != null) parts.push(!this.bossSpawned ? 'FIND THE BOSS' : (p.bossesKilled >= wc.bossesKilled ? 'BOSS DOWN' : 'BOSS FIGHT'));
     if (wc.kills != null) parts.push('KILLS ' + Math.min(p.kills, wc.kills) + '/' + wc.kills);
@@ -7012,6 +7164,7 @@ const Levels = {
   finish(won, reason) {
     if (!this.active) return;
     this.active = false;
+    CheckpointMarker.hide();
     if (this._cfgOverrides) { for (const k in this._cfgOverrides) CFG[k] = this._cfgOverrides[k]; this._cfgOverrides = null; }
     Game.state = 'levelresult'; Game.timeScale = 1;
     Input.reset();
@@ -7048,16 +7201,24 @@ const Levels = {
   },
 
   // level-select UI
+  DIFF_DESC: {
+    normal: 'UNCHANGED — AMMO STATIONS, NORMAL SHIELD REGEN, STANDARD TARGETS',
+    hard: 'NO AMMO STATIONS (AMMO PICKUPS INSTEAD) · SHIELD WON’T REGEN MID-ROUND (FULL AGAIN NEXT ROUND) · +50% KILL/HOLD TARGETS',
+    nightmare: 'NO SHIELD AT ALL · NO POWER-UPS EXCEPT AMMO · 3X ENEMY COUNT · 2X KILL/HOLD TARGETS'
+  },
   renderSelect(mode) {
     if (mode) this.mode = mode;
+    if (!this._diffLoaded) { this.loadDifficulty(); this._diffLoaded = true; }
     this.loadClears();
     if (DOM.levelselectTitle) DOM.levelselectTitle.innerHTML = this.mode === 'coop' ? 'COOP <em>CHALLENGES</em>' : 'SOLO <em>CHALLENGES</em>';
     const clears = this.clears[this.mode] || {};
+    let html = '<div class="diffpick">' + this.DIFF_ORDER.map(function (d) {
+      return '<div class="diffbtn' + (d === Levels.difficulty ? ' active' : '') + '" data-diff="' + d + '">' + d.toUpperCase() + '</div>';
+    }).join('') + '</div><div class="diffdesc">' + this.DIFF_DESC[this.difficulty] + '</div>';
     const tierNames = this.mode === 'coop'
       ? ['TIER 1 · FIRETEAM SYNCHRONIZATION', 'TIER 2 · JOINT OPERATIONS & CHAOS MANAGEMENT', 'TIER 3 · RAID-SCALE OPERATIONS']
       : ['TIER 1 · BOOT CAMP & BASICS', 'TIER 2 · TACTICAL OPS & HYBRIDS', 'TIER 3 · ELITE ARENA & BOSS GAUNTLETS'];
     const tiers = [[1, 10, tierNames[0]], [11, 20, tierNames[1]], [21, 30, tierNames[2]]];
-    let html = '';
     for (const t of tiers) {
       let cleared = 0; for (let n = t[0]; n <= t[1]; n++) if (clears[n]) cleared++;
       html += '<div class="tiertitle">' + t[2] + ' · ' + cleared + '/' + (t[1] - t[0] + 1) + ' CLEARED</div><div class="levelgrid">';
@@ -7075,6 +7236,9 @@ const Levels = {
     DOM.levelselectBody.querySelectorAll('.leveltile:not(.locked)').forEach(function (el) {
       el.addEventListener('click', function () { Audio.unlock(); Levels.start(parseInt(el.dataset.level, 10), activeMode); });
     });
+    DOM.levelselectBody.querySelectorAll('.diffbtn').forEach(function (el) {
+      el.addEventListener('click', function () { Audio.unlock(); Levels.setDifficulty(el.dataset.diff); Levels.renderSelect(); });
+    });
   }
 };
 
@@ -7085,6 +7249,9 @@ const Game = {
   timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, powerupT: 0, healthKitT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, testMode: false, testModeUsedThisRun: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
+  // Hard-difficulty Challenge levels flip this on for the run (see Levels.start) so shield stops
+  // refilling mid-round; reset false here every run so it can never leak into the next one
+  diffNoShieldRegen: false,
   CAM_TIERS: ['fp', 'close', 'medium', 'far', 'veryfar', 'topdown'],
   best: { wave: 0, points: 0 }, deathK: 0, deathRoll: 0, deathT: 0, seed: 0, coopMenu: false, _fp: { x: 0, z: 0 },
   fpsAcc: 0, fpsN: 0, fpsAvg: 16.7, fpsT: 0, resT: 0, chain: [], realDt: 0.016, newBest: false, _pt: { x: 0, z: 0 },
@@ -7371,6 +7538,8 @@ const Game = {
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); Particles.clear(); Decals.clear();
     for (const e of Explosions.pool) { e.on = false; e.fire.visible = e.ring.visible = false; } for (const l of Explosions.lights) l.intensity = 0;
     Player.reset(char); Input.reset();
+    // Levels.start() (Challenge levels only) may flip this back on right after this call returns
+    this.diffNoShieldRegen = false;
     this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0;
     this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0; this.phase = 0; this.healthKits = 0;
     // a fresh run starts clean unless test mode is already on when it begins (Player.reset() just
@@ -7416,7 +7585,7 @@ const Game = {
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
     Director.reset(); Bots.clear(); Player.pinnedBy = null; Player.escape = 0;
     DOM.boss.classList.remove('show'); DOM.pinned.classList.remove('show'); DOM.revive.classList.remove('show'); this.hideMidScores();
-    DOM.ammoStation.classList.remove('show'); AmmoStations.clear();
+    DOM.ammoStation.classList.remove('show'); AmmoStations.clear(); CheckpointMarker.hide();
     if (Player.body) { Player.body.g.visible = false; Player.body.shadow.visible = false; }
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
     try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { }
@@ -7540,12 +7709,19 @@ const Game = {
   },
   spawnPickup() {
     // ammo refill stations (see AmmoStations) cover ammo scarcity now — this stream is health or
-    // a power-up only
-    let type; const r = Math.random();
-    if (r < 0.55) type = 'health';
+    // a power-up only, EXCEPT on a Hard/Nightmare Challenge level, where Levels.start() pulled the
+    // stations and this is what replaces them (see PICKUP_DEFS.ammo/Game.collect's 'ammo' branch)
+    const diff = Levels.active ? Levels.difficulty : 'normal';
+    let type;
+    if (diff === 'nightmare') { type = 'ammo'; } // no power-ups at all except ammo on Nightmare
     else {
-      const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
-      type = this.nextPowerType(pool);
+      const r = Math.random();
+      if (r < 0.55) type = 'health';
+      else if (diff === 'hard' && r < 0.65) type = 'ammo';
+      else {
+        const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
+        type = this.nextPowerType(pool);
+      }
     }
     if (World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn(type, this._pt.x, this._pt.z);
   },
@@ -7744,6 +7920,19 @@ const Game = {
     // somebody else on the squad grabbed it — show the pop, keep the effect off our sheet
     if (remote) { Particles.sparks(x, 1.2, z, 12); Floaties.spawn(x, 1.6, z, 'TAKEN', '#ffd8a0', 15, 1.0); return; }
     if (type === 'health') { P.hp = Math.min(P.maxHp, P.hp + 50); Floaties.spawn(x, 1.6, z, '+50 HP', '#5dff7a', 20, 1.2); this.say('health'); HUD.toast('HEALTH +50'); }
+    // the pickup stand-in for ammo stations on Hard/Nightmare (see Levels.start) — tops every
+    // owned weapon's mag and tops up a solid chunk of reserve, an instant version of what standing
+    // at a station does over time (see Player.updateAmmoStation)
+    else if (type === 'ammo') {
+      let any = false;
+      for (const w of P.weapons) {
+        if (!w.owned) continue;
+        if (w.mag < w.def.mag) { w.mag = w.def.mag; any = true; }
+        if (w.def.maxReserve !== Infinity && w.reserve < w.def.maxReserve) { w.reserve = Math.min(w.def.maxReserve, w.reserve + Math.round(w.def.maxReserve * 0.5)); any = true; }
+      }
+      Audio.powerup(); Floaties.spawn(x, 1.6, z, 'AMMO RESUPPLY', '#ffb347', 20, 1.2); HUD.toast('AMMO RESUPPLY');
+      if (any) HUD.dirty = true;
+    }
     else if (type === 'insta') { P.insta = CFG.instaTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'INSTA-KILL!', '#ff3a3a', 22, 1.3); this.say('insta', true); HUD.toast('INSTA-KILL — ONE SHOT, ONE KILL', 2.5); }
     else if (type === 'double') { P.dbl = CFG.dblTime; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'DOUBLE POINTS!', '#ffe040', 22, 1.3); this.say('double', true); HUD.toast('DOUBLE POINTS — 30 SECONDS', 2.5); }
     // every power-up below (including insta/double above) is personal — only whoever actually
@@ -9340,7 +9529,7 @@ function boot() {
   try {
     buildTextures(); R.init(); World.init(); Particles.init(); Dust.init(); Floaties.init(); Decals.init(); Bullets.init();
     Grenades.init(); ChainFX.init();
-    Zombies.init(); Pickups.init(); AmmoStations.init(); Zones.init(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
+    Zombies.init(); Pickups.init(); AmmoStations.init(); Zones.init(); CheckpointMarker.init(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
   } catch (e) {
     console.error(e);
     const el = $('loadErr'); el.classList.add('show'); el.querySelector('h3').textContent = 'COULD NOT START THE ARENA'; el.querySelector('p').textContent = 'WebGL may be unavailable on this device. (' + (e && e.message ? e.message : e) + ')';
