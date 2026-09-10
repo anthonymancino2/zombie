@@ -880,7 +880,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.67.0';
+const GAME_VERSION = 'v1.68.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -2446,9 +2446,14 @@ const World = {
   // because World.generate only ever fills ~40-55 of the barrelMesh's 96 capacity (see the nBar
   // comment above). Not host/client-synced beyond what explodeBarrel already relays (br.idx) —
   // fine since challenge levels are solo-only through Phase 5.
-  spawnObjectiveBarrel(x, z) {
+  // hp defaults to 80 (a handful of hits, not a one-shot) — real multi-hit HP now, tracked and
+  // damaged by Game.damageStructure rather than the old single-hit barrel behavior; scale visibly
+  // shrinks as it takes damage (see damageStructure) so there's on-model feedback without touching
+  // the shared barrelMesh material/instanceColor that decorative barrels also use.
+  spawnObjectiveBarrel(x, z, hp) {
     const idx = this.barrels.length; if (idx >= 96) return null;
-    const br = { x: x, z: z, r: 0.85, h: 1.7, alive: true, idx: idx, isObjective: true };
+    const maxHp = hp || 80;
+    const br = { x: x, z: z, r: 0.85, h: 1.7, alive: true, idx: idx, gen: 0, isObjective: true, hp: maxHp, maxHp: maxHp };
     this.barrels.push(br);
     this.setInst(this.barrelMesh, idx, x, 0, z, 0, 1.5, 1.5);
     this.barrelMesh.count = this.barrels.length; this.barrelMesh.instanceMatrix.needsUpdate = true;
@@ -2972,7 +2977,7 @@ const Bullets = {
       }
       if (wt >= 0) {
         const hx = ax + ex * wt, hy = ay + ey * wt, hz = az + ez * wt;
-        if (World.hitBarrel) Game.explodeBarrel(World.hitBarrel);
+        if (World.hitBarrel) { const hb = World.hitBarrel; if (hb.isObjective) Game.damageStructure(hb, b.instakill ? hb.hp + 1 : b.dmg); else Game.explodeBarrel(hb); }
         else if (b.kind === 'flamethrower' || b.kind === 'dualflamethrower') Particles.flame(hx, hy, hz, 5);
         else { Particles.dustPuff(hx, hy, hz, 4, 0.7); if (Math.random() < 0.5) Particles.sparks(hx, hy, hz, 3); }
         b.on = false; b.mesh.visible = false; continue;
@@ -3826,7 +3831,7 @@ const Zones = {
 const Structures = {
   active: [],
   clear() { World.clearObjectiveBarrels(); this.active.length = 0; },
-  place(x, z) { const br = World.spawnObjectiveBarrel(x, z); if (br) this.active.push(br); return br; },
+  place(x, z, hp) { const br = World.spawnObjectiveBarrel(x, z, hp); if (br) this.active.push(br); return br; },
   remaining() { let n = 0; for (const b of this.active) if (b.alive) n++; return n; },
   destroyedCount() { let n = 0; for (const b of this.active) if (!b.alive) n++; return n; }
 };
@@ -6087,7 +6092,7 @@ const LEVEL_BUILDERS = {
   },
   3: function () {
     const spots = Levels.pickSpots(3, 10, 23, 9);
-    return { arenaR: 34, weaponWave: 3, trickle: { min: 1.8, max: 2.8, maxAlive: 8, types: [{ t: 'walker', w: 1 }] }, structures: spots };
+    return { arenaR: 34, weaponWave: 3, trickle: { min: 1.8, max: 2.8, maxAlive: 8, types: [{ t: 'walker', w: 1 }] }, structures: spots.map(function (p) { return { x: p.x, z: p.z, hp: 70 }; }) };
   },
   4: function () {
     const spots = Levels.pickSpots(2, 10, 17, 15);
@@ -6106,7 +6111,8 @@ const LEVEL_BUILDERS = {
   6: function () { return { arenaR: 28, weaponWave: 4, trickle: { min: 1.3, max: 2.1, maxAlive: 10, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] }, station: { x: 0, z: 0, r: 5, hp: 100, dps: 5 } }; },
   7: function () {
     const spots = Levels.pickSpots(2, 12, 25, 13);
-    return { arenaR: 36, weaponWave: 5, trickle: { min: 1.1, max: 1.9, maxAlive: 12, types: [{ t: 'walker', w: 0.75 }, { t: 'runner', w: 0.25 }] }, structures: spots };
+    // "reinforced" — noticeably tougher than level 3's supply caches, needs sustained fire rather than one lucky hit
+    return { arenaR: 36, weaponWave: 5, trickle: { min: 1.1, max: 1.9, maxAlive: 12, types: [{ t: 'walker', w: 0.75 }, { t: 'runner', w: 0.25 }] }, structures: spots.map(function (p) { return { x: p.x, z: p.z, hp: 140 }; }) };
   },
   8: function () {
     const spots = Levels.pickSpots(3, 12, 28, 13);
@@ -6178,7 +6184,7 @@ const Levels = {
     CFG.arenaR = this.spec.arenaR; World.rebuildGrid(); World.layoutBoundary(CFG.arenaR); applyDrawDistance(CFG.arenaR);
     this.grantWeaponsForDifficulty(this.spec.weaponWave || 1);
     if (this.spec.zones) for (const z of this.spec.zones) Zones.place(z.id, z.x, z.z, z.r, z.name);
-    if (this.spec.structures) for (const s of this.spec.structures) Structures.place(s.x, s.z);
+    if (this.spec.structures) for (const s of this.spec.structures) Structures.place(s.x, s.z, s.hp);
     if (this.spec.station) { this.stationHp = this.spec.station.hp; Zones.place('STATION', this.spec.station.x, this.spec.station.z, this.spec.station.r, 'STATION'); }
     AmmoStations.ensureCount(1);
     if (!this.spec.checkpoints && this.spec.boss) this.spawnBoss();
@@ -6923,6 +6929,22 @@ const Game = {
       }
       hit++;
     }
+  },
+  // Objective structures (World.spawnObjectiveBarrel) now take real multi-hit damage instead of
+  // detonating on the first bullet — decorative barrels are untouched (they have no .hp field, so
+  // the call site below routes them straight to explodeBarrel as before).
+  damageStructure(br, dmg) {
+    if (!br.alive) return;
+    const was = br.hp; br.hp -= dmg;
+    if (br.hp <= 0) { this.explodeBarrel(br); return; }
+    Floaties.accumulate(br, 'd', Math.round(Math.min(was, dmg)), br.x, br.h * 0.65, br.z, '', '#ffb040', 14, 0.8);
+    Particles.sparks(br.x, br.h * 0.55, br.z, 4);
+    Audio.hitmark();
+    // visibly worn down as it loses HP (1.5x scale full health -> 1.15x near death), without
+    // touching the shared barrelMesh material/instanceColor every other barrel also renders with
+    const t = clamp(br.hp / br.maxHp, 0, 1), s = 1.15 + 0.35 * t;
+    World.setInst(World.barrelMesh, br.idx, br.x, 0, br.z, 0, s, s);
+    World.barrelMesh.instanceMatrix.needsUpdate = true;
   },
   explodeBarrel(br) {
     if (!br.alive) return;
