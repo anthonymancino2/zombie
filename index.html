@@ -259,6 +259,16 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .bigbtn.neon{font-size:16px;padding:10px 20px;color:#00141c;border-color:#7cf3ff;
   background:linear-gradient(180deg,#3ce6ff,#0090ff);text-shadow:0 0 6px rgba(255,255,255,.6);
   box-shadow:0 0 16px 2px rgba(30,220,255,.7),0 0 36px rgba(0,160,255,.45),inset 0 1px 0 rgba(255,255,255,.5);}
+/* gold Challenges button — same lit-up treatment as .neon, just the game's existing yellow accent
+   (#ffd83b, already used for healthkits/highlights) instead of coop's blue */
+.bigbtn.gold{font-size:16px;padding:10px 20px;color:#2e1d00;border-color:#ffe27a;
+  background:linear-gradient(180deg,#ffe27a,#ffb347);text-shadow:0 0 6px rgba(255,255,255,.5);
+  box-shadow:0 0 16px 2px rgba(255,200,60,.7),0 0 36px rgba(255,160,0,.4),inset 0 1px 0 rgba(255,255,255,.5);}
+/* full-size blue variant (unlike .neon, keeps .bigbtn's own font-size/padding so it matches a
+   plain .bigbtn's footprint) — Coop Challenges, same blue as COOP MODE on the landing page */
+.bigbtn.blue{border-color:#7cf3ff;color:#00141c;background:linear-gradient(180deg,#3ce6ff,#0090ff);
+  text-shadow:0 0 6px rgba(255,255,255,.6);
+  box-shadow:0 0 26px rgba(30,180,255,.55),0 8px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.5);}
 .help{font-size:11px;color:var(--dim);margin-top:12px;line-height:1.5;letter-spacing:.04em;}
 .syncbtn{align-self:center;font-family:var(--hud-font);font-size:11px;letter-spacing:.14em;color:var(--sand);
   background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.28);border-radius:14px;
@@ -646,10 +656,10 @@ h1.title em{font-style:normal;color:var(--accent2);}
       </div>
       <div class="row" style="margin-top:10px">
         <button class="bigbtn neon" id="btnOnline">COOP MODE</button>
-        <button class="bigbtn secondary" id="btnLeaders">GLOBAL LEADERBOARD</button>
+        <button class="bigbtn gold" id="btnChallenges">CHALLENGES</button>
       </div>
       <div class="row" style="margin-top:10px">
-        <button class="bigbtn secondary" id="btnChallenges">CHALLENGES</button>
+        <button class="bigbtn secondary" id="btnLeaders">GLOBAL LEADERBOARD</button>
       </div>
       <div class="best" id="bestLine"></div>
       <div class="help">
@@ -671,7 +681,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <button class="bigbtn" id="btnSoloChallenges">SOLO CHALLENGES</button>
       </div>
       <div class="row" style="margin-top:10px">
-        <button class="bigbtn secondary" id="btnCoopChallenges">COOP CHALLENGES</button>
+        <button class="bigbtn blue" id="btnCoopChallenges">COOP CHALLENGES</button>
       </div>
       <div class="help">Coop Challenges currently fill any open squad slots with bots, same as Solo — hosted-room support for playing them with real squadmates is coming later.</div>
     </div></div>
@@ -893,7 +903,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.77.0';
+const GAME_VERSION = 'v1.78.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
