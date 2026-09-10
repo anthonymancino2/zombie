@@ -880,7 +880,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.69.0';
+const GAME_VERSION = 'v1.70.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3067,7 +3067,12 @@ const ZTYPES = {
   tank: { hpMul: 14, hpWave: 1.09, speedMul: 0.78, scale: 2.0, dmg: 40, radius: 0.95, height: 3.9, reach: 3.1, big: true, lean: 0.02, special: true, boss: true, pts: 14 },
   // Challenge-level mini-boss: fast and comparatively fragile rather than a slow damage sponge —
   // gives Boss Hunt levels a distinct feel from the Tank/Goliath fight without a bespoke model.
-  scout: { hpMul: 3.2, speedMul: 1.95, scale: 0.95, dmg: 14, radius: 0.42, height: 1.86, reach: 1.7, big: false, lean: 0.3, special: true, boss: true, pts: 6 }
+  scout: { hpMul: 3.2, speedMul: 1.95, scale: 0.95, dmg: 14, radius: 0.42, height: 1.86, reach: 1.7, big: false, lean: 0.3, special: true, boss: true, pts: 6 },
+  // Tier 2 boss traits (see Zombie.update's phase/invisible/aoe blocks and the chase-movement
+  // phase bypass) — data-driven flags rather than one bespoke class per boss, so later bosses can
+  // mix and match the same traits instead of each needing new engine code.
+  phantom: { hpMul: 5.5, speedMul: 1.15, scale: 1, dmg: 16, radius: 0.42, height: 1.86, reach: 1.7, big: false, lean: 0.15, special: true, boss: true, pts: 10, traits: { phase: true, invisible: true } },
+  pyromaniac: { hpMul: 6, speedMul: 0.95, scale: 1.15, dmg: 18, radius: 0.5, height: 2.0, reach: 1.9, big: true, lean: 0.05, special: true, boss: true, pts: 12, traits: { aoe: true }, aoeInterval: 3.5, aoeRadius: 5, aoeDmg: 26 }
 };
 const ZG = {};
 /* Merged box-cluster geometry: many boxes -> ONE BufferGeometry, so a detailed
@@ -3255,6 +3260,11 @@ class Zombie {
     this.skinMat.color.setRGB(tint * (T.big ? 0.92 : 1), tint * (T.big ? 0.86 : 1), tint * (T.big ? 0.8 : 1));
     this.clothMat.color.setRGB(tint, tint * 0.98, tint * 0.95);
     this.skinMat.emissive.setHex(0); this.clothMat.emissive.setHex(0);
+    // reset per-spawn so a pool slot previously used by an invisible-trait boss doesn't leave a
+    // stale transparent/half-opacity material behind on whatever spawns into that slot next
+    const invisible = !!(T.traits && T.traits.invisible);
+    this.skinMat.transparent = this.clothMat.transparent = invisible;
+    this.skinMat.opacity = this.clothMat.opacity = 1; this.invisT = 0; this.aoeT = T.aoeInterval || 0;
     this.group.scale.setScalar(T.scale);
     // the boss is the same procedural body, just slabbed out — no second mesh to pay for
     this.torso.scale.set(T.boss ? 1.5 : (T.big ? 1.25 : 1), T.boss ? 1.12 : 1, T.boss ? 1.4 : (T.big ? 1.2 : 1));
@@ -3411,12 +3421,34 @@ class Zombie {
       if (this.dotT > 0 && this.dotColor != null) { _dotTint.setHex(this.dotColor).multiplyScalar(0.55); this.skinMat.emissive.copy(_dotTint); this.clothMat.emissive.copy(_dotTint); }
       else { this.skinMat.emissive.setHex(0); this.clothMat.emissive.setHex(0); }
     }
+    // Phantom Menace: flickers between visible and near-invisible on a fixed duty cycle, forcing
+    // the player to track it via the boss bar/radar rather than by sight alone. skinMat/clothMat
+    // are per-zombie instances (not shared/instanced), so opacity here only ever affects this one.
+    if (st !== 'dead' && T.traits && T.traits.invisible) {
+      this.invisT = (this.invisT || 0) + dt;
+      const op = (this.invisT % 5.5) < 1.6 ? 1 : 0.06;
+      if (this.skinMat.opacity !== op) { this.skinMat.opacity = op; this.clothMat.opacity = op; }
+    }
+    // The Pyromaniac: a periodic fire-barrage AOE burst around itself — heavy particles by design
+    // (see LEVEL_BUILDERS[19]'s low trickle/perfCap, which is what actually keeps the frame budget
+    // in check rather than this effect being cheap).
+    if (st !== 'dead' && T.traits && T.traits.aoe) {
+      this.aoeT = (this.aoeT || 0) - dt;
+      if (this.aoeT <= 0) {
+        this.aoeT = T.aoeInterval;
+        Particles.flame(this.x, this.y + 1, this.z, 16); Audio.explosion(this.x, this.z);
+        const pdx = Player.x - this.x, pdz = Player.z - this.z, pd = Math.sqrt(pdx * pdx + pdz * pdz);
+        if (pd < T.aoeRadius && Player.alive) Player.hurt(Math.round(T.aoeDmg * (1 - pd / T.aoeRadius) + 6), this.x, this.z);
+        Game.shake = Math.max(Game.shake, 2.2);
+      }
+    }
     if (st === 'emerge') {
       this.t += dt; const k = Math.min(1, this.t / 1.1); this.y = -2.4 + 2.4 * easeOut(k);
       if (this.t > 1.1) { this.state = 'chase'; this.y = 0; }
       this.animT += dt * 2;
     } else if (st === 'chase' || st === 'attack') {
       const dx = P.x - this.x, dz = P.z - this.z, d = Math.sqrt(dx * dx + dz * dz);
+      const phaseTrait = !!(T.traits && T.traits.phase);
       if (st === 'chase') {
         if (this.cool > 0) this.cool -= dt;
         // a missed leap leaves it face-down in the sand for a beat — that beat is the reward
@@ -3427,8 +3459,10 @@ class Zombie {
         }
         else {
           let tx = P.x, tz = P.z;
-          if (this.nudgeT > 0) { this.nudgeT -= dt; tx = this.nudgeX; tz = this.nudgeZ; }
-          else if (!(d < 26 && World.los(this.x, this.z, P.x, P.z))) { if (World.flowTarget(this.x, this.z, Zombies._tmp)) { tx = Zombies._tmp.x; tz = Zombies._tmp.z; } }
+          // a wall no longer blocks it, so there's no reason to route around one either — go
+          // straight at the player instead of following the (wall-aware) flow field
+          if (this.nudgeT > 0 && !phaseTrait) { this.nudgeT -= dt; tx = this.nudgeX; tz = this.nudgeZ; }
+          else if (!phaseTrait && !(d < 26 && World.los(this.x, this.z, P.x, P.z))) { if (World.flowTarget(this.x, this.z, Zombies._tmp)) { tx = Zombies._tmp.x; tz = Zombies._tmp.z; } }
           let ddx = tx - this.x, ddz = tz - this.z; const dl = Math.sqrt(ddx * ddx + ddz * ddz) || 1; ddx /= dl; ddz /= dl;
           // separation from other zombies
           let sx = 0, sz = 0; const pool = Zombies.pool;
@@ -3441,12 +3475,12 @@ class Zombie {
           const tvx = ddx * spd + sx * 3.4, tvz = ddz * spd + sz * 3.4, k = Math.min(1, dt * 7);
           this.vx += (tvx - this.vx) * k; this.vz += (tvz - this.vz) * k;
           this.x += this.vx * dt; this.z += this.vz * dt;
-          World.collide(this, this.radius);
+          World.collide(this, this.radius, phaseTrait);
           // don't overlap the player
           const px = this.x - P.x, pz = this.z - P.z, pr = this.radius + CFG.playerR + 0.42, pd2 = px * px + pz * pz;
           if (pd2 < pr * pr && pd2 > 1e-6) {
             const pd = Math.sqrt(pd2); this.x = P.x + px / pd * pr; this.z = P.z + pz / pd * pr;
-            World.collide(this, this.radius);   // the push-out can shove it into cover; resolve again
+            World.collide(this, this.radius, phaseTrait);   // the push-out can shove it into cover; resolve again
           }
           // stuck detection -> nudge sideways for a moment
           this.stuckT += dt;
@@ -6128,6 +6162,65 @@ const LEVEL_BUILDERS = {
       arenaR: 40, weaponWave: 7, trickle: { min: 1.6, max: 2.6, maxAlive: 8, types: [{ t: 'walker', w: 1 }] },
       checkpoints: cps.map(function (p) { return { x: p.x, z: p.z, r: 5 }; }), boss: { type: 'tank', wave: 10, label: 'GOLIATH DOWN' }
     };
+  },
+  11: function () {
+    const p = Levels.pickSpots(1, 10, 20, 0)[0];
+    return {
+      arenaR: 44, weaponWave: 11, trickle: { min: 0.9, max: 1.5, maxAlive: 18, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.35 }, { t: 'brute', w: 0.05 }] },
+      // rate deliberately low: 200pts at 2/s is 100s of actual hold time, so a run genuinely
+      // chases the zone across several 30s relocations instead of finishing before the first one
+      zones: [{ id: 'A', x: p.x, z: p.z, r: 4.5, name: 'ZONE A' }], shiftingZone: { id: 'A', interval: 30, rate: 2 }
+    };
+  },
+  12: function () {
+    const spots = Levels.pickSpots(2, 12, 26, 14);
+    return {
+      arenaR: 38, weaponWave: 12, trickle: { min: 1.0, max: 1.7, maxAlive: 14, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
+      sequentialStructures: [{ x: spots[0].x, z: spots[0].z, hp: 90 }, { x: spots[1].x, z: spots[1].z, hp: 110 }]
+    };
+  },
+  13: function () {
+    return { arenaR: 36, weaponWave: 13, trickle: { min: 0.4, max: 0.75, maxAlive: 24, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, infiniteBuffs: true };
+  },
+  14: function () {
+    const p = Levels.pickSpots(1, 8, 15, 0)[0];
+    // "spawns are quadrupled" — realized as a much hotter trickle than a level-14-equivalent
+    // single-zone hold would otherwise get, rather than a literal 4x multiplier on some baseline
+    return {
+      arenaR: 32, weaponWave: 14, trickle: { min: 0.35, max: 0.6, maxAlive: 22, types: [{ t: 'walker', w: 0.55 }, { t: 'runner', w: 0.35 }, { t: 'brute', w: 0.1 }] },
+      zones: [{ id: 'A', x: p.x, z: p.z, r: 4.5, name: 'ZONE A' }]
+    };
+  },
+  15: function () {
+    // boss "wave" only drives its HP/speed curve (see ZTYPES.hpMul/Zombie.spawn) — kept low on
+    // purpose since a boss this hard to even hit shouldn't also be a raw damage sponge on top
+    return { arenaR: 34, weaponWave: 12, trickle: { min: 3, max: 4.5, maxAlive: 3, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'phantom', wave: 6, label: 'THE PHANTOM DOWN', displayName: 'THE PHANTOM' } };
+  },
+  16: function () {
+    const spots = Levels.pickSpots(4, 12, 30, 11);
+    return { arenaR: 46, weaponWave: 16, trickle: { min: 0.9, max: 1.5, maxAlive: 16, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.2 }, { t: 'brute', w: 0.1 }] }, structures: spots.map(function (p) { return { x: p.x, z: p.z, hp: 100 }; }) };
+  },
+  17: function () {
+    const c = Levels.pickSpots(1, 10, 20, 0)[0];
+    const pts = [0, 1, 2].map(function (i) { const a = i * (Math.PI * 2 / 3); return { x: c.x + Math.cos(a) * 3, z: c.z + Math.sin(a) * 3 }; });
+    return {
+      arenaR: 40, weaponWave: 17, trickle: { min: 0.8, max: 1.4, maxAlive: 18, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.1 }] },
+      zones: [{ id: 'A', x: pts[0].x, z: pts[0].z, r: 6, name: 'ZONE A' }, { id: 'B', x: pts[1].x, z: pts[1].z, r: 6, name: 'ZONE B' }, { id: 'C', x: pts[2].x, z: pts[2].z, r: 6, name: 'ZONE C' }],
+      allHold: true, allHoldRate: 8
+    };
+  },
+  18: function () {
+    return { arenaR: 40, weaponWave: 18, trickle: { min: 0.6, max: 1.1, maxAlive: 20, types: [{ t: 'walker', w: 0.55 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.15 }] } };
+  },
+  19: function () {
+    return { arenaR: 34, weaponWave: 15, trickle: { min: 3.2, max: 4.8, maxAlive: 3, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'pyromaniac', wave: 7, label: 'THE PYROMANIAC DOWN', displayName: 'THE PYROMANIAC' } };
+  },
+  20: function () {
+    const p = Levels.pickSpots(1, 14, 26, 0)[0];
+    return {
+      arenaR: 40, weaponWave: 19, trickle: { min: 1.4, max: 2.2, maxAlive: 10, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] },
+      structures: [{ x: p.x, z: p.z, hp: 120 }], structureGatesBoss: true, boss: { type: 'tank', wave: 12, label: 'OVERLORD DOWN', displayName: 'OVERLORD' }
+    };
   }
 };
 
@@ -6178,8 +6271,9 @@ const Levels = {
     Game.start();
     this.spec = build();
     this.active = true;
-    this.progress = { kills: 0, structuresDestroyed: 0, bossesKilled: 0, victoryPoints: 0, holdTimeA: 0, holdTimeB: 0, holdTimeC: 0, surviveTime: 0 };
+    this.progress = { kills: 0, structuresDestroyed: 0, bossesKilled: 0, victoryPoints: 0, tripleHoldPoints: 0, holdTimeA: 0, holdTimeB: 0, holdTimeC: 0, surviveTime: 0 };
     this.checkpointIdx = 0; this.bossSpawned = false; this.trickleT = 1.2; this.elapsed = 0;
+    this.seqIdx = 0; this.shiftT = this.spec.shiftingZone ? this.spec.shiftingZone.interval : 0;
     // lighter than endless mode's own early-game pace (rnd(6.5,10.5)/rnd(20,35)) — challenge
     // levels are shorter and more focused, but still need SOME chance at a comeback rather than
     // zero HP recovery for the whole level (see Game.spawnPickup/spawnHealthKit, reused as-is —
@@ -6190,24 +6284,41 @@ const Levels = {
     CFG.arenaR = this.spec.arenaR; World.rebuildGrid(); World.layoutBoundary(CFG.arenaR); applyDrawDistance(CFG.arenaR);
     this.grantWeaponsForDifficulty(this.spec.weaponWave || 1);
     if (this.spec.zones) for (const z of this.spec.zones) Zones.place(z.id, z.x, z.z, z.r, z.name);
-    if (this.spec.structures) for (const s of this.spec.structures) Structures.place(s.x, s.z, s.hp);
+    // sequentialStructures (Breaching Party): only the first target is live at a time — the next
+    // one is placed by onStructureDestroyed once the current one goes down
+    if (this.spec.sequentialStructures) Structures.place(this.spec.sequentialStructures[0].x, this.spec.sequentialStructures[0].z, this.spec.sequentialStructures[0].hp);
+    else if (this.spec.structures) for (const s of this.spec.structures) Structures.place(s.x, s.z, s.hp);
     if (this.spec.station) { this.stationHp = this.spec.station.hp; Zones.place('STATION', this.spec.station.x, this.spec.station.z, this.spec.station.r, 'STATION'); }
     AmmoStations.ensureCount(1);
-    if (!this.spec.checkpoints && this.spec.boss) this.spawnBoss();
+    // structureGatesBoss (Overlord): the boss only appears once its shield-generator structure is
+    // down, same "gate" idea as a checkpoint chain but keyed off demolition instead of navigation
+    if (!this.spec.checkpoints && !this.spec.structureGatesBoss && this.spec.boss) this.spawnBoss();
     HUD.showHud(true); HUD.banner(cfg.name.toUpperCase(), cfg.objectives[0], true);
   },
 
   spawnBoss() {
     if (this.bossSpawned || !this.spec.boss) return;
     this.bossSpawned = true;
-    const z = Zombies.spawn(this.spec.boss.type, this.spec.boss.wave);
-    if (z) { z.bossLabel = this.spec.boss.label; z.bossDisplayName = this.spec.boss.type === 'scout' ? 'THE SCOUT' : 'GOLIATH'; }
+    const b = this.spec.boss;
+    const z = Zombies.spawn(b.type, b.wave);
+    if (z) { z.bossLabel = b.label; z.bossDisplayName = b.displayName || (b.type === 'scout' ? 'THE SCOUT' : b.type === 'tank' ? 'GOLIATH' : b.type.toUpperCase()); }
     HUD.toast('BOSS INCOMING', 2.4);
   },
 
   onKill() { if (this.active) this.progress.kills++; },
   onBossKilled() { if (this.active) this.progress.bossesKilled++; },
-  onStructureDestroyed() { if (this.active) { this.progress.structuresDestroyed++; HUD.toast('STRUCTURE DESTROYED · ' + Structures.destroyedCount() + '/' + Structures.active.length, 2); } },
+  onStructureDestroyed() {
+    if (!this.active) return;
+    this.progress.structuresDestroyed++;
+    const total = this.spec.sequentialStructures ? this.spec.sequentialStructures.length : Structures.active.length;
+    HUD.toast('STRUCTURE DESTROYED · ' + this.progress.structuresDestroyed + '/' + total, 2);
+    if (this.spec.sequentialStructures) {
+      this.seqIdx++;
+      const next = this.spec.sequentialStructures[this.seqIdx];
+      if (next) { Structures.place(next.x, next.z, next.hp); HUD.toast('STRUCTURE ' + (this.seqIdx + 1) + ' REVEALED', 2.4); }
+    }
+    if (this.spec.structureGatesBoss) this.spawnBoss();
+  },
 
   checkCheckpoints() {
     const cps = this.spec.checkpoints; if (!cps || this.checkpointIdx >= cps.length) return;
@@ -6221,9 +6332,27 @@ const Levels = {
 
   tickZones(dt) {
     if (!this.spec.zones) return;
+    // Crossfire: the single zone relocates to a fresh reachable spot every `interval` seconds,
+    // scoring only while actually standing in wherever it currently is
+    if (this.spec.shiftingZone) {
+      const sh = this.spec.shiftingZone;
+      this.shiftT -= dt;
+      if (this.shiftT <= 0) {
+        this.shiftT = sh.interval;
+        const z = Zones.get(sh.id), p = this.pickSpots(1, 8, this.spec.arenaR - 6, 0)[0];
+        if (z) { z.x = p.x; z.z = p.z; z.grp.position.set(p.x, 0, p.z); HUD.toast('ZONE ' + sh.id + ' MOVED', 1.8); }
+      }
+      const z = Zones.get(sh.id);
+      if (z && z.held) this.progress.victoryPoints += (sh.rate || 8) * dt;
+      return;
+    }
     if (this.spec.dualHold) {
       const a = Zones.get(this.spec.dualHold[0]), b = Zones.get(this.spec.dualHold[1]);
       if (a && b && a.held && b.held) this.progress.victoryPoints += 10 * dt;
+    } else if (this.spec.allHold) {
+      // Triple Threat: nothing ticks unless every zone is held at the same instant
+      let all = true; for (const zc of this.spec.zones) { const z = Zones.get(zc.id); if (!z || !z.held) { all = false; break; } }
+      if (all) this.progress.tripleHoldPoints += (this.spec.allHoldRate || 8) * dt;
     } else if (this.spec.anyHold) {
       let held = 0; for (const zc of this.spec.zones) { const z = Zones.get(zc.id); if (z && z.held) held++; }
       this.progress.victoryPoints += held * 5 * dt;
@@ -6258,6 +6387,7 @@ const Levels = {
     if (wc.structuresDestroyed != null && p.structuresDestroyed < wc.structuresDestroyed) return false;
     if (wc.bossesKilled != null && p.bossesKilled < wc.bossesKilled) return false;
     if (wc.victoryPoints != null && p.victoryPoints < wc.victoryPoints) return false;
+    if (wc.tripleHoldPoints != null && p.tripleHoldPoints < wc.tripleHoldPoints) return false;
     if (wc.holdTimeA != null && (p.holdTimeA || 0) < wc.holdTimeA) return false;
     if (wc.surviveTime != null && this.elapsed < wc.surviveTime) return false;
     if (wc.stationHealthMin != null && this.stationHp < wc.stationHealthMin) return false;
@@ -6279,6 +6409,9 @@ const Levels = {
     this.checkCheckpoints();
     this.pickupT -= dt; if (this.pickupT <= 0) { this.pickupT = rnd(16, 24); if (Pickups.count() < 5) Game.spawnPickup(); }
     this.healthKitT -= dt; if (this.healthKitT <= 0) { this.healthKitT = rnd(40, 55); if (Game.healthKitCount() < 1) Game.spawnHealthKit(); }
+    // Run & Gun's "pacing break": pinned just above 0 every frame rather than set once to a huge
+    // number, so the HUD pill still reads a small live countdown instead of an odd multi-digit one
+    if (this.spec.infiniteBuffs) { Player.insta = 2; Game.infAmmo = 2; }
     const lose = this.evalLose();
     if (lose) { this.finish(false, lose); return; }
     if (this.evalWin()) { this.finish(true, ''); return; }
@@ -6291,6 +6424,7 @@ const Levels = {
     if (wc.kills != null) parts.push('KILLS ' + Math.min(p.kills, wc.kills) + '/' + wc.kills);
     if (wc.structuresDestroyed != null) parts.push('STRUCTURES ' + Math.min(p.structuresDestroyed, wc.structuresDestroyed) + '/' + wc.structuresDestroyed);
     if (wc.victoryPoints != null) parts.push('POINTS ' + Math.floor(Math.min(p.victoryPoints, wc.victoryPoints)) + '/' + wc.victoryPoints);
+    if (wc.tripleHoldPoints != null) parts.push((this.spec.allHold && !this.spec.zones.every(function (zc) { const z = Zones.get(zc.id); return z && z.held; }) ? 'HOLD ALL ZONES · ' : 'POINTS ') + Math.floor(Math.min(p.tripleHoldPoints, wc.tripleHoldPoints)) + '/' + wc.tripleHoldPoints);
     if (wc.holdTimeA != null) parts.push('ZONE A HOLD ' + Math.floor(Math.min(p.holdTimeA || 0, wc.holdTimeA)) + '/' + wc.holdTimeA + 's');
     if (wc.surviveTime != null) parts.push('SURVIVE ' + Math.floor(Math.min(this.elapsed, wc.surviveTime)) + '/' + wc.surviveTime + 's');
     if (wc.stationHealthMin != null) parts.push('STATION ' + Math.max(0, Math.round(this.stationHp)) + '%');
