@@ -882,7 +882,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.74.0';
+const GAME_VERSION = 'v1.75.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -7061,9 +7061,12 @@ const Levels = {
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
     HUD.showHud(false);
     DOM.levelResultTitle.textContent = won ? 'LEVEL COMPLETE' : 'LEVEL FAILED';
-    DOM.levelResultSub.textContent = won ? (this.cfg.name.toUpperCase() + ' — CLEARED') : reason;
     DOM.btnLevelNext.style.display = (won && this.configFor(this.cfg.level + 1) && this.builderFor(this.cfg.level + 1)) ? '' : 'none';
-    if (won) { Audio.cleared(); this.markCleared(this.cfg.level); } else Audio.death();
+    if (won) {
+      Audio.cleared();
+      const isNewBest = this.markCleared(this.cfg.level, this.elapsed);
+      DOM.levelResultSub.textContent = this.cfg.name.toUpperCase() + ' — CLEARED IN ' + fmtClock(this.elapsed) + (isNewBest ? ' — NEW BEST!' : '');
+    } else { Audio.death(); DOM.levelResultSub.textContent = reason; }
     HUD.showScreen('levelresult');
   },
 
@@ -7078,12 +7081,15 @@ const Levels = {
     this.clears = { solo: {}, coop: {} };
     try { const raw = localStorage.getItem('dnd_challengeClears'); if (raw) { const parsed = JSON.parse(raw); if (parsed) this.clears = { solo: parsed.solo || {}, coop: parsed.coop || {} }; } } catch (e) { this.clears = { solo: {}, coop: {} }; }
   },
-  markCleared(n) {
+  markCleared(n, time) {
     this.loadClears();
     const bucket = this.clears[this.mode] || (this.clears[this.mode] = {});
-    if (bucket[n]) return;
-    bucket[n] = true;
+    const prevBest = bucket[n] && bucket[n].best;
+    const best = (prevBest != null && time != null) ? Math.min(prevBest, time) : (time != null ? time : prevBest);
+    const isNewBest = time != null && (prevBest == null || time < prevBest);
+    bucket[n] = { cleared: true, best: best };
     try { localStorage.setItem('dnd_challengeClears', JSON.stringify(this.clears)); } catch (e) { }
+    return isNewBest;
   },
 
   // level-select UI
@@ -7101,10 +7107,11 @@ const Levels = {
       let cleared = 0; for (let n = t[0]; n <= t[1]; n++) if (clears[n]) cleared++;
       html += '<div class="tiertitle">' + t[2] + ' · ' + cleared + '/' + (t[1] - t[0] + 1) + ' CLEARED</div><div class="levelgrid">';
       for (let n = t[0]; n <= t[1]; n++) {
-        const c = this.configFor(n), locked = !this.builderFor(n), isCleared = !!clears[n];
+        const c = this.configFor(n), locked = !this.builderFor(n), rec = clears[n], isCleared = !!rec;
+        const bestTxt = (isCleared && rec.best != null) ? fmtClock(rec.best) : '';
         html += '<div class="leveltile' + (locked ? ' locked' : '') + (isCleared ? ' cleared' : '') + '" data-level="' + n + '">' +
           '<div class="ln">' + n + '</div><div class="lt">' + Net.esc(c.name) + '</div>' +
-          '<div class="la">' + (locked ? 'SOON' : Net.esc(c.archetype)) + '</div></div>';
+          '<div class="la">' + (locked ? 'SOON' : Net.esc(c.archetype)) + (bestTxt ? ' · ' + bestTxt : '') + '</div></div>';
       }
       html += '</div>';
     }
