@@ -661,7 +661,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="row" style="margin-top:10px">
         <button class="bigbtn secondary" id="btnCoopChallenges">COOP CHALLENGES</button>
       </div>
-      <div class="help">Coop Challenges are coming in a future update — Solo Challenges are ready now.</div>
+      <div class="help">Coop Challenges currently fill any open squad slots with bots, same as Solo — hosted-room support for playing them with real squadmates is coming later.</div>
     </div></div>
   </div>
 
@@ -669,7 +669,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   <div id="levelselect" class="screen">
     <button class="backbtn" id="btnBackLevelselect">← BACK</button>
     <div class="scroll"><div class="panel">
-      <h1 class="title" style="font-size:clamp(26px,6vw,46px)">SOLO <em>CHALLENGES</em></h1>
+      <h1 class="title" style="font-size:clamp(26px,6vw,46px)" id="levelselectTitle">SOLO <em>CHALLENGES</em></h1>
       <div id="levelselectBody"></div>
       <div class="row" style="margin-top:10px"><button class="bigbtn secondary" id="btnLevelselectBack">BACK</button></div>
     </div></div>
@@ -882,7 +882,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.72.0';
+const GAME_VERSION = 'v1.73.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3085,7 +3085,13 @@ const ZTYPES = {
   titan: { hpMul: 18, hpWave: 1.08, speedMul: 0.7, scale: 2.1, dmg: 42, radius: 1.0, height: 4.0, reach: 3.2, big: true, lean: 0.02, special: true, boss: true, pts: 18, traits: { zoneGated: true } },
   // The Desert God: finale is checked in Zombie.hit via Levels.clampFinaleDamage — see
   // Levels.tickFinale for the phase machine that raises/lowers the floor
-  desertgod: { hpMul: 22, hpWave: 1.07, speedMul: 0.75, scale: 2.3, dmg: 34, radius: 1.05, height: 4.3, reach: 3.3, big: true, lean: 0.02, special: true, boss: true, pts: 20, traits: { finale: true } }
+  desertgod: { hpMul: 22, hpWave: 1.07, speedMul: 0.75, scale: 2.3, dmg: 34, radius: 1.05, height: 4.3, reach: 3.3, big: true, lean: 0.02, special: true, boss: true, pts: 20, traits: { finale: true } },
+  // Coop Challenges bosses (see COOP_LEVEL_BUILDERS)
+  juggernaut: { hpMul: 8, hpWave: 1.08, speedMul: 0.8, scale: 1.8, dmg: 26, radius: 0.85, height: 3.5, reach: 2.8, big: true, lean: 0.02, special: true, boss: true, pts: 12 },
+  centurion: { hpMul: 7, hpWave: 1.08, speedMul: 0.9, scale: 1.6, dmg: 22, radius: 0.7, height: 3.0, reach: 2.4, big: true, lean: 0.02, special: true, boss: true, pts: 10, traits: { periodicInvuln: 'even' } },
+  // identical to centurion except which half of the 5s cycle it's invulnerable on — spawned
+  // alongside it so exactly one twin is ever vulnerable at a time
+  centurion2: { hpMul: 7, hpWave: 1.08, speedMul: 0.9, scale: 1.6, dmg: 22, radius: 0.7, height: 3.0, reach: 2.4, big: true, lean: 0.02, special: true, boss: true, pts: 10, traits: { periodicInvuln: 'odd' } }
 };
 const ZG = {};
 /* Merged box-cluster geometry: many boxes -> ONE BufferGeometry, so a detailed
@@ -3396,6 +3402,19 @@ class Zombie {
       if (this.type.traits.spawnsMinions && dmg > 0) {
         this.minionCd = (this.minionCd || 0) - 1;
         if (this.minionCd <= 0) { this.minionCd = 45; Levels.spawnMinionWave(this); }
+      }
+      // Twin Centurions: alternates windows of total invulnerability on a fixed cycle, opposite to
+      // its twin (see COOP_LEVEL_BUILDERS[10]) — forces switching targets rather than one boss
+      // always taking priority, standing in for true bullet/explosive-type immunity without
+      // needing a damage-type tag plumbed through every bullet/grenade/AOE call site.
+      if (this.type.traits.periodicInvuln) {
+        const cyc = 5, phase = Math.floor(Game.time / cyc) % 2 === 0;
+        const invuln = this.type.traits.periodicInvuln === 'even' ? phase : !phase;
+        if (invuln) {
+          this.flashT = 0.09;
+          if (Game.time - (this.immuneT || -99) > 0.8) { this.immuneT = Game.time; Floaties.spawn(hx, hy, hz, 'IMMUNE', '#ffb84a', 15, 0.7); }
+          return false;
+        }
       }
     }
     this.hp -= dmg; this.flashT = 0.09;
@@ -3875,10 +3894,20 @@ const Zones = {
     return z0;
   },
   get(id) { for (const z of this.pool) if (z.on && z.id === id) return z; return null; },
+  // relocate an existing zone in place (e.g. Cross-Fire Demolition's next depot, The Deflector's
+  // patrolling bubble) instead of leaking a second pool slot under the same id
+  moveOrPlace(id, x, z, r, name) {
+    const existing = this.get(id);
+    if (existing) { existing.x = x; existing.z = z; if (r != null) { existing.r = r; existing.ring.scale.set(r, r, 1); existing.disc.scale.set(r, r, 1); } existing.grp.position.set(x, 0, z); existing.holdT = 0; return existing; }
+    return this.place(id, x, z, r, name);
+  },
   friendlyCount(zone) {
     let n = 0;
     if (Player.alive) { const dx = Player.x - zone.x, dz = Player.z - zone.z; if (dx * dx + dz * dz <= zone.r * zone.r) n++; }
     if (Bots.on) for (const b of Bots.list) { if (!b.squadActive || b.down || b.out) continue; const dx = b.x - zone.x, dz = b.z - zone.z; if (dx * dx + dz * dz <= zone.r * zone.r) n++; }
+    // Coop Challenges: real squadmates count too (host-side only — Levels/Zones only ever run
+    // their authoritative update on the host or solo, same rule the rest of the horde follows)
+    if (Net.isHost()) for (const k in Net.peers) { const p = Net.peers[k]; if (p.st !== 0) continue; const dx = p.x - zone.x, dz = p.z - zone.z; if (dx * dx + dz * dz <= zone.r * zone.r) n++; }
     return n;
   },
   update(dt) {
@@ -4764,6 +4793,8 @@ const Player = {
     if (!this.alive || Game.state !== 'playing') return;
     if (Game.invincible > 0) return;
     if (this.ultImmune || this.ultImmuneT > 0) return; // any champion's own move, or anyone's 3s after
+    // Coop Challenges: No Man Left Behind's "enemies deal 2x damage" (see spec.dmgMultiplier)
+    if (Levels.active && Levels.spec.dmgMultiplier) amount *= Levels.spec.dmgMultiplier;
     this.shieldRegenT = CFG.shieldRegenDelay;
     if (this.shield > 0) { const absorb = Math.min(this.shield, amount); this.shield -= absorb; amount -= absorb; }
     this.hp -= amount; this.lastHurt = Game.time; Game.shake = Math.max(Game.shake, 0.9);
@@ -5332,7 +5363,7 @@ const HUD = {
       'coop', 'netPill', 'radar', 'downed', 'downedBar', 'downedSub', 'revive', 'reviveText', 'reviveBar', 'lbWrap', 'lbStatus', 'goCoop', 'goRoom', 'goTestNote',
       'boss', 'bossName', 'bossBar', 'pinned', 'pinnedSub', 'pinnedBar', 'ammoStation', 'ammoStationText', 'ammoStationBar',
       'modeselect', 'levelselect', 'levelresult', 'btnChallenges', 'btnBackModeselect', 'btnSoloChallenges', 'btnCoopChallenges',
-      'levelselectBody', 'btnBackLevelselect', 'btnLevelselectBack', 'levelResultTitle', 'levelResultSub',
+      'levelselectBody', 'levelselectTitle', 'btnBackLevelselect', 'btnLevelselectBack', 'levelResultTitle', 'levelResultSub',
       'btnLevelRetry', 'btnLevelNext', 'btnLevelBackSelect', 'btnLevelMenu'
     ].forEach(id => DOM[id] = $(id));
     DOM.lowhp.style.backgroundImage = 'url(' + TEX.lowhpUrl + ')';
@@ -6327,6 +6358,102 @@ const LEVEL_BUILDERS = {
   }
 };
 
+/* ------------------------------------------------------------------ Coop Challenges: level data
+   Same shape/spirit as SOLO_CHALLENGES_CONFIG — pure design data here, engine wiring in
+   COOP_LEVEL_BUILDERS below. Coop Challenges currently run through the exact same Levels/Zones/
+   Structures engine as Solo (see Levels.mode), just with any open squad slot filled by bots
+   (Bots.syncCoopFill, the same mechanic endless coop already uses) rather than through a hosted
+   room — see the CHALLENGES button wiring for why. Only Tier 1 (1-10) has a builder so far. */
+const COOP_CHALLENGES_CONFIG = [
+  { level: 1, name: 'Vanguard Assembly', archetype: 'Survival', objectives: ['Co-op Shared Counter: Accumulate 40 team kills'], winConditions: { teamKills: 40 }, perfCap: 16 },
+  { level: 2, name: 'Split Capture', archetype: 'Domination', objectives: ['Zones A and B must be occupied simultaneously to score'], winConditions: { simultaneousHoldPoints: 100 }, perfCap: 18 },
+  { level: 3, name: 'Cross-Fire Demolition', archetype: 'Sabotage', objectives: ['Hold touch interaction for 15s to plant bombs on 3 depots'], winConditions: { bombsPlanted: 3 }, perfCap: 20 },
+  { level: 4, name: 'No Man Left Behind', archetype: 'Survival', objectives: ["Enemies deal 2x damage. Revive timer reduced to 5s. Survive 2m"], winConditions: { surviveTime: 120, teamEliminated: false }, perfCap: 15 },
+  { level: 5, name: 'Dual Juggernauts', archetype: 'Boss Hunt', objectives: ['Killed 2 mini-bosses. They buff each other if allowed to meet'], winConditions: { bossesKilled: 2 }, perfCap: 16 },
+  { level: 6, name: 'Supply Chain', archetype: 'Scavenger', objectives: ['Retrieve 10 perimeter battery drops and secure at center box'], winConditions: { batteriesSecured: 10 }, perfCap: 22 },
+  { level: 7, name: 'Perimeter Lock', archetype: 'Domination', objectives: ['Spread out across points A, B, and C. Secure 300 points'], winConditions: { victoryPoints: 300 }, perfCap: 24 },
+  { level: 8, name: 'The Deflector', archetype: 'Escort', objectives: ["Stand inside a moving drone's protective bubble to bypass storm"], winConditions: { turretsDestroyed: 3 }, perfCap: 18 },
+  { level: 9, name: 'Ammo Shortage', archetype: 'Survival', objectives: ['Ammo crates restricted. Manage shared power weapon pool. 80 kills'], winConditions: { teamKills: 80 }, perfCap: 25 },
+  { level: 10, name: 'Twin Centurions', archetype: 'Boss Hunt', objectives: ['2 linked-health bosses. One immune to bullets, one to explosives'], winConditions: { bossesKilled: 2 }, perfCap: 18 },
+  { level: 11, name: 'The Grid', archetype: 'Domination', objectives: ["One random player is 'charged'. Only they can capture the point"], winConditions: { victoryPoints: 200 }, perfCap: 22 },
+  { level: 12, name: 'Gridlock Demolition', archetype: 'Demolition', objectives: ['Destroy two structures within 10s of each other or they self-repair'], winConditions: { structuresDestroyed: 2, synchronizedDestruction: true }, perfCap: 24 },
+  { level: 13, name: 'Bullet Hell Blitz', archetype: 'Survival', objectives: ['Pacing Break: permanent infinite ammo + rapid fire for the whole team. 200 kills'], winConditions: { teamKills: 200 }, perfCap: 36 },
+  { level: 14, name: 'Medic Overdrive', archetype: 'Survival', objectives: ['Continuous team health drain. 5 headshots drops a healing aura'], winConditions: { surviveTime: 180 }, perfCap: 25 },
+  { level: 15, name: 'The Stalker', archetype: 'Boss Hunt', objectives: ['A directional front shield tracks its target — flank behind it'], winConditions: { bossesKilled: 1 }, perfCap: 16 },
+  { level: 16, name: 'Generator Defense', archetype: 'Survival', objectives: ['Defend 2 separate power grids — either hitting 0% ends the run'], winConditions: { surviveTime: 150, genAHealthMin: 1, genBHealthMin: 1 }, perfCap: 26 },
+  { level: 17, name: 'Overloaded Captures', archetype: 'Domination', objectives: ['Each teammate inside a zone adds a linear speed multiplier to its capture'], winConditions: { victoryPoints: 250 }, perfCap: 25 },
+  { level: 18, name: 'Battery Run', archetype: 'Scavenger', objectives: ['Carrying the core halves your speed and mutes weapons — throw it to a teammate'], winConditions: { batteriesSecured: 8 }, perfCap: 24 },
+  { level: 19, name: 'The Alchemist', archetype: 'Hybrid', objectives: ['The target changes state every 30s — only the matching pair of teammates can hurt it'], winConditions: { bossesKilled: 1 }, perfCap: 20 },
+  { level: 20, name: 'Compound Raid', archetype: 'Hybrid', objectives: ["Two teammates must hold an external platform to keep the gate open"], winConditions: { holdTimeGate: 90 }, perfCap: 22 },
+  { level: 21, name: 'Iron Triangle', archetype: 'Domination', objectives: ['If any of the 3 points goes neutral, all scoring freezes'], winConditions: { victoryPoints: 300 }, perfCap: 26 },
+  { level: 22, name: 'Time-Bomb Core', archetype: 'Sabotage', objectives: ['Carrying the core starts a 20s fuse — pass it to a teammate to reset it'], winConditions: { deliveriesComplete: 5 }, perfCap: 24 },
+  { level: 23, name: 'The Great Wall', archetype: 'Survival', objectives: ['Collect scrap from kills to rebuild 4 automatic turrets defending the gate'], winConditions: { turretsRebuilt: 4 }, perfCap: 28 },
+  { level: 24, name: 'Contaminated Arena', archetype: 'Domination', objectives: ['The floor is a poison AOE except for a shifting safe capture area'], winConditions: { holdTimeSafe: 120 }, perfCap: 24 },
+  { level: 25, name: 'The Broodmother', archetype: 'Boss Hunt', objectives: ['Absolute armor toggles on whenever her minor helpers are still alive'], winConditions: { bossesKilled: 1 }, perfCap: 28 },
+  { level: 26, name: 'Chaos Theory', archetype: 'Hybrid', objectives: ['Hold the capture vectors while manually overriding 4 warning dishes in time'], winConditions: { victoryPoints: 200, dishesOverridden: 4 }, perfCap: 28 },
+  { level: 27, name: 'Last Stand Protocol', archetype: 'Survival', objectives: ['No revives at all — going down sends you straight to spectator'], winConditions: { teamKills: 150 }, perfCap: 24 },
+  { level: 28, name: "Titan's Core", archetype: 'Boss Hunt', objectives: ['Both shoulder vents must take damage within 3s of each other to unshield the core'], winConditions: { bossesKilled: 1 }, perfCap: 22 },
+  { level: 29, name: 'Sector Purgatory', archetype: 'Sabotage', objectives: ['Plant charges in 4 linked rooms in sequence — each one locks that room behind you'], winConditions: { roomsCleared: 4 }, perfCap: 26 },
+  { level: 30, name: 'The World Eater', archetype: 'Grand Finale', objectives: ['Phase 1: charge an orbital beam via hold intervals. Phase 2: timed bomb placements. Phase 3: manage aggro'], winConditions: { bossesKilled: 1, chargesPlanted: 2, holdComplete: true }, perfCap: 30 }
+];
+
+// Only Tier 1 (1-10) is wired so far — levels reuse the exact same Zones/Structures primitives
+// Solo does, plus a handful of new coop-flavored mechanics (see Levels.tickPlants/tickBatteries/
+// tickPatrol/tickDualBossBuff and Player.hurt's dmgMultiplier check). Every level here also works
+// solo with the bot squad filling empty slots — EXCEPT where a level's whole point is genuine
+// multi-person coordination (Split Capture's two separated zones: bots stay leashed near the
+// player rather than spreading out to a second objective, so that one specifically needs real
+// teammates, unlike Solo's zones which were deliberately kept overlappable for bot-only play).
+const COOP_LEVEL_BUILDERS = {
+  1: function () { return { arenaR: 32, weaponWave: 3, trickle: { min: 1.2, max: 2.0, maxAlive: 10, types: [{ t: 'walker', w: 0.85 }, { t: 'runner', w: 0.15 }] } }; },
+  2: function () {
+    const spots = Levels.pickSpots(2, 12, 24, 14);
+    return {
+      arenaR: 36, weaponWave: 4, trickle: { min: 1.4, max: 2.2, maxAlive: 10, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] },
+      zones: [{ id: 'A', x: spots[0].x, z: spots[0].z, r: 4.5, name: 'ZONE A' }, { id: 'B', x: spots[1].x, z: spots[1].z, r: 4.5, name: 'ZONE B' }], dualHold: ['A', 'B']
+    };
+  },
+  3: function () {
+    const spots = Levels.pickSpots(3, 12, 26, 12);
+    return { arenaR: 38, weaponWave: 5, trickle: { min: 1.2, max: 2.0, maxAlive: 12, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] }, plants: { spots: spots, r: 3, time: 15 } };
+  },
+  4: function () {
+    return { arenaR: 34, weaponWave: 6, trickle: { min: 1.0, max: 1.7, maxAlive: 12, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, dmgMultiplier: 2, cfgOverride: { downTime: 5 } };
+  },
+  5: function () {
+    return {
+      arenaR: 40, weaponWave: 8, trickle: { min: 2.4, max: 3.6, maxAlive: 6, types: [{ t: 'walker', w: 1 }] },
+      bosses: [{ type: 'juggernaut', wave: 6, label: 'JUGGERNAUT ALPHA DOWN', displayName: 'JUGGERNAUT ALPHA' }, { type: 'juggernaut', wave: 6, label: 'JUGGERNAUT BETA DOWN', displayName: 'JUGGERNAUT BETA' }],
+      dualBossBuff: { range: 8, healPerSec: 40 }
+    };
+  },
+  6: function () {
+    const spots = Levels.pickSpots(10, 10, 26, 6);
+    return { arenaR: 40, weaponWave: 7, trickle: { min: 1.6, max: 2.6, maxAlive: 10, types: [{ t: 'walker', w: 1 }] }, batterySpots: spots, deliveryPoint: { x: 0, z: 0, r: 4 } };
+  },
+  7: function () {
+    const spots = Levels.pickSpots(3, 14, 30, 14);
+    return {
+      arenaR: 44, weaponWave: 9, trickle: { min: 1.1, max: 1.8, maxAlive: 14, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
+      zones: [{ id: 'A', x: spots[0].x, z: spots[0].z, r: 4.5, name: 'ZONE A' }, { id: 'B', x: spots[1].x, z: spots[1].z, r: 4.5, name: 'ZONE B' }, { id: 'C', x: spots[2].x, z: spots[2].z, r: 4.5, name: 'ZONE C' }], anyHold: true
+    };
+  },
+  8: function () {
+    const wps = Levels.pickSpots(4, 10, 26, 10), turretSpots = Levels.pickSpots(3, 10, 26, 12);
+    return {
+      arenaR: 40, weaponWave: 8, trickle: { min: 1.4, max: 2.2, maxAlive: 10, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] },
+      patrol: { waypoints: wps, r: 7, legSeconds: 10, stormDps: 10 }, structures: turretSpots.map(function (p) { return { x: p.x, z: p.z, hp: 110 }; })
+    };
+  },
+  9: function () { return { arenaR: 36, weaponWave: 9, trickle: { min: 0.8, max: 1.4, maxAlive: 14, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.35 }] }, noKitsOrStations: true }; },
+  10: function () {
+    return {
+      arenaR: 40, weaponWave: 10, trickle: { min: 2.2, max: 3.4, maxAlive: 6, types: [{ t: 'walker', w: 1 }] },
+      bosses: [{ type: 'centurion', wave: 8, label: 'CENTURION I DOWN', displayName: 'CENTURION I' }, { type: 'centurion2', wave: 8, label: 'CENTURION II DOWN', displayName: 'CENTURION II' }]
+    };
+  }
+};
+
 /* ------------------------------------------------------------------ Solo Challenges: engine
    Runs entirely inside Game.state==='playing' alongside the normal player/zombie/bullet update —
    Levels.active just means Game.update's own endless-mode wave branch is skipped in favor of
@@ -6335,10 +6462,11 @@ const LEVEL_BUILDERS = {
    through its own #levelresult screen rather than showGameOver(), since a level's win/lose has
    nothing to do with the endless-run leaderboard. */
 const Levels = {
-  active: false, cfg: null, spec: null, progress: null,
+  active: false, mode: 'solo', cfg: null, spec: null, progress: null,
   checkpointIdx: 0, bossSpawned: false, stationHp: 0, trickleT: 0, elapsed: 0,
 
-  configFor(n) { for (const c of SOLO_CHALLENGES_CONFIG) if (c.level === n) return c; return null; },
+  configFor(n) { const list = this.mode === 'coop' ? COOP_CHALLENGES_CONFIG : SOLO_CHALLENGES_CONFIG; for (const c of list) if (c.level === n) return c; return null; },
+  builderFor(n) { return (this.mode === 'coop' ? COOP_LEVEL_BUILDERS : LEVEL_BUILDERS)[n]; },
 
   // reachable, unobstructed spots spread around the arena centre — never hand-placed coordinates,
   // since map geometry is randomly seeded per run (see World.generate/World.randomPoint)
@@ -6367,8 +6495,9 @@ const Levels = {
     Player.switchTo(0);
   },
 
-  start(levelNum) {
-    const cfg = this.configFor(levelNum), build = LEVEL_BUILDERS[levelNum];
+  start(levelNum, mode) {
+    if (mode) this.mode = mode;
+    const cfg = this.configFor(levelNum), build = this.builderFor(levelNum);
     if (!cfg || !build) { HUD.toast('THIS LEVEL IS COMING IN A FUTURE UPDATE', 2.6); return; }
     this.cfg = cfg;
     Game.start();
@@ -6383,13 +6512,19 @@ const Levels = {
     }
     this.progress = {
       kills: 0, structuresDestroyed: 0, bossesKilled: 0, miniBossesKilled: 0, victoryPoints: 0, tripleHoldPoints: 0,
-      holdTimeA: 0, holdTimeB: 0, holdTimeC: 0, holdTimeCenter: 0, holdTimeFinal: 0, surviveTime: 0, finalHoldComplete: false
+      holdTimeA: 0, holdTimeB: 0, holdTimeC: 0, holdTimeCenter: 0, holdTimeFinal: 0, surviveTime: 0, finalHoldComplete: false,
+      bombsPlanted: 0, batteriesSecured: 0
     };
     if (this.spec.startingVictoryPoints) this.progress.victoryPoints = this.spec.startingVictoryPoints;
     this.checkpointIdx = 0; this.stageIdx = 0; this.bossSpawned = false; this.trickleT = 1.2; this.elapsed = 0;
     this.seqIdx = 0; this.shiftT = this.spec.shiftingZone ? this.spec.shiftingZone.interval : 0;
     this.masterTimer = this.spec.masterTimer ? this.spec.masterTimer.start : 0;
     this.dgPhase = 1; this.dgFloorHp = 0;
+    this.plantIdx = 0; this.plantT = 0; this.batteryIdx = 0; this.carrying = false; this.patrolT = 0;
+    // generic temporary CFG override (Coop's "revive timer reduced to 5s" etc.) — snapshotted here,
+    // restored in finish() so it can never leak into the next run
+    if (this._cfgOverrides) { for (const k in this._cfgOverrides) CFG[k] = this._cfgOverrides[k]; this._cfgOverrides = null; }
+    if (this.spec.cfgOverride) { this._cfgOverrides = {}; for (const k in this.spec.cfgOverride) { this._cfgOverrides[k] = CFG[k]; CFG[k] = this.spec.cfgOverride[k]; } }
     // lighter than endless mode's own early-game pace (rnd(6.5,10.5)/rnd(20,35)) — challenge
     // levels are shorter and more focused, but still need SOME chance at a comeback rather than
     // zero HP recovery for the whole level (see Game.spawnPickup/spawnHealthKit, reused as-is —
@@ -6405,13 +6540,25 @@ const Levels = {
     if (this.spec.sequentialStructures) Structures.place(this.spec.sequentialStructures[0].x, this.spec.sequentialStructures[0].z, this.spec.sequentialStructures[0].hp);
     else if (this.spec.structures) for (const s of this.spec.structures) Structures.place(s.x, s.z, s.hp);
     if (this.spec.station) { this.stationHp = this.spec.station.hp; Zones.place('STATION', this.spec.station.x, this.spec.station.z, this.spec.station.r, 'STATION'); }
+    // Cross-Fire Demolition: one depot live at a time, channel-planted like an ammo station
+    if (this.spec.plants) { const p = this.spec.plants.spots[0]; Zones.place('DEPOT', p.x, p.z, this.spec.plants.r || 3, 'DEPOT'); }
+    // Supply Chain: one battery live at a time, plus a persistent delivery point
+    if (this.spec.batterySpots) {
+      Zones.place('BATTERY', this.spec.batterySpots[0].x, this.spec.batterySpots[0].z, 2, 'BATTERY');
+      Zones.place('DELIVERY', this.spec.deliveryPoint.x, this.spec.deliveryPoint.z, this.spec.deliveryPoint.r, 'DELIVERY');
+    }
+    // The Deflector: the moving safe bubble's very first position, before tickPatrol starts moving it
+    if (this.spec.patrol) { const wp = this.spec.patrol.waypoints[0]; Zones.place('BUBBLE', wp.x, wp.z, this.spec.patrol.r || 6, 'SAFE BUBBLE'); }
     // Apocalypse Now: no ammo stations, no health kits at all — the constraint is enforced by
     // simply never offering either, rather than a punishing fail-the-instant-you-touch-one trap
     AmmoStations.ensureCount(this.spec.noKitsOrStations ? 0 : 1);
     if (this.spec.noKitsOrStations) this.healthKitT = Infinity;
     // structureGatesBoss (Overlord): the boss only appears once its shield-generator structure is
     // down, same "gate" idea as a checkpoint chain but keyed off demolition instead of navigation
-    if (!this.spec.checkpoints && !this.spec.checkpointStages && !this.spec.structureGatesBoss && this.spec.boss) this.spawnBoss();
+    if (!this.spec.checkpoints && !this.spec.checkpointStages && !this.spec.structureGatesBoss) {
+      if (this.spec.boss) this.spawnBoss();
+      if (this.spec.bosses) this.spawnBosses();
+    }
     HUD.showHud(true); HUD.banner(cfg.name.toUpperCase(), cfg.objectives[0], true);
   },
 
@@ -6425,6 +6572,17 @@ const Levels = {
       if (this.spec.finale) z.isFinale = true;
     }
     HUD.toast('BOSS INCOMING', 2.4);
+  },
+  // Coop Challenges: two independent bosses at once (Dual Juggernauts/Twin Centurions) rather
+  // than the single spec.boss every solo level uses
+  spawnBosses() {
+    if (this.bossSpawned || !this.spec.bosses) return;
+    this.bossSpawned = true;
+    for (const b of this.spec.bosses) {
+      const z = Zombies.spawn(b.type, b.wave);
+      if (z) { z.bossLabel = b.label; z.bossDisplayName = b.displayName || b.type.toUpperCase(); }
+    }
+    HUD.toast('BOSSES INCOMING', 2.4);
   },
 
   onKill() { if (this.active) this.progress.kills++; },
@@ -6554,6 +6712,64 @@ const Levels = {
     if (z && !z.held && Player.alive) Player.hurt(dr.dps * dt, Player.x, Player.z);
   },
 
+  // Cross-Fire Demolition: hold the current depot (any friendly standing in it) continuously for
+  // its plant time to arm it, then the next depot appears — leaving costs all progress on that one
+  tickPlants(dt) {
+    const pl = this.spec.plants; if (!pl || this.plantIdx >= pl.spots.length) return;
+    const z = Zones.get('DEPOT');
+    if (z && z.held) {
+      this.plantT += dt;
+      if (this.plantT >= (pl.time || 15)) {
+        this.plantIdx++; this.progress.bombsPlanted = this.plantIdx; this.plantT = 0;
+        HUD.toast('DEPOT ARMED · ' + this.plantIdx + '/' + pl.spots.length, 2.2);
+        if (this.plantIdx < pl.spots.length) { const next = pl.spots[this.plantIdx]; Zones.moveOrPlace('DEPOT', next.x, next.z, pl.r || 3, 'DEPOT'); }
+      }
+    } else this.plantT = 0;
+  },
+
+  // Supply Chain: touch a battery to pick it up, walk it to the delivery point to bank it — only
+  // one battery in play at a time, same sequential idea as sequentialStructures
+  tickBatteries() {
+    const spots = this.spec.batterySpots; if (!spots) return;
+    if (!this.carrying) {
+      if (this.batteryIdx >= spots.length) return;
+      const cur = spots[this.batteryIdx], dx = Player.x - cur.x, dz = Player.z - cur.z;
+      if (dx * dx + dz * dz <= 4) { this.carrying = true; Zones.get('BATTERY').grp.visible = false; HUD.toast('BATTERY SECURED — RETURN IT TO BASE', 2.2); }
+    } else {
+      const dp = this.spec.deliveryPoint, dx = Player.x - dp.x, dz = Player.z - dp.z;
+      if (dx * dx + dz * dz <= dp.r * dp.r) {
+        this.carrying = false; this.batteryIdx++; this.progress.batteriesSecured = this.batteryIdx;
+        HUD.toast('DELIVERED · ' + this.batteryIdx + '/' + spots.length, 2);
+        if (this.batteryIdx < spots.length) { const next = spots[this.batteryIdx]; const bz = Zones.get('BATTERY'); Zones.moveOrPlace('BATTERY', next.x, next.z, 2, 'BATTERY'); bz.grp.visible = true; }
+      }
+    }
+  },
+
+  // The Deflector: a protective bubble patrols a fixed waypoint loop; standing outside it while
+  // it's up means the "storm" is hitting you (same idea as tickZoneDrain, moving instead of static)
+  tickPatrol(dt) {
+    const p = this.spec.patrol; if (!p) return;
+    this.patrolT += dt;
+    const legDur = p.legSeconds || 8, n = p.waypoints.length, idx = Math.floor(this.patrolT / legDur) % n;
+    const wp = p.waypoints[idx], next = p.waypoints[(idx + 1) % n], segT = (this.patrolT % legDur) / legDur;
+    Zones.moveOrPlace('BUBBLE', wp.x + (next.x - wp.x) * segT, wp.z + (next.z - wp.z) * segT, p.r || 6, 'SAFE BUBBLE');
+    const bubble = Zones.get('BUBBLE');
+    if (bubble && !bubble.held && Player.alive) Player.hurt((p.stormDps || 8) * dt, Player.x, Player.z);
+  },
+
+  // Dual Juggernauts: letting the pair stay close lets them patch each other up — the level wants
+  // you splitting their attention and killing them apart, not fighting them stacked together
+  tickDualBossBuff(dt) {
+    if (!this.spec.dualBossBuff) return;
+    const bosses = Zombies.pool.filter(function (z) { return z.on && z.boss && z.state !== 'dead'; });
+    if (bosses.length < 2) return;
+    const a = bosses[0], b = bosses[1], d = Math.hypot(a.x - b.x, a.z - b.z);
+    if (d < (this.spec.dualBossBuff.range || 8)) {
+      const heal = (this.spec.dualBossBuff.healPerSec || 40) * dt;
+      a.hp = Math.min(a.maxHp, a.hp + heal); b.hp = Math.min(b.maxHp, b.hp + heal);
+    }
+  },
+
   spawnTrickle(dt) {
     const tk = this.spec.trickle; if (!tk) return;
     this.trickleT -= dt;
@@ -6589,6 +6805,14 @@ const Levels = {
     if (wc.miniBossesKilled != null && p.miniBossesKilled < wc.miniBossesKilled) return false;
     if (wc.finalHoldComplete && !p.finalHoldComplete) return false;
     if (wc.medkitsUsed != null && (p.medkitsUsed || 0) > wc.medkitsUsed) return false;
+    // Coop Challenges — teamKills/turretsDestroyed reuse the same shared counters solo already has
+    // (kills is already a shared/team total even solo+bots — see Game.onZombieKilled) under names
+    // that match the coop spec's own wording
+    if (wc.teamKills != null && p.kills < wc.teamKills) return false;
+    if (wc.simultaneousHoldPoints != null && p.victoryPoints < wc.simultaneousHoldPoints) return false;
+    if (wc.turretsDestroyed != null && p.structuresDestroyed < wc.turretsDestroyed) return false;
+    if (wc.bombsPlanted != null && p.bombsPlanted < wc.bombsPlanted) return false;
+    if (wc.batteriesSecured != null && p.batteriesSecured < wc.batteriesSecured) return false;
     return true;
   },
 
@@ -6606,6 +6830,7 @@ const Levels = {
     Zones.update(dt); this.tickZones(dt); this.tickZoneDrain(dt);
     this.tickStation(dt);
     this.checkCheckpoints(); this.checkStages(); this.tickFinale();
+    this.tickPlants(dt); this.tickBatteries(); this.tickPatrol(dt); this.tickDualBossBuff(dt);
     if (this.spec.masterTimer) this.masterTimer -= dt;
     this.pickupT -= dt; if (this.pickupT <= 0) { this.pickupT = rnd(16, 24); if (Pickups.count() < 5) Game.spawnPickup(); }
     this.healthKitT -= dt; if (this.healthKitT <= 0) { this.healthKitT = rnd(40, 55); if (Game.healthKitCount() < 1) Game.spawnHealthKit(); }
@@ -6634,19 +6859,25 @@ const Levels = {
     if (this.spec.checkpointStages) parts.push('SECTOR ' + this.stageIdx + '/' + this.spec.checkpointStages.length);
     if (wc.miniBossesKilled != null) parts.push('MINI-BOSSES ' + Math.min(p.miniBossesKilled, wc.miniBossesKilled) + '/' + wc.miniBossesKilled);
     if (this.spec.finale) parts.push('PHASE ' + Math.min(this.dgPhase, 3) + '/3' + (this.dgPhase === 3 ? ' · HOLD ' + Math.floor(p.holdTimeFinal) + '/' + (this.spec.finale.holdSeconds || 60) + 's' : ''));
+    if (wc.teamKills != null) parts.push('TEAM KILLS ' + Math.min(p.kills, wc.teamKills) + '/' + wc.teamKills);
+    if (wc.simultaneousHoldPoints != null) parts.push('POINTS ' + Math.floor(Math.min(p.victoryPoints, wc.simultaneousHoldPoints)) + '/' + wc.simultaneousHoldPoints);
+    if (wc.turretsDestroyed != null) parts.push('TURRETS ' + Math.min(p.structuresDestroyed, wc.turretsDestroyed) + '/' + wc.turretsDestroyed);
+    if (wc.bombsPlanted != null) parts.push('DEPOTS ' + Math.min(p.bombsPlanted, wc.bombsPlanted) + '/' + wc.bombsPlanted + (this.plantT > 0 ? ' · ARMING ' + Math.floor(this.plantT) + '/' + (this.spec.plants.time || 15) + 's' : ''));
+    if (wc.batteriesSecured != null) parts.push('BATTERIES ' + Math.min(p.batteriesSecured, wc.batteriesSecured) + '/' + wc.batteriesSecured + (this.carrying ? ' · CARRYING' : ''));
     return parts.join(' · ') || 'IN PROGRESS';
   },
 
   finish(won, reason) {
     if (!this.active) return;
     this.active = false;
+    if (this._cfgOverrides) { for (const k in this._cfgOverrides) CFG[k] = this._cfgOverrides[k]; this._cfgOverrides = null; }
     Game.state = 'levelresult'; Game.timeScale = 1;
     Input.reset();
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
     HUD.showHud(false);
     DOM.levelResultTitle.textContent = won ? 'LEVEL COMPLETE' : 'LEVEL FAILED';
     DOM.levelResultSub.textContent = won ? (this.cfg.name.toUpperCase() + ' — CLEARED') : reason;
-    DOM.btnLevelNext.style.display = (won && this.configFor(this.cfg.level + 1) && LEVEL_BUILDERS[this.cfg.level + 1]) ? '' : 'none';
+    DOM.btnLevelNext.style.display = (won && this.configFor(this.cfg.level + 1) && this.builderFor(this.cfg.level + 1)) ? '' : 'none';
     if (won) { Audio.cleared(); this.markCleared(this.cfg.level); } else Audio.death();
     HUD.showScreen('levelresult');
   },
@@ -6654,31 +6885,38 @@ const Levels = {
   exitToMenu() { World.clearObjectiveBarrels(); Zones.clear(); this.active = false; Game.toMenu(); },
 
   // best-effort persistence, same dnd_* localStorage convention as everything else on this
-  // screen — a plain object of {levelNumber: true}, not a Set, since it has to round-trip through
-  // JSON.stringify/parse
+  // screen — {solo:{levelNumber:true}, coop:{...}}, not Sets, since it has to round-trip
+  // through JSON.stringify/parse
   clears: null,
   loadClears() {
     if (this.clears) return;
-    this.clears = {};
-    try { const raw = localStorage.getItem('dnd_challengeClears'); if (raw) this.clears = JSON.parse(raw) || {}; } catch (e) { this.clears = {}; }
+    this.clears = { solo: {}, coop: {} };
+    try { const raw = localStorage.getItem('dnd_challengeClears'); if (raw) { const parsed = JSON.parse(raw); if (parsed) this.clears = { solo: parsed.solo || {}, coop: parsed.coop || {} }; } } catch (e) { this.clears = { solo: {}, coop: {} }; }
   },
   markCleared(n) {
     this.loadClears();
-    if (this.clears[n]) return;
-    this.clears[n] = true;
+    const bucket = this.clears[this.mode] || (this.clears[this.mode] = {});
+    if (bucket[n]) return;
+    bucket[n] = true;
     try { localStorage.setItem('dnd_challengeClears', JSON.stringify(this.clears)); } catch (e) { }
   },
 
   // level-select UI
-  renderSelect() {
+  renderSelect(mode) {
+    if (mode) this.mode = mode;
     this.loadClears();
-    const tiers = [[1, 10, 'TIER 1 · BOOT CAMP & BASICS'], [11, 20, 'TIER 2 · TACTICAL OPS & HYBRIDS'], [21, 30, 'TIER 3 · ELITE ARENA & BOSS GAUNTLETS']];
+    if (DOM.levelselectTitle) DOM.levelselectTitle.innerHTML = this.mode === 'coop' ? 'COOP <em>CHALLENGES</em>' : 'SOLO <em>CHALLENGES</em>';
+    const clears = this.clears[this.mode] || {};
+    const tierNames = this.mode === 'coop'
+      ? ['TIER 1 · FIRETEAM SYNCHRONIZATION', 'TIER 2 · JOINT OPERATIONS & CHAOS MANAGEMENT', 'TIER 3 · RAID-SCALE OPERATIONS']
+      : ['TIER 1 · BOOT CAMP & BASICS', 'TIER 2 · TACTICAL OPS & HYBRIDS', 'TIER 3 · ELITE ARENA & BOSS GAUNTLETS'];
+    const tiers = [[1, 10, tierNames[0]], [11, 20, tierNames[1]], [21, 30, tierNames[2]]];
     let html = '';
     for (const t of tiers) {
-      let cleared = 0; for (let n = t[0]; n <= t[1]; n++) if (this.clears[n]) cleared++;
+      let cleared = 0; for (let n = t[0]; n <= t[1]; n++) if (clears[n]) cleared++;
       html += '<div class="tiertitle">' + t[2] + ' · ' + cleared + '/' + (t[1] - t[0] + 1) + ' CLEARED</div><div class="levelgrid">';
       for (let n = t[0]; n <= t[1]; n++) {
-        const c = this.configFor(n), locked = !LEVEL_BUILDERS[n], isCleared = !!this.clears[n];
+        const c = this.configFor(n), locked = !this.builderFor(n), isCleared = !!clears[n];
         html += '<div class="leveltile' + (locked ? ' locked' : '') + (isCleared ? ' cleared' : '') + '" data-level="' + n + '">' +
           '<div class="ln">' + n + '</div><div class="lt">' + Net.esc(c.name) + '</div>' +
           '<div class="la">' + (locked ? 'SOON' : Net.esc(c.archetype)) + '</div></div>';
@@ -6686,8 +6924,9 @@ const Levels = {
       html += '</div>';
     }
     DOM.levelselectBody.innerHTML = html;
+    const activeMode = this.mode;
     DOM.levelselectBody.querySelectorAll('.leveltile:not(.locked)').forEach(function (el) {
-      el.addEventListener('click', function () { Audio.unlock(); Levels.start(parseInt(el.dataset.level, 10)); });
+      el.addEventListener('click', function () { Audio.unlock(); Levels.start(parseInt(el.dataset.level, 10), activeMode); });
     });
   }
 };
@@ -6755,8 +6994,12 @@ const Game = {
     // Solo/Coop Challenges navigation: menu -> modeselect -> levelselect -> (Levels.start) -> levelresult
     if (DOM.btnChallenges) DOM.btnChallenges.addEventListener('click', () => HUD.showScreen('modeselect'));
     if (DOM.btnBackModeselect) DOM.btnBackModeselect.addEventListener('click', () => HUD.showScreen('menu'));
-    if (DOM.btnSoloChallenges) DOM.btnSoloChallenges.addEventListener('click', () => { Levels.renderSelect(); HUD.showScreen('levelselect'); });
-    if (DOM.btnCoopChallenges) DOM.btnCoopChallenges.addEventListener('click', () => HUD.toast('COOP CHALLENGES ARE COMING IN A FUTURE UPDATE', 2.8));
+    if (DOM.btnSoloChallenges) DOM.btnSoloChallenges.addEventListener('click', () => { Levels.renderSelect('solo'); HUD.showScreen('levelselect'); });
+    // Coop Challenges currently play the same way Solo Challenges do (bot squad fills any open
+    // slots) rather than through the hosted coop lobby — see Levels.mode/COOP_CHALLENGES_CONFIG.
+    // Wiring these into an actual hosted room (so real squadmates pick one together) is follow-up
+    // work, not done here.
+    if (DOM.btnCoopChallenges) DOM.btnCoopChallenges.addEventListener('click', () => { Levels.renderSelect('coop'); HUD.showScreen('levelselect'); });
     if (DOM.btnBackLevelselect) DOM.btnBackLevelselect.addEventListener('click', () => HUD.showScreen('modeselect'));
     if (DOM.btnLevelselectBack) DOM.btnLevelselectBack.addEventListener('click', () => HUD.showScreen('modeselect'));
     if (DOM.btnLevelRetry) DOM.btnLevelRetry.addEventListener('click', () => { Audio.unlock(); Levels.start(Levels.cfg.level); });
@@ -7021,6 +7264,7 @@ const Game = {
   toMenu() {
     Net.leave(); this.coopMenu = false;
     Levels.active = false; Zones.clear(); World.clearObjectiveBarrels();
+    if (Levels._cfgOverrides) { for (const k in Levels._cfgOverrides) CFG[k] = Levels._cfgOverrides[k]; Levels._cfgOverrides = null; }
     this.state = 'menu'; HUD.showScreen('menu'); HUD.showHud(false); Input.reset(); HUD.refreshOptions();
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
     Director.reset(); Bots.clear(); Player.pinnedBy = null; Player.escape = 0;
