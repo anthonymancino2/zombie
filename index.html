@@ -882,7 +882,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.73.0';
+const GAME_VERSION = 'v1.74.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3091,7 +3091,16 @@ const ZTYPES = {
   centurion: { hpMul: 7, hpWave: 1.08, speedMul: 0.9, scale: 1.6, dmg: 22, radius: 0.7, height: 3.0, reach: 2.4, big: true, lean: 0.02, special: true, boss: true, pts: 10, traits: { periodicInvuln: 'even' } },
   // identical to centurion except which half of the 5s cycle it's invulnerable on — spawned
   // alongside it so exactly one twin is ever vulnerable at a time
-  centurion2: { hpMul: 7, hpWave: 1.08, speedMul: 0.9, scale: 1.6, dmg: 22, radius: 0.7, height: 3.0, reach: 2.4, big: true, lean: 0.02, special: true, boss: true, pts: 10, traits: { periodicInvuln: 'odd' } }
+  centurion2: { hpMul: 7, hpWave: 1.08, speedMul: 0.9, scale: 1.6, dmg: 22, radius: 0.7, height: 3.0, reach: 2.4, big: true, lean: 0.02, special: true, boss: true, pts: 10, traits: { periodicInvuln: 'odd' } },
+  // The Stalker (coop 15): directionalShield checked in Zombie.hit — only a shot from roughly
+  // behind it lands, so flanking it is the actual mechanic rather than just focus-firing
+  stalker: { hpMul: 9, hpWave: 1.08, speedMul: 1.0, scale: 1.5, dmg: 24, radius: 0.65, height: 2.8, reach: 2.3, big: true, lean: 0.02, special: true, boss: true, pts: 12, traits: { directionalShield: true } },
+  // The Broodmother (coop 25): spawnsMinions + minionGated together — she keeps calling in
+  // helpers, and is fully immune the whole time any of them are still alive
+  broodmother: { hpMul: 10, hpWave: 1.08, speedMul: 0.85, scale: 1.9, dmg: 18, radius: 0.85, height: 3.4, reach: 2.7, big: true, lean: 0.02, special: true, boss: true, pts: 16, traits: { spawnsMinions: true, minionGated: true } },
+  // Titan's Core (coop 28) / The World Eater (coop 30) — reuse existing traits under new flavor
+  titancore: { hpMul: 18, hpWave: 1.08, speedMul: 0.75, scale: 2.0, dmg: 30, radius: 0.95, height: 3.8, reach: 3.0, big: true, lean: 0.02, special: true, boss: true, pts: 18, traits: { periodicInvuln: 'even' } },
+  worldeater: { hpMul: 26, hpWave: 1.07, speedMul: 0.7, scale: 2.4, dmg: 38, radius: 1.1, height: 4.4, reach: 3.4, big: true, lean: 0.02, special: true, boss: true, pts: 22, traits: { finale: true } }
 };
 const ZG = {};
 /* Merged box-cluster geometry: many boxes -> ONE BufferGeometry, so a detailed
@@ -3399,6 +3408,16 @@ class Zombie {
         }
       }
       if (this.type.traits.finale) dmg = Levels.clampFinaleDamage(this, dmg);
+      // checked before spawnsMinions below — a hit that's about to be blocked as immune must not
+      // also refresh her minion timer, or shooting a gated Broodmother keeps the gate fed forever
+      if (this.type.traits.minionGated) {
+        const minionsAlive = Zombies.pool.some(function (zb) { return zb.on && zb.state !== 'dead' && !zb.boss; });
+        if (minionsAlive) {
+          this.flashT = 0.09;
+          if (Game.time - (this.immuneT || -99) > 0.8) { this.immuneT = Game.time; Floaties.spawn(hx, hy, hz, 'PROTECTED', '#ff8ab8', 15, 0.7); }
+          return false;
+        }
+      }
       if (this.type.traits.spawnsMinions && dmg > 0) {
         this.minionCd = (this.minionCd || 0) - 1;
         if (this.minionCd <= 0) { this.minionCd = 45; Levels.spawnMinionWave(this); }
@@ -3413,6 +3432,16 @@ class Zombie {
         if (invuln) {
           this.flashT = 0.09;
           if (Game.time - (this.immuneT || -99) > 0.8) { this.immuneT = Game.time; Floaties.spawn(hx, hy, hz, 'IMMUNE', '#ffb84a', 15, 0.7); }
+          return false;
+        }
+      }
+      // The Stalker: a shot has to come from roughly its rear arc to land — dirx/dirz is the
+      // bullet's own direction of travel, so the negation is "which way the shot came from"
+      if (this.type.traits.directionalShield) {
+        const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), dot = -dirx * fx + -dirz * fz;
+        if (dot > -0.2) {
+          this.flashT = 0.09;
+          if (Game.time - (this.immuneT || -99) > 0.8) { this.immuneT = Game.time; Floaties.spawn(hx, hy, hz, 'BLOCKED', '#8fb8ff', 15, 0.7); }
           return false;
         }
       }
@@ -6451,6 +6480,85 @@ const COOP_LEVEL_BUILDERS = {
       arenaR: 40, weaponWave: 10, trickle: { min: 2.2, max: 3.4, maxAlive: 6, types: [{ t: 'walker', w: 1 }] },
       bosses: [{ type: 'centurion', wave: 8, label: 'CENTURION I DOWN', displayName: 'CENTURION I' }, { type: 'centurion2', wave: 8, label: 'CENTURION II DOWN', displayName: 'CENTURION II' }]
     };
+  },
+  11: function () {
+    const p = Levels.pickSpots(1, 10, 22, 0)[0];
+    return {
+      arenaR: 38, weaponWave: 11, trickle: { min: 1.2, max: 2.0, maxAlive: 12, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
+      zones: [{ id: 'A', x: p.x, z: p.z, r: 5, name: 'ZONE A' }], chargedCapture: { zoneId: 'A', interval: 20, rate: 6 }
+    };
+  },
+  12: function () {
+    const spots = Levels.pickSpots(2, 12, 26, 14);
+    return { arenaR: 38, weaponWave: 12, trickle: { min: 1.1, max: 1.8, maxAlive: 12, types: [{ t: 'walker', w: 0.75 }, { t: 'runner', w: 0.25 }] }, structures: spots.map(function (p) { return { x: p.x, z: p.z, hp: 90 }; }), syncWindow: 10 };
+  },
+  13: function () { return { arenaR: 40, weaponWave: 13, trickle: { min: 0.35, max: 0.6, maxAlive: 26, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, infiniteBuffs: true, rapidFireToo: true }; },
+  14: function () { return { arenaR: 36, weaponWave: 14, trickle: { min: 0.9, max: 1.6, maxAlive: 14, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, constantDrain: 2.5, healOnHeadshots: true }; },
+  15: function () { return { arenaR: 36, weaponWave: 13, trickle: { min: 2.6, max: 4, maxAlive: 5, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'stalker', wave: 8, label: 'THE STALKER DOWN', displayName: 'THE STALKER' } }; },
+  16: function () {
+    const spots = Levels.pickSpots(2, 14, 28, 18);
+    return { arenaR: 40, weaponWave: 16, trickle: { min: 1.0, max: 1.7, maxAlive: 14, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, stations: spots.map(function (p) { return { x: p.x, z: p.z, r: 5, hp: 100, dps: 4 }; }) };
+  },
+  17: function () {
+    const spots = Levels.pickSpots(3, 14, 30, 14);
+    return {
+      arenaR: 42, weaponWave: 17, trickle: { min: 1.0, max: 1.7, maxAlive: 15, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
+      zones: [{ id: 'A', x: spots[0].x, z: spots[0].z, r: 4.5, name: 'ZONE A' }, { id: 'B', x: spots[1].x, z: spots[1].z, r: 4.5, name: 'ZONE B' }, { id: 'C', x: spots[2].x, z: spots[2].z, r: 4.5, name: 'ZONE C' }], anyHold: true
+    };
+  },
+  18: function () {
+    const spots = Levels.pickSpots(8, 10, 24, 6);
+    return { arenaR: 38, weaponWave: 18, trickle: { min: 1.1, max: 1.9, maxAlive: 13, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, batterySpots: spots, deliveryPoint: { x: 0, z: 0, r: 4 } };
+  },
+  19: function () { return { arenaR: 36, weaponWave: 15, trickle: { min: 2.8, max: 4.2, maxAlive: 5, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'juggernaut', wave: 10, label: 'THE ALCHEMIST DOWN', displayName: 'THE ALCHEMIST' } }; },
+  20: function () {
+    const p = Levels.pickSpots(1, 10, 22, 0)[0];
+    return { arenaR: 36, weaponWave: 20, trickle: { min: 1.0, max: 1.7, maxAlive: 14, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, zones: [{ id: 'Gate', x: p.x, z: p.z, r: 6, name: 'GATE' }] };
+  },
+  21: function () {
+    const spots = Levels.pickSpots(3, 14, 32, 14);
+    return {
+      arenaR: 46, weaponWave: 21, trickle: { min: 0.9, max: 1.5, maxAlive: 16, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.28 }, { t: 'brute', w: 0.07 }] },
+      zones: [{ id: 'A', x: spots[0].x, z: spots[0].z, r: 4.5, name: 'ZONE A' }, { id: 'B', x: spots[1].x, z: spots[1].z, r: 4.5, name: 'ZONE B' }, { id: 'C', x: spots[2].x, z: spots[2].z, r: 4.5, name: 'ZONE C' }], anyHold: true
+    };
+  },
+  22: function () {
+    const spots = Levels.pickSpots(5, 10, 24, 6);
+    return { arenaR: 36, weaponWave: 22, trickle: { min: 1.0, max: 1.7, maxAlive: 13, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, batterySpots: spots, deliveryPoint: { x: 0, z: 0, r: 4 } };
+  },
+  23: function () { return { arenaR: 40, weaponWave: 23, trickle: { min: 0.9, max: 1.5, maxAlive: 16, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, rebuildPerKills: 15, rebuildTarget: 4 }; },
+  24: function () {
+    const p = Levels.pickSpots(1, 10, 22, 0)[0];
+    return {
+      arenaR: 38, weaponWave: 24, trickle: { min: 1.0, max: 1.7, maxAlive: 15, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
+      zones: [{ id: 'Safe', x: p.x, z: p.z, r: 6, name: 'SAFE ZONE' }], drainOutsideZone: { zoneId: 'Safe', dps: 7 }
+    };
+  },
+  25: function () { return { arenaR: 40, weaponWave: 25, trickle: { min: 4, max: 5.5, maxAlive: 4, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'broodmother', wave: 6, label: 'THE BROODMOTHER DOWN', displayName: 'THE BROODMOTHER' } }; },
+  26: function () {
+    const zSpots = Levels.pickSpots(2, 12, 26, 14), dSpots = Levels.pickSpots(4, 10, 24, 8);
+    return {
+      arenaR: 42, weaponWave: 26, trickle: { min: 1.0, max: 1.7, maxAlive: 15, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
+      zones: [{ id: 'A', x: zSpots[0].x, z: zSpots[0].z, r: 4.5, name: 'ZONE A' }, { id: 'B', x: zSpots[1].x, z: zSpots[1].z, r: 4.5, name: 'ZONE B' }], anyHold: true,
+      plants: { spots: dSpots, r: 3, time: 8 }
+    };
+  },
+  27: function () { return { arenaR: 38, weaponWave: 27, trickle: { min: 0.8, max: 1.4, maxAlive: 16, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.05 }] }, cfgOverride: { downTime: 0.01 } }; },
+  28: function () { return { arenaR: 40, weaponWave: 28, trickle: { min: 2.2, max: 3.4, maxAlive: 6, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'titancore', wave: 12, label: "TITAN'S CORE DOWN", displayName: "TITAN'S CORE" } }; },
+  29: function () {
+    const spots = Levels.pickSpots(4, 12, 30, 10);
+    return {
+      arenaR: 46, weaponWave: 29, trickle: { min: 1.6, max: 2.6, maxAlive: 10, types: [{ t: 'walker', w: 1 }] },
+      checkpointStages: spots.map(function (p, i) { return { x: p.x, z: p.z, r: 5, terminal: { x: p.x, z: p.z, hp: 85 }, miniBoss: { type: 'scout', wave: 8 + i, label: 'ROOM ' + (i + 1) + ' CLEARED', displayName: 'GUARD ' + (i + 1) } }; })
+    };
+  },
+  30: function () {
+    const zoneSpot = Levels.pickSpots(1, 10, 22, 0)[0], pillars = Levels.pickSpots(2, 12, 26, 14);
+    return {
+      arenaR: 44, weaponWave: 30, trickle: { min: 2.0, max: 3.2, maxAlive: 8, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] },
+      boss: { type: 'worldeater', wave: 15, label: 'THE WORLD EATER DOWN', displayName: 'THE WORLD EATER' },
+      finale: { pillars: pillars.map(function (p) { return { x: p.x, z: p.z, hp: 100 }; }), finalZone: { x: zoneSpot.x, z: zoneSpot.z, r: 13 }, holdSeconds: 30 }
+    };
   }
 };
 
@@ -6513,14 +6621,16 @@ const Levels = {
     this.progress = {
       kills: 0, structuresDestroyed: 0, bossesKilled: 0, miniBossesKilled: 0, victoryPoints: 0, tripleHoldPoints: 0,
       holdTimeA: 0, holdTimeB: 0, holdTimeC: 0, holdTimeCenter: 0, holdTimeFinal: 0, surviveTime: 0, finalHoldComplete: false,
-      bombsPlanted: 0, batteriesSecured: 0
+      bombsPlanted: 0, batteriesSecured: 0, turretsRebuilt: 0, holdTimeGate: 0, holdTimeSafe: 0, synchronizedDestruction: false
     };
+    this.headshotCount = 0;
     if (this.spec.startingVictoryPoints) this.progress.victoryPoints = this.spec.startingVictoryPoints;
     this.checkpointIdx = 0; this.stageIdx = 0; this.bossSpawned = false; this.trickleT = 1.2; this.elapsed = 0;
     this.seqIdx = 0; this.shiftT = this.spec.shiftingZone ? this.spec.shiftingZone.interval : 0;
     this.masterTimer = this.spec.masterTimer ? this.spec.masterTimer.start : 0;
     this.dgPhase = 1; this.dgFloorHp = 0;
     this.plantIdx = 0; this.plantT = 0; this.batteryIdx = 0; this.carrying = false; this.patrolT = 0;
+    this.chargedT = 0; this.chargedWho = null; this.stationHps = [];
     // generic temporary CFG override (Coop's "revive timer reduced to 5s" etc.) — snapshotted here,
     // restored in finish() so it can never leak into the next run
     if (this._cfgOverrides) { for (const k in this._cfgOverrides) CFG[k] = this._cfgOverrides[k]; this._cfgOverrides = null; }
@@ -6540,6 +6650,7 @@ const Levels = {
     if (this.spec.sequentialStructures) Structures.place(this.spec.sequentialStructures[0].x, this.spec.sequentialStructures[0].z, this.spec.sequentialStructures[0].hp);
     else if (this.spec.structures) for (const s of this.spec.structures) Structures.place(s.x, s.z, s.hp);
     if (this.spec.station) { this.stationHp = this.spec.station.hp; Zones.place('STATION', this.spec.station.x, this.spec.station.z, this.spec.station.r, 'STATION'); }
+    if (this.spec.stations) { this.stationHps = this.spec.stations.map(function (s) { return s.hp; }); this.spec.stations.forEach(function (s, i) { Zones.place('GEN' + i, s.x, s.z, s.r, 'GENERATOR ' + (i + 1)); }); }
     // Cross-Fire Demolition: one depot live at a time, channel-planted like an ammo station
     if (this.spec.plants) { const p = this.spec.plants.spots[0]; Zones.place('DEPOT', p.x, p.z, this.spec.plants.r || 3, 'DEPOT'); }
     // Supply Chain: one battery live at a time, plus a persistent delivery point
@@ -6585,7 +6696,17 @@ const Levels = {
     HUD.toast('BOSSES INCOMING', 2.4);
   },
 
-  onKill() { if (this.active) this.progress.kills++; },
+  onKill(z, head) {
+    if (!this.active) return;
+    this.progress.kills++;
+    // The Great Wall: scrap from kills auto-rebuilds a turret every N kills, up to the target
+    if (this.spec.rebuildPerKills) this.progress.turretsRebuilt = Math.min(this.spec.rebuildTarget || 4, Math.floor(this.progress.kills / this.spec.rebuildPerKills));
+    // Medic Overdrive: 5 headshots drops a healing pulse for the squad
+    if (this.spec.healOnHeadshots && head) {
+      this.headshotCount++;
+      if (this.headshotCount >= 5) { this.headshotCount = 0; Player.hp = Math.min(Player.maxHp, Player.hp + 40); HUD.toast('HEALING SURGE', 2); }
+    }
+  },
   onBossKilled(z) {
     if (!this.active) return;
     if (z && z.isMiniBoss) this.progress.miniBossesKilled++; else this.progress.bossesKilled++;
@@ -6603,6 +6724,15 @@ const Levels = {
     // Detonator Gauntlet: every kill in the chain buys more time on the master timer
     if (this.spec.masterTimer) { this.masterTimer += this.spec.masterTimer.bonus; HUD.toast('TIMER +' + this.spec.masterTimer.bonus + 's', 1.8); }
     if (this.spec.structureGatesBoss) this.spawnBoss();
+    // Gridlock Demolition: the 2nd structure only "counts" as synchronized if it went down within
+    // syncWindow seconds of the 1st — structuresDestroyed itself still just counts normally
+    if (this.spec.syncWindow) {
+      if (this.progress.structuresDestroyed === 1) this._syncFirstAt = this.elapsed;
+      else if (this.progress.structuresDestroyed === 2) {
+        this.progress.synchronizedDestruction = (this.elapsed - this._syncFirstAt) <= this.spec.syncWindow;
+        HUD.toast(this.progress.synchronizedDestruction ? 'SYNCHRONIZED!' : 'TOO SLOW — NOT SYNCHRONIZED', 2.4);
+      }
+    }
   },
 
   checkCheckpoints() {
@@ -6632,8 +6762,13 @@ const Levels = {
   // Hive Mother: called from Zombie.hit when she's struck (rate-limited there) — a small burst of
   // weak walkers around her, same trickle spawn call the rest of the engine already uses
   spawnMinionWave() {
-    for (let i = 0; i < 3; i++) Zombies.spawn('walker', this.cfg.level);
-    HUD.toast('SHE CALLS FOR HELP', 1.8);
+    // low, fixed wave for HP scaling (these are meant to be quick, disposable helpers, not
+    // inheriting the level's own — potentially very high — difficulty curve) and capped so a
+    // fight that keeps re-triggering this doesn't stack minions past the trickle's own budget
+    const cap = (this.spec.trickle && this.spec.trickle.maxAlive || 10) + 3;
+    let spawned = 0;
+    for (let i = 0; i < 3 && Zombies.activeCount() + spawned < cap; i++) { Zombies.spawn('walker', 4); spawned++; }
+    if (spawned > 0) HUD.toast('SHE CALLS FOR HELP', 1.8);
   },
 
   // The Desert God: raises/lowers a damage floor on the finale boss as phases complete — see
@@ -6698,6 +6833,16 @@ const Levels = {
   },
 
   tickStation(dt) {
+    // Generator Defense: same idea as the single station, just N independent HP pools — any one
+    // hitting 0 ends the run (see evalLose)
+    if (this.spec.stations) {
+      for (let i = 0; i < this.spec.stations.length; i++) {
+        const st = this.spec.stations[i]; let inRange = 0;
+        for (const zb of Zombies.pool) { if (!zb.on || zb.state === 'dead') continue; const dx = zb.x - st.x, dz = zb.z - st.z; if (dx * dx + dz * dz <= st.r * st.r) inRange++; }
+        if (inRange > 0) this.stationHps[i] = Math.max(0, this.stationHps[i] - st.dps * inRange * dt);
+      }
+      return;
+    }
     const st = this.spec.station; if (!st) return;
     let inRange = 0;
     for (const zb of Zombies.pool) { if (!zb.on || zb.state === 'dead') continue; const dx = zb.x - st.x, dz = zb.z - st.z; if (dx * dx + dz * dz <= st.r * st.r) inRange++; }
@@ -6770,6 +6915,30 @@ const Levels = {
     }
   },
 
+  // The Grid: only whichever squad member is currently "charged" can capture the point — rotates
+  // on a timer between the player and each active bot, so solo+bots play still cycles who has to
+  // be the one standing in the zone
+  tickCharged(dt) {
+    const cc = this.spec.chargedCapture; if (!cc) return;
+    this.chargedT = (this.chargedT || 0) - dt;
+    if (this.chargedT <= 0 || !this.chargedWho) {
+      this.chargedT = cc.interval || 20;
+      const active = Bots.list.filter(function (b) { return b.squadActive; });
+      const pool = ['player'].concat(active.map(function (b, i) { return 'bot' + i; }));
+      this.chargedWho = pool[Math.floor(Math.random() * pool.length)];
+      HUD.toast('CHARGED: ' + (this.chargedWho === 'player' ? 'YOU' : this.chargedWho.toUpperCase()), 2.4);
+    }
+    const z = Zones.get(cc.zoneId || 'A'); if (!z) return;
+    let held = false;
+    if (this.chargedWho === 'player') { if (Player.alive) { const dx = Player.x - z.x, dz = Player.z - z.z; if (dx * dx + dz * dz <= z.r * z.r) held = true; } }
+    else {
+      const idx = parseInt(this.chargedWho.replace('bot', ''), 10);
+      const active = Bots.list.filter(function (b) { return b.squadActive; }), b = active[idx];
+      if (b && !b.down && !b.out) { const dx = b.x - z.x, dz = b.z - z.z; if (dx * dx + dz * dz <= z.r * z.r) held = true; }
+    }
+    if (held) this.progress.victoryPoints += (cc.rate || 6) * dt;
+  },
+
   spawnTrickle(dt) {
     const tk = this.spec.trickle; if (!tk) return;
     this.trickleT -= dt;
@@ -6813,11 +6982,22 @@ const Levels = {
     if (wc.turretsDestroyed != null && p.structuresDestroyed < wc.turretsDestroyed) return false;
     if (wc.bombsPlanted != null && p.bombsPlanted < wc.bombsPlanted) return false;
     if (wc.batteriesSecured != null && p.batteriesSecured < wc.batteriesSecured) return false;
+    if (wc.turretsRebuilt != null && p.turretsRebuilt < wc.turretsRebuilt) return false;
+    if (wc.holdTimeGate != null && (p.holdTimeGate || 0) < wc.holdTimeGate) return false;
+    if (wc.holdTimeSafe != null && (p.holdTimeSafe || 0) < wc.holdTimeSafe) return false;
+    if (wc.synchronizedDestruction && !p.synchronizedDestruction) return false;
+    // Tier 2/3 coop levels reusing an existing counter under a different spec-flavored name
+    if (wc.deliveriesComplete != null && p.batteriesSecured < wc.deliveriesComplete) return false;
+    if (wc.dishesOverridden != null && p.bombsPlanted < wc.dishesOverridden) return false;
+    if (wc.roomsCleared != null && p.structuresDestroyed < wc.roomsCleared) return false;
+    if (wc.chargesPlanted != null && p.structuresDestroyed < wc.chargesPlanted) return false;
+    if (wc.holdComplete && !p.finalHoldComplete) return false;
     return true;
   },
 
   evalLose() {
     if (this.spec.station && this.stationHp <= 0) return 'THE STATION WAS DESTROYED';
+    if (this.spec.stations && this.stationHps.some(function (hp) { return hp <= 0; })) return 'A GENERATOR WAS DESTROYED';
     if (this.spec.timeLimitFail != null && this.elapsed >= this.spec.timeLimitFail && !this.evalWin()) return 'OUT OF TIME';
     if (this.spec.masterTimer && this.masterTimer <= 0) return 'THE BOMB DETONATED';
     return null;
@@ -6830,13 +7010,15 @@ const Levels = {
     Zones.update(dt); this.tickZones(dt); this.tickZoneDrain(dt);
     this.tickStation(dt);
     this.checkCheckpoints(); this.checkStages(); this.tickFinale();
-    this.tickPlants(dt); this.tickBatteries(); this.tickPatrol(dt); this.tickDualBossBuff(dt);
+    this.tickPlants(dt); this.tickBatteries(); this.tickPatrol(dt); this.tickDualBossBuff(dt); this.tickCharged(dt);
     if (this.spec.masterTimer) this.masterTimer -= dt;
     this.pickupT -= dt; if (this.pickupT <= 0) { this.pickupT = rnd(16, 24); if (Pickups.count() < 5) Game.spawnPickup(); }
     this.healthKitT -= dt; if (this.healthKitT <= 0) { this.healthKitT = rnd(40, 55); if (Game.healthKitCount() < 1) Game.spawnHealthKit(); }
     // Run & Gun's "pacing break": pinned just above 0 every frame rather than set once to a huge
     // number, so the HUD pill still reads a small live countdown instead of an odd multi-digit one
-    if (this.spec.infiniteBuffs) { Player.insta = 2; Game.infAmmo = 2; }
+    if (this.spec.infiniteBuffs) { Player.insta = 2; Game.infAmmo = 2; if (this.spec.rapidFireToo) Game.rapidFire = 2; }
+    // Medic Overdrive: a steady team-wide drain, not tied to any zone
+    if (this.spec.constantDrain && Player.alive) Player.hurt(this.spec.constantDrain * dt, Player.x, Player.z);
     const lose = this.evalLose();
     if (lose) { this.finish(false, lose); return; }
     if (this.evalWin()) { this.finish(true, ''); return; }
@@ -6864,6 +7046,9 @@ const Levels = {
     if (wc.turretsDestroyed != null) parts.push('TURRETS ' + Math.min(p.structuresDestroyed, wc.turretsDestroyed) + '/' + wc.turretsDestroyed);
     if (wc.bombsPlanted != null) parts.push('DEPOTS ' + Math.min(p.bombsPlanted, wc.bombsPlanted) + '/' + wc.bombsPlanted + (this.plantT > 0 ? ' · ARMING ' + Math.floor(this.plantT) + '/' + (this.spec.plants.time || 15) + 's' : ''));
     if (wc.batteriesSecured != null) parts.push('BATTERIES ' + Math.min(p.batteriesSecured, wc.batteriesSecured) + '/' + wc.batteriesSecured + (this.carrying ? ' · CARRYING' : ''));
+    if (wc.turretsRebuilt != null) parts.push('TURRETS ' + Math.min(p.turretsRebuilt, wc.turretsRebuilt) + '/' + wc.turretsRebuilt);
+    if (wc.holdTimeGate != null) parts.push('GATE HOLD ' + Math.floor(Math.min(p.holdTimeGate || 0, wc.holdTimeGate)) + '/' + wc.holdTimeGate + 's');
+    if (wc.holdTimeSafe != null) parts.push('SAFE HOLD ' + Math.floor(Math.min(p.holdTimeSafe || 0, wc.holdTimeSafe)) + '/' + wc.holdTimeSafe + 's');
     return parts.join(' · ') || 'IN PROGRESS';
   },
 
