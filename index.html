@@ -880,7 +880,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.68.0';
+const GAME_VERSION = 'v1.69.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -6180,6 +6180,12 @@ const Levels = {
     this.active = true;
     this.progress = { kills: 0, structuresDestroyed: 0, bossesKilled: 0, victoryPoints: 0, holdTimeA: 0, holdTimeB: 0, holdTimeC: 0, surviveTime: 0 };
     this.checkpointIdx = 0; this.bossSpawned = false; this.trickleT = 1.2; this.elapsed = 0;
+    // lighter than endless mode's own early-game pace (rnd(6.5,10.5)/rnd(20,35)) — challenge
+    // levels are shorter and more focused, but still need SOME chance at a comeback rather than
+    // zero HP recovery for the whole level (see Game.spawnPickup/spawnHealthKit, reused as-is —
+    // Game.wave stays 0 through a challenge level, which naturally keeps their own wave-scaled
+    // pool/rate logic pinned to its lightest, earliest-game setting)
+    this.pickupT = rnd(16, 24); this.healthKitT = rnd(40, 55);
     Zones.clear(); Structures.clear();
     CFG.arenaR = this.spec.arenaR; World.rebuildGrid(); World.layoutBoundary(CFG.arenaR); applyDrawDistance(CFG.arenaR);
     this.grantWeaponsForDifficulty(this.spec.weaponWave || 1);
@@ -6271,6 +6277,8 @@ const Levels = {
     Zones.update(dt); this.tickZones(dt);
     this.tickStation(dt);
     this.checkCheckpoints();
+    this.pickupT -= dt; if (this.pickupT <= 0) { this.pickupT = rnd(16, 24); if (Pickups.count() < 5) Game.spawnPickup(); }
+    this.healthKitT -= dt; if (this.healthKitT <= 0) { this.healthKitT = rnd(40, 55); if (Game.healthKitCount() < 1) Game.spawnHealthKit(); }
     const lose = this.evalLose();
     if (lose) { this.finish(false, lose); return; }
     if (this.evalWin()) { this.finish(true, ''); return; }
