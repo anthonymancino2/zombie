@@ -279,6 +279,8 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .leveltile .lt{font-size:11px;letter-spacing:.06em;margin-top:2px;line-height:1.15;min-height:2.3em;}
 .leveltile .la{font-size:9px;letter-spacing:.16em;color:var(--dim);margin-top:4px;text-transform:uppercase;}
 .leveltile.locked{opacity:.4;cursor:default;}
+.leveltile.cleared{border-color:#5cff8a;box-shadow:0 0 10px rgba(92,255,138,.35) inset;}
+.leveltile.cleared .ln::after{content:' \2713';color:#5cff8a;}
 .stat .v{font-family:var(--hud-font);font-size:28px;color:#fff;text-shadow:0 0 12px var(--glow);}
 .stat .k{font-family:var(--hud-font);font-size:10px;letter-spacing:.22em;color:var(--dim);margin-top:2px;}
 .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:8px;}
@@ -880,7 +882,7 @@ function easeIn(t) { return t * t; }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.71.0';
+const GAME_VERSION = 'v1.72.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3083,7 +3085,7 @@ const ZTYPES = {
   titan: { hpMul: 18, hpWave: 1.08, speedMul: 0.7, scale: 2.1, dmg: 42, radius: 1.0, height: 4.0, reach: 3.2, big: true, lean: 0.02, special: true, boss: true, pts: 18, traits: { zoneGated: true } },
   // The Desert God: finale is checked in Zombie.hit via Levels.clampFinaleDamage — see
   // Levels.tickFinale for the phase machine that raises/lowers the floor
-  desertgod: { hpMul: 22, hpWave: 1.07, speedMul: 0.75, scale: 2.3, dmg: 46, radius: 1.05, height: 4.3, reach: 3.3, big: true, lean: 0.02, special: true, boss: true, pts: 20, traits: { finale: true } }
+  desertgod: { hpMul: 22, hpWave: 1.07, speedMul: 0.75, scale: 2.3, dmg: 34, radius: 1.05, height: 4.3, reach: 3.3, big: true, lean: 0.02, special: true, boss: true, pts: 20, traits: { finale: true } }
 };
 const ZG = {};
 /* Merged box-cluster geometry: many boxes -> ONE BufferGeometry, so a detailed
@@ -6161,10 +6163,17 @@ const LEVEL_BUILDERS = {
     return { arenaR: 34, weaponWave: 3, trickle: { min: 1.8, max: 2.8, maxAlive: 8, types: [{ t: 'walker', w: 1 }] }, structures: spots.map(function (p) { return { x: p.x, z: p.z, hp: 70 }; }) };
   },
   4: function () {
-    const spots = Levels.pickSpots(2, 10, 17, 15);
+    // "simultaneously" is checked literally (see Levels.tickZones' dualHold branch) — a solo
+    // player's 3-bot squad stays leashed near the player (see Bots.thinkFormationMove/CFG.botLeash)
+    // rather than spreading out to hold a separate objective on its own, so A and B have to overlap
+    // close enough for one occupant to stand in both at once, same trick as Triple Threat (17)
+    const c = Levels.pickSpots(1, 10, 18, 0)[0], ang = Math.random() * Math.PI * 2, gap = 3.5, r = 4.5;
     return {
       arenaR: 38, weaponWave: 4, trickle: { min: 1.6, max: 2.4, maxAlive: 10, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
-      zones: [{ id: 'A', x: spots[0].x, z: spots[0].z, r: 4, name: 'ZONE A' }, { id: 'B', x: spots[1].x, z: spots[1].z, r: 4, name: 'ZONE B' }], dualHold: ['A', 'B']
+      zones: [
+        { id: 'A', x: c.x + Math.cos(ang) * gap, z: c.z + Math.sin(ang) * gap, r: r, name: 'ZONE A' },
+        { id: 'B', x: c.x - Math.cos(ang) * gap, z: c.z - Math.sin(ang) * gap, r: r, name: 'ZONE B' }
+      ], dualHold: ['A', 'B']
     };
   },
   5: function () {
@@ -6219,7 +6228,7 @@ const LEVEL_BUILDERS = {
     // "spawns are quadrupled" — realized as a much hotter trickle than a level-14-equivalent
     // single-zone hold would otherwise get, rather than a literal 4x multiplier on some baseline
     return {
-      arenaR: 32, weaponWave: 14, trickle: { min: 0.35, max: 0.6, maxAlive: 22, types: [{ t: 'walker', w: 0.55 }, { t: 'runner', w: 0.35 }, { t: 'brute', w: 0.1 }] },
+      arenaR: 32, weaponWave: 14, trickle: { min: 0.4, max: 0.7, maxAlive: 12, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.35 }, { t: 'brute', w: 0.05 }] },
       zones: [{ id: 'A', x: p.x, z: p.z, r: 4.5, name: 'ZONE A' }]
     };
   },
@@ -6242,7 +6251,7 @@ const LEVEL_BUILDERS = {
     };
   },
   18: function () {
-    return { arenaR: 40, weaponWave: 18, trickle: { min: 0.6, max: 1.1, maxAlive: 20, types: [{ t: 'walker', w: 0.55 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.15 }] } };
+    return { arenaR: 40, weaponWave: 18, trickle: { min: 0.7, max: 1.3, maxAlive: 14, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.32 }, { t: 'brute', w: 0.08 }] } };
   },
   19: function () {
     return { arenaR: 34, weaponWave: 15, trickle: { min: 3.2, max: 4.8, maxAlive: 3, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'pyromaniac', wave: 7, label: 'THE PYROMANIAC DOWN', displayName: 'THE PYROMANIAC' } };
@@ -6257,7 +6266,7 @@ const LEVEL_BUILDERS = {
   21: function () {
     const spots = Levels.pickSpots(3, 12, 30, 13);
     return {
-      arenaR: 44, weaponWave: 21, trickle: { min: 0.8, max: 1.4, maxAlive: 20, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.1 }] },
+      arenaR: 44, weaponWave: 21, trickle: { min: 1.0, max: 1.7, maxAlive: 14, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.28 }, { t: 'brute', w: 0.07 }] },
       zones: [{ id: 'A', x: spots[0].x, z: spots[0].z, r: 4.5, name: 'ZONE A' }, { id: 'B', x: spots[1].x, z: spots[1].z, r: 4.5, name: 'ZONE B' }, { id: 'C', x: spots[2].x, z: spots[2].z, r: 4.5, name: 'ZONE C' }],
       anyHold: true, startingVictoryPoints: -150
     };
@@ -6281,12 +6290,12 @@ const LEVEL_BUILDERS = {
   26: function () {
     const zSpots = Levels.pickSpots(2, 12, 26, 14), sSpots = Levels.pickSpots(2, 10, 24, 12);
     return {
-      arenaR: 42, weaponWave: 26, trickle: { min: 0.9, max: 1.5, maxAlive: 18, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.1 }] },
+      arenaR: 42, weaponWave: 26, trickle: { min: 1.1, max: 1.8, maxAlive: 13, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.28 }, { t: 'brute', w: 0.07 }] },
       zones: [{ id: 'A', x: zSpots[0].x, z: zSpots[0].z, r: 4.5, name: 'ZONE A' }, { id: 'B', x: zSpots[1].x, z: zSpots[1].z, r: 4.5, name: 'ZONE B' }], anyHold: true,
       structures: sSpots.map(function (p) { return { x: p.x, z: p.z, hp: 110 }; })
     };
   },
-  27: function () { return { arenaR: 36, weaponWave: 27, trickle: { min: 0.9, max: 1.5, maxAlive: 16, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.1 }] }, noKitsOrStations: true }; },
+  27: function () { return { arenaR: 36, weaponWave: 27, trickle: { min: 1.1, max: 1.8, maxAlive: 13, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.28 }, { t: 'brute', w: 0.07 }] }, noKitsOrStations: true }; },
   28: function () {
     const p = Levels.pickSpots(1, 10, 22, 0)[0];
     return {
@@ -6307,9 +6316,13 @@ const LEVEL_BUILDERS = {
   30: function () {
     const zoneSpot = Levels.pickSpots(1, 10, 22, 0)[0], pillars = Levels.pickSpots(2, 12, 26, 14);
     return {
-      arenaR: 42, weaponWave: 30, trickle: { min: 2.0, max: 3.2, maxAlive: 8, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] },
+      // deliberately light — the boss itself is the threat here, ambient trickle is just enough to
+      // keep the arena from feeling empty during the long multi-phase fight, not a second front
+      arenaR: 42, weaponWave: 30, trickle: { min: 3.2, max: 4.8, maxAlive: 5, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] },
       boss: { type: 'desertgod', wave: 14, label: 'THE DESERT GOD DOWN', displayName: 'THE DESERT GOD' },
-      finale: { pillars: pillars.map(function (p) { return { x: p.x, z: p.z, hp: 130 }; }), finalZone: { x: zoneSpot.x, z: zoneSpot.z, r: 6 }, holdSeconds: 60 }
+      // a wide arena, not a pinpoint — phase 3 is "stay in this final-stand ground and outlast
+      // him," with room to circle-strafe the boss, not "stand still next to a boss for 60s"
+      finale: { pillars: pillars.map(function (p) { return { x: p.x, z: p.z, hp: 95 }; }), finalZone: { x: zoneSpot.x, z: zoneSpot.z, r: 13 }, holdSeconds: 30 }
     };
   }
 };
@@ -6361,6 +6374,13 @@ const Levels = {
     Game.start();
     this.spec = build();
     this.active = true;
+    // hard iPhone perf-budget enforcement: whatever a level's builder asked for, the concurrent
+    // trickle cap can never exceed the level's declared perfCap (minus the boss itself, since a
+    // boss is a full extra tracked entity on top of the regular spawn table)
+    if (this.spec.trickle) {
+      const budget = Math.max(1, cfg.perfCap - ((this.spec.boss || this.spec.finale) ? 1 : 0));
+      this.spec.trickle.maxAlive = Math.min(this.spec.trickle.maxAlive, budget);
+    }
     this.progress = {
       kills: 0, structuresDestroyed: 0, bossesKilled: 0, miniBossesKilled: 0, victoryPoints: 0, tripleHoldPoints: 0,
       holdTimeA: 0, holdTimeB: 0, holdTimeC: 0, holdTimeCenter: 0, holdTimeFinal: 0, surviveTime: 0, finalHoldComplete: false
@@ -6542,10 +6562,15 @@ const Levels = {
       const total = tk.types.reduce(function (s, o) { return s + o.w; }, 0);
       const r = Math.random() * total; let acc = 0, pick = tk.types[0].t;
       for (const o of tk.types) { acc += o.w; if (r <= acc) { pick = o.t; break; } }
-      // HP/speed scaling normally rides the level number (see ZTYPES/Zombie.spawn's wave curve) —
-      // spec.spawnWave overrides that for a level whose enemy TYPE is already the difficulty knob
-      // (The Swarm's crawlers are only "low-health" if they don't also inherit a level-30-ish curve)
-      Zombies.spawn(pick, this.spec.spawnWave != null ? this.spec.spawnWave : this.cfg.level);
+      // HP/speed scaling normally rides the level number (see ZTYPES/Zombie.spawn's wave curve),
+      // capped past Tier 1 — Tier 1's own 1-10 curve was already played through and felt right,
+      // but letting regular trickle fodder keep climbing that same exponential all the way to
+      // "wave 30" made ordinary walkers into multi-second bullet sponges by Tier 2/3 (found by
+      // playtesting Sector Lockdown: 22 walkers at a 369hp-equivalent curve overwhelmed a
+      // stationary defender well before enough of them could be thinned out). spec.spawnWave still
+      // overrides this for a level whose enemy TYPE is already the difficulty knob (The Swarm).
+      const defaultWave = this.cfg.level <= 10 ? this.cfg.level : Math.min(12, 6 + Math.ceil((this.cfg.level - 10) / 2));
+      Zombies.spawn(pick, this.spec.spawnWave != null ? this.spec.spawnWave : defaultWave);
     }
   },
 
@@ -6622,21 +6647,39 @@ const Levels = {
     DOM.levelResultTitle.textContent = won ? 'LEVEL COMPLETE' : 'LEVEL FAILED';
     DOM.levelResultSub.textContent = won ? (this.cfg.name.toUpperCase() + ' — CLEARED') : reason;
     DOM.btnLevelNext.style.display = (won && this.configFor(this.cfg.level + 1) && LEVEL_BUILDERS[this.cfg.level + 1]) ? '' : 'none';
-    if (won) Audio.cleared(); else Audio.death();
+    if (won) { Audio.cleared(); this.markCleared(this.cfg.level); } else Audio.death();
     HUD.showScreen('levelresult');
   },
 
   exitToMenu() { World.clearObjectiveBarrels(); Zones.clear(); this.active = false; Game.toMenu(); },
 
+  // best-effort persistence, same dnd_* localStorage convention as everything else on this
+  // screen — a plain object of {levelNumber: true}, not a Set, since it has to round-trip through
+  // JSON.stringify/parse
+  clears: null,
+  loadClears() {
+    if (this.clears) return;
+    this.clears = {};
+    try { const raw = localStorage.getItem('dnd_challengeClears'); if (raw) this.clears = JSON.parse(raw) || {}; } catch (e) { this.clears = {}; }
+  },
+  markCleared(n) {
+    this.loadClears();
+    if (this.clears[n]) return;
+    this.clears[n] = true;
+    try { localStorage.setItem('dnd_challengeClears', JSON.stringify(this.clears)); } catch (e) { }
+  },
+
   // level-select UI
   renderSelect() {
+    this.loadClears();
     const tiers = [[1, 10, 'TIER 1 · BOOT CAMP & BASICS'], [11, 20, 'TIER 2 · TACTICAL OPS & HYBRIDS'], [21, 30, 'TIER 3 · ELITE ARENA & BOSS GAUNTLETS']];
     let html = '';
     for (const t of tiers) {
-      html += '<div class="tiertitle">' + t[2] + '</div><div class="levelgrid">';
+      let cleared = 0; for (let n = t[0]; n <= t[1]; n++) if (this.clears[n]) cleared++;
+      html += '<div class="tiertitle">' + t[2] + ' · ' + cleared + '/' + (t[1] - t[0] + 1) + ' CLEARED</div><div class="levelgrid">';
       for (let n = t[0]; n <= t[1]; n++) {
-        const c = this.configFor(n), locked = !LEVEL_BUILDERS[n];
-        html += '<div class="leveltile' + (locked ? ' locked' : '') + '" data-level="' + n + '">' +
+        const c = this.configFor(n), locked = !LEVEL_BUILDERS[n], isCleared = !!this.clears[n];
+        html += '<div class="leveltile' + (locked ? ' locked' : '') + (isCleared ? ' cleared' : '') + '" data-level="' + n + '">' +
           '<div class="ln">' + n + '</div><div class="lt">' + Net.esc(c.name) + '</div>' +
           '<div class="la">' + (locked ? 'SOON' : Net.esc(c.archetype)) + '</div></div>';
       }
