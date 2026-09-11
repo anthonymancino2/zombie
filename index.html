@@ -903,7 +903,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.78.0';
+const GAME_VERSION = 'v1.79.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1941,6 +1941,21 @@ const Input = {
   touchSeen: false, pointerLocked: false, mouseDown: false,
   on: { reload() { }, swap() { }, auto() { }, pause() { }, select() { }, sprint() { }, camera() { }, ultimate() { }, scope() { }, any() { } },
   el: {},
+  // shared by the HUD control buttons below AND every menu nav button (back buttons etc — see
+  // Game.init): a plain 'click' listener alone is an unreliable way to catch a touch tap in this
+  // file (there are several document-level touchmove/touchstart listeners elsewhere — the look
+  // layer, the movable-controls drag handler — that can eat the synthetic click iOS Safari would
+  // otherwise fire off touchend). Firing straight off touchstart with preventDefault sidesteps
+  // that entirely; the separate 'click' listener is the fallback for desktop mouse users, and
+  // never double-fires since the touchstart's preventDefault stops the browser from synthesizing
+  // a click for that same touch.
+  tapButton(b, fn) {
+    const self = this, opt = { passive: false };
+    b.addEventListener('touchstart', function (e) { if (Layout.editing) return; e.preventDefault(); self.touchSeen = true; self.on.any(); b.classList.add('pressed'); fn(); }, opt);
+    const off = function (e) { e.preventDefault(); b.classList.remove('pressed'); };
+    b.addEventListener('touchend', off, opt); b.addEventListener('touchcancel', off, opt);
+    b.addEventListener('click', function (e) { e.preventDefault(); if (Layout.editing) return; self.on.any(); fn(); });
+  },
   init() {
     const el = this.el;
     ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt', 'btnMedkit', 'btnScope', 'btnPause', 'c'].forEach(id => el[id] = $(id));
@@ -1968,21 +1983,15 @@ const Input = {
     fb.addEventListener('mousedown', function (e) { e.preventDefault(); self.fire = true; self.fireEdge = true; fb.classList.add('pressed'); });
     window.addEventListener('mouseup', function () { if (self.mouseDown) { self.mouseDown = false; } if (!self.pointerLocked) { self.fire = false; fb.classList.remove('pressed'); } else { self.fire = false; } });
     // Tap buttons
-    const tap = function (b, fn) {
-      b.addEventListener('touchstart', function (e) { if (Layout.editing) return; e.preventDefault(); self.touchSeen = true; self.on.any(); b.classList.add('pressed'); fn(); }, opt);
-      const off = function (e) { e.preventDefault(); b.classList.remove('pressed'); };
-      b.addEventListener('touchend', off, opt); b.addEventListener('touchcancel', off, opt);
-      b.addEventListener('click', function (e) { e.preventDefault(); if (Layout.editing) return; self.on.any(); fn(); });
-    };
-    tap(el.btnReload, () => self.on.reload());
-    tap(el.btnMedkit, () => self.on.medkit());
-    tap(el.btnSwitch, () => self.on.swap());
-    tap(el.btnAuto, () => self.on.auto());
-    tap(el.btnCam, () => self.on.camera());
-    tap(el.btnSprint, () => self.on.sprint());
-    tap(el.btnUlt, () => self.on.ultimate());
-    tap(el.btnScope, () => self.on.scope());
-    tap(el.btnPause, () => self.on.pause());
+    self.tapButton(el.btnReload, () => self.on.reload());
+    self.tapButton(el.btnMedkit, () => self.on.medkit());
+    self.tapButton(el.btnSwitch, () => self.on.swap());
+    self.tapButton(el.btnAuto, () => self.on.auto());
+    self.tapButton(el.btnCam, () => self.on.camera());
+    self.tapButton(el.btnSprint, () => self.on.sprint());
+    self.tapButton(el.btnUlt, () => self.on.ultimate());
+    self.tapButton(el.btnScope, () => self.on.scope());
+    self.tapButton(el.btnPause, () => self.on.pause());
     // Keyboard
     window.addEventListener('keydown', function (e) {
       if (e.repeat) return; self.keys[e.code] = true; self.on.any();
@@ -7305,8 +7314,8 @@ const Game = {
       location.href = location.pathname + '?v=' + Date.now() + location.hash;
     });
     $('btnResume').addEventListener('click', () => self.resume()); $('btnQuit').addEventListener('click', () => self.toMenu());
-    $('btnBackPause').addEventListener('click', () => self.toMenu());
-    $('btnBackGameover').addEventListener('click', () => self.toMenu());
+    Input.tapButton($('btnBackPause'), () => self.toMenu());
+    Input.tapButton($('btnBackGameover'), () => self.toMenu());
     $('btnLayout').addEventListener('click', () => Layout.begin());
     $('btnAgain').addEventListener('click', () => {
       Audio.unlock();
@@ -7317,15 +7326,15 @@ const Game = {
     $('btnMenu').addEventListener('click', () => self.toMenu());
     // Solo/Coop Challenges navigation: menu -> modeselect -> levelselect -> (Levels.start) -> levelresult
     if (DOM.btnChallenges) DOM.btnChallenges.addEventListener('click', () => HUD.showScreen('modeselect'));
-    if (DOM.btnBackModeselect) DOM.btnBackModeselect.addEventListener('click', () => HUD.showScreen('menu'));
+    if (DOM.btnBackModeselect) Input.tapButton(DOM.btnBackModeselect, () => HUD.showScreen('menu'));
     if (DOM.btnSoloChallenges) DOM.btnSoloChallenges.addEventListener('click', () => { Levels.renderSelect('solo'); HUD.showScreen('levelselect'); });
     // Coop Challenges currently play the same way Solo Challenges do (bot squad fills any open
     // slots) rather than through the hosted coop lobby — see Levels.mode/COOP_CHALLENGES_CONFIG.
     // Wiring these into an actual hosted room (so real squadmates pick one together) is follow-up
     // work, not done here.
     if (DOM.btnCoopChallenges) DOM.btnCoopChallenges.addEventListener('click', () => { Levels.renderSelect('coop'); HUD.showScreen('levelselect'); });
-    if (DOM.btnBackLevelselect) DOM.btnBackLevelselect.addEventListener('click', () => HUD.showScreen('modeselect'));
-    if (DOM.btnLevelselectBack) DOM.btnLevelselectBack.addEventListener('click', () => HUD.showScreen('modeselect'));
+    if (DOM.btnBackLevelselect) Input.tapButton(DOM.btnBackLevelselect, () => HUD.showScreen('modeselect'));
+    if (DOM.btnLevelselectBack) Input.tapButton(DOM.btnLevelselectBack, () => HUD.showScreen('modeselect'));
     if (DOM.btnLevelRetry) DOM.btnLevelRetry.addEventListener('click', () => { Audio.unlock(); Levels.start(Levels.cfg.level); });
     if (DOM.btnLevelNext) DOM.btnLevelNext.addEventListener('click', () => { Audio.unlock(); Levels.start(Levels.cfg.level + 1); });
     if (DOM.btnLevelBackSelect) DOM.btnLevelBackSelect.addEventListener('click', () => { self.toMenu(); Levels.renderSelect(); HUD.showScreen('levelselect'); });
@@ -9298,9 +9307,9 @@ const Net = {
     DOM.btnOnline.addEventListener('click', function () {
       location.href = location.pathname + '?v=' + Date.now() + '#coop';
     });
-    DOM.btnOnlineBack.addEventListener('click', function () { self.closeOnline(); });
-    DOM.btnBackOnline.addEventListener('click', function () { self.closeOnline(); });
-    DOM.btnBackLobby.addEventListener('click', function () { self.leave(); self.openOnline(); });
+    Input.tapButton(DOM.btnOnlineBack, function () { self.closeOnline(); });
+    Input.tapButton(DOM.btnBackOnline, function () { self.closeOnline(); });
+    Input.tapButton(DOM.btnBackLobby, function () { self.leave(); self.openOnline(); });
     DOM.btnHost.addEventListener('click', function () { Audio.unlock(); self.host(); });
     DOM.btnJoinCode.addEventListener('click', function () { Audio.unlock(); self.join(DOM.inpCode.value); });
     DOM.inpCode.addEventListener('keydown', function (e) { if (e.key === 'Enter') { Audio.unlock(); self.join(DOM.inpCode.value); } });
@@ -9311,8 +9320,8 @@ const Net = {
       Audio.unlock(); self.requestCharChange(el.dataset.char);
     });
     DOM.btnLeaders.addEventListener('click', function () { Board.open(); });
-    DOM.btnLeadersBack.addEventListener('click', function () { Board.close(); });
-    DOM.btnBackLeaders.addEventListener('click', function () { Board.close(); });
+    Input.tapButton(DOM.btnLeadersBack, function () { Board.close(); });
+    Input.tapButton(DOM.btnBackLeaders, function () { Board.close(); });
     DOM.btnStartVoteYes.addEventListener('click', function () { Audio.unlock(); self.sendStartAck(true); });
     DOM.btnStartVoteNo.addEventListener('click', function () { self.sendStartAck(false); });
   },
