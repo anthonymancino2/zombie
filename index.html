@@ -471,6 +471,15 @@ h1.title em{font-style:normal;color:var(--accent2);}
   border:1px solid rgba(255,255,255,.9);transform:rotate(45deg);box-shadow:0 0 6px rgba(255,179,71,.9);}
 .zdot.held{background:#5cff8a;box-shadow:0 0 6px rgba(92,255,138,.9);}
 .zdot.edge{opacity:.75;}
+/* checkpoint marker — a hollow ring (vs. zdot's filled diamond) so "walk here" reads differently
+   from "hold this zone" at a glance; same cyan as the in-world ring/flag/beam */
+.cdot{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;
+  border:2px solid #40e0ff;box-shadow:0 0 6px rgba(64,224,255,.9);}
+.cdot.edge{opacity:.75;}
+/* demolition target (shoot this) — a square, neon yellow to match the in-world ring/beam marker */
+.sdot{position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;background:#f5ff00;
+  border:1px solid rgba(0,0,0,.4);box-shadow:0 0 6px rgba(245,255,0,.9);}
+.sdot.edge{opacity:.75;}
 @media (max-height:440px){ #radar{width:64px;height:64px;} }
 #netPill.bad{color:var(--danger);border-color:rgba(255,59,59,.4);}
 
@@ -903,7 +912,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.79.0';
+const GAME_VERSION = 'v1.80.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -4017,18 +4026,23 @@ const Zones = {
    is enough; only ever one checkpoint is "live" at a time (Levels advances checkpointIdx/stageIdx
    sequentially), so this is a single reusable marker rather than a pool. */
 const CheckpointMarker = {
-  ready: false, t: 0,
+  ready: false, t: 0, x: 0, z: 0,
   init() {
     const ringGeo = new THREE.RingGeometry(0.85, 1, 40); ringGeo.rotateX(-Math.PI / 2);
     this.ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x40e0ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     this.ring.position.y = 0.05;
+    // beam added alongside the ring/flag so a checkpoint reads with the same glowing-column
+    // language as Pickups/Structures — same cyan as the ring/flag, just more of it, more visible
+    const beamGeo = new THREE.CylinderGeometry(0.35, 0.75, 5, 12, 1, true); beamGeo.translate(0, 2.5, 0);
+    this.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0x40e0ff, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
     this.flag = buildFlagMarker(0x40e0ff, 5.2);
-    this.grp = new THREE.Group(); this.grp.add(this.ring, this.flag.grp); this.grp.visible = false;
+    this.grp = new THREE.Group(); this.grp.add(this.ring, this.beam, this.flag.grp); this.grp.visible = false;
     R.scene.add(this.grp);
     this.t = rnd(0, 6); this.ready = true;
   },
   show(x, z, r) {
     if (!this.ready) return;
+    this.x = x; this.z = z;
     this.grp.position.set(x, 0, z); this.ring.scale.set(r, r, 1); this.grp.visible = true;
   },
   hide() { if (this.ready) this.grp.visible = false; },
@@ -4036,6 +4050,7 @@ const CheckpointMarker = {
     if (!this.ready || !this.grp.visible) return;
     this.t += dt; this.ring.rotation.z = this.t * 0.9;
     this.ring.material.opacity = 0.65 + Math.sin(this.t * 3) * 0.3;
+    this.beam.material.opacity = 0.16 + Math.sin(this.t * 3.4) * 0.08;
     updateFlagMarker(this.flag, dt);
   }
 };
@@ -4043,12 +4058,42 @@ const CheckpointMarker = {
 /* ------------------------------------------------------------------ demolition targets (challenge levels)
    Thin tracker around World's objective-barrel pool (see World.spawnObjectiveBarrel) — the actual
    collision/hit/explosion is 100% the existing barrel pipeline, this just remembers which barrels
-   belong to the active level's Demolition objective so Levels can count how many are left. */
+   belong to the active level's Demolition objective so Levels can count how many are left.
+   markers is a small pool of ring+beam call-outs (same visual language as Pickups, neon yellow so
+   "shoot this" reads as a distinct objective type from the domination/checkpoint markers) — one
+   grabbed per place() and released once its barrel stops being alive, not indexed 1:1 against
+   `active` since sequential/replacement structures keep appending to that array all level long. */
 const Structures = {
-  active: [],
-  clear() { World.clearObjectiveBarrels(); this.active.length = 0; },
-  place(x, z, hp) { const br = World.spawnObjectiveBarrel(x, z, hp); if (br) this.active.push(br); return br; },
-  remaining() { let n = 0; for (const b of this.active) if (b.alive) n++; return n; }
+  active: [], markers: [],
+  initMarkers() {
+    const ringGeo = new THREE.RingGeometry(0.85, 1.05, 32); ringGeo.rotateX(-Math.PI / 2);
+    const beamGeo = new THREE.CylinderGeometry(0.3, 0.65, 4.4, 12, 1, true); beamGeo.translate(0, 2.2, 0);
+    for (let i = 0; i < 8; i++) {
+      const grp = new THREE.Group();
+      const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xf5ff00, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      ring.position.y = 0.04; grp.add(ring);
+      const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xf5ff00, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+      grp.add(beam); grp.visible = false; R.scene.add(grp);
+      this.markers.push({ on: false, br: null, grp: grp, ring: ring, beam: beam, t: rnd(0, 6) });
+    }
+  },
+  clear() { World.clearObjectiveBarrels(); this.active.length = 0; for (const m of this.markers) { m.on = false; m.br = null; m.grp.visible = false; } },
+  place(x, z, hp) {
+    const br = World.spawnObjectiveBarrel(x, z, hp); if (!br) return null;
+    this.active.push(br);
+    const m = this.markers.find(function (m) { return !m.on; });
+    if (m) { m.on = true; m.br = br; m.grp.position.set(x, 0, z); m.grp.visible = true; }
+    return br;
+  },
+  remaining() { let n = 0; for (const b of this.active) if (b.alive) n++; return n; },
+  update(dt) {
+    for (const m of this.markers) {
+      if (!m.on) continue;
+      if (!m.br.alive) { m.on = false; m.br = null; m.grp.visible = false; continue; }
+      m.t += dt; m.ring.rotation.z = m.t * 0.8; m.ring.scale.setScalar(1 + Math.sin(m.t * 3) * 0.06);
+      m.beam.material.opacity = 0.16 + Math.sin(m.t * 4) * 0.06;
+    }
+  }
 };
 
 /* ------------------------------------------------------------------ explosions (fireball + shockwave + light) */
@@ -5543,7 +5588,7 @@ const HUD = {
   // straight from the same yaw/forward-right basis Player.eyeDir() and the aim/movement code use
   // (see Player.eyeDir, line ~3373) — reusing that basis rather than re-deriving one is what keeps
   // this from getting east/west backwards the way a from-scratch compass easily can.
-  _radarDots: [], _zoneDots: [],
+  _radarDots: [], _zoneDots: [], _cpDot: null, _structDots: [],
   renderRadar(P) {
     const el = DOM.radar; if (!el) return;
     const RANGE = 32, cy = Math.cos(P.yaw), sy = Math.sin(P.yaw);
@@ -5589,6 +5634,37 @@ const HUD = {
       zn++;
     }
     for (let i = zn; i < zpool.length; i++) zpool[i].style.display = 'none';
+    // checkpoint marker (Boss Hunt/Hybrid "walk here" chain) — at most one live at a time
+    const cel = this._cpDot;
+    if (CheckpointMarker.ready && CheckpointMarker.grp.visible) {
+      const dx = CheckpointMarker.x - P.x, dz = CheckpointMarker.z - P.z;
+      if (dx * dx + dz * dz <= (RANGE * 1.5) * (RANGE * 1.5)) {
+        let r = dx * cy - dz * sy, f = -dx * sy - dz * cy;
+        const d = Math.sqrt(r * r + f * f) || 0.0001, edge = d > RANGE;
+        if (edge) { const k = RANGE / d; r *= k; f *= k; }
+        let dot = cel; if (!dot) { dot = document.createElement('i'); dot.className = 'cdot'; el.appendChild(dot); this._cpDot = dot; }
+        dot.style.display = 'block';
+        dot.style.left = (50 + (r / RANGE) * 50) + '%'; dot.style.top = (50 - (f / RANGE) * 50) + '%';
+        dot.classList.toggle('edge', edge);
+      } else if (cel) cel.style.display = 'none';
+    } else if (cel) cel.style.display = 'none';
+    // demolition targets (Structures) — shoot these
+    const spool = this._structDots; let sn = 0;
+    for (const b of Structures.active) {
+      if (!b.alive) continue;
+      const dx = b.x - P.x, dz = b.z - P.z;
+      if (dx * dx + dz * dz > (RANGE * 1.5) * (RANGE * 1.5)) continue;
+      let r = dx * cy - dz * sy, f = -dx * sy - dz * cy;
+      const d = Math.sqrt(r * r + f * f) || 0.0001, edge = d > RANGE;
+      if (edge) { const k = RANGE / d; r *= k; f *= k; }
+      let dot = spool[sn];
+      if (!dot) { dot = document.createElement('i'); dot.className = 'sdot'; el.appendChild(dot); spool[sn] = dot; }
+      dot.style.display = 'block';
+      dot.style.left = (50 + (r / RANGE) * 50) + '%'; dot.style.top = (50 - (f / RANGE) * 50) + '%';
+      dot.classList.toggle('edge', edge);
+      sn++;
+    }
+    for (let i = sn; i < spool.length; i++) spool[i].style.display = 'none';
   },
   toast(msg, dur) { DOM.toast.textContent = msg; DOM.toast.classList.add('show'); this.toastT = dur || 2.2; },
   banner(title, sub, long) {
@@ -7136,6 +7212,7 @@ const Levels = {
     this.spawnTrickle(dt);
     Zones.update(dt); this.tickZones(dt); this.tickZoneDrain(dt);
     CheckpointMarker.update(dt);
+    Structures.update(dt);
     this.tickStation(dt);
     this.checkCheckpoints(); this.checkStages(); this.tickFinale();
     this.tickPlants(dt); this.tickBatteries(); this.tickPatrol(dt); this.tickDualBossBuff(dt); this.tickCharged(dt);
@@ -7337,8 +7414,8 @@ const Game = {
     if (DOM.btnLevelselectBack) Input.tapButton(DOM.btnLevelselectBack, () => HUD.showScreen('modeselect'));
     if (DOM.btnLevelRetry) DOM.btnLevelRetry.addEventListener('click', () => { Audio.unlock(); Levels.start(Levels.cfg.level); });
     if (DOM.btnLevelNext) DOM.btnLevelNext.addEventListener('click', () => { Audio.unlock(); Levels.start(Levels.cfg.level + 1); });
-    if (DOM.btnLevelBackSelect) DOM.btnLevelBackSelect.addEventListener('click', () => { self.toMenu(); Levels.renderSelect(); HUD.showScreen('levelselect'); });
-    if (DOM.btnLevelMenu) DOM.btnLevelMenu.addEventListener('click', () => self.toMenu());
+    if (DOM.btnLevelBackSelect) Input.tapButton(DOM.btnLevelBackSelect, () => { self.toMenu(); Levels.renderSelect(); HUD.showScreen('levelselect'); });
+    if (DOM.btnLevelMenu) Input.tapButton(DOM.btnLevelMenu, () => self.toMenu());
     const optToggle = (els, fn) => els.forEach(e => e.addEventListener('click', () => { fn(); HUD.refreshOptions(); }));
     optToggle([DOM.optAuto, DOM.pOptAuto], () => self.setAutoFire(!self.autoFire));
     // turning it OFF needs no ceremony; turning it ON goes through the confirmation popup instead
@@ -7598,7 +7675,7 @@ const Game = {
   },
   toMenu() {
     Net.leave(); this.coopMenu = false;
-    Levels.active = false; Zones.clear(); World.clearObjectiveBarrels();
+    Levels.active = false; Zones.clear(); Structures.clear();
     if (Levels._cfgOverrides) { for (const k in Levels._cfgOverrides) CFG[k] = Levels._cfgOverrides[k]; Levels._cfgOverrides = null; }
     this.state = 'menu'; HUD.showScreen('menu'); HUD.showHud(false); Input.reset(); HUD.refreshOptions();
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
@@ -9548,7 +9625,7 @@ function boot() {
   try {
     buildTextures(); R.init(); World.init(); Particles.init(); Dust.init(); Floaties.init(); Decals.init(); Bullets.init();
     Grenades.init(); ChainFX.init();
-    Zombies.init(); Pickups.init(); AmmoStations.init(); Zones.init(); CheckpointMarker.init(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
+    Zombies.init(); Pickups.init(); AmmoStations.init(); Zones.init(); CheckpointMarker.init(); Structures.initMarkers(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
   } catch (e) {
     console.error(e);
     const el = $('loadErr'); el.classList.add('show'); el.querySelector('h3').textContent = 'COULD NOT START THE ARENA'; el.querySelector('p').textContent = 'WebGL may be unavailable on this device. (' + (e && e.message ? e.message : e) + ')';
