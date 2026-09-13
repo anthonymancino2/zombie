@@ -248,6 +248,15 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .opt.on span{color:#ffd83b;text-shadow:0 0 8px rgba(255,216,59,.7);}
 .opt.slider{display:flex;align-items:center;gap:8px;}
 .opt input[type=range]{width:110px;accent-color:var(--accent);}
+.kblist{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0;max-width:560px;margin-left:auto;margin-right:auto;}
+@media (max-width:520px){.kblist{grid-template-columns:1fr;}}
+.kbrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--panel);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:8px 12px;}
+.kbrow .kbname{font-family:var(--hud-font);font-size:11px;letter-spacing:.1em;color:var(--sand);}
+.kbrow .kbkey{font-family:var(--hud-font);font-size:13px;letter-spacing:.1em;color:var(--accent2);text-shadow:0 0 8px var(--glow);
+  background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:5px 12px;min-width:56px;text-align:center;cursor:pointer;touch-action:manipulation;}
+.kbrow .kbkey:hover{border-color:var(--accent2);}
+.kbrow .kbkey.listening{color:#ffd83b;border-color:#ffd83b;box-shadow:0 0 10px rgba(255,216,59,.5);animation:pillpulse 1s ease-in-out infinite;}
+.kbrow .kbkey.dup{color:#ff6a3b;border-color:#ff6a3b;}
 .bigbtn{display:inline-block;font-family:var(--hud-font);font-size:clamp(20px,4vw,30px);letter-spacing:.24em;padding:14px 34px;border-radius:10px;border:2px solid var(--accent2);cursor:pointer;
   background:linear-gradient(180deg,var(--accent),var(--accent-dark));color:#fff;text-shadow:0 2px 2px #000;box-shadow:0 0 26px var(--glow),0 8px 18px rgba(0,0,0,.5);touch-action:manipulation;
   transition:transform .1s;}
@@ -534,7 +543,11 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .testnote{font-family:var(--hud-font);font-size:11px;letter-spacing:.12em;color:#ff8a00;text-shadow:0 0 8px rgba(255,138,0,.5);margin-top:8px;text-align:center;min-height:1px;}
 
 @media (max-height:440px){
-  #coop{top:calc(86px + var(--sat));}
+  /* #coopWrap (the actual position:absolute element the squad strip lives in) sits at a fixed
+     top:96px assuming the HP/shield/ult/matchClock stack above it never grows past that — on
+     short landscape phones it does, and the two overlap. This used to try to fix it by setting
+     `top` on #coop instead, which has no `position` of its own so the rule was a no-op. */
+  #coopWrap{top:calc(112px + var(--sat));}
   .mate{padding:3px 6px;min-width:110px;}
   .mate .mn{font-size:10px;max-width:110px;}
   #boss{top:calc(100px + var(--sat));width:min(38vw,260px);}
@@ -654,6 +667,8 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt" id="optAuto">AUTO-FIRE: <span>OFF</span></div>
         <div class="opt" id="optTest">TEST MODE: <span>OFF</span></div>
         <div class="opt" id="optCam">CAMERA: <span>1ST</span></div>
+        <div class="opt on" id="optPlatform">PLATFORM: <span>DESKTOP</span></div>
+        <div class="opt on" id="optInput">INPUT: <span>MOUSE</span></div>
         <div class="opt on" id="optSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="optVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="optSound">SOUND: <span>ON</span></div>
@@ -669,11 +684,12 @@ h1.title em{font-style:normal;color:var(--accent2);}
       </div>
       <div class="row" style="margin-top:10px">
         <button class="bigbtn secondary" id="btnLeaders">GLOBAL LEADERBOARD</button>
+        <button class="bigbtn secondary" id="btnKeybinds">KEY BINDS</button>
       </div>
       <div class="best" id="bestLine"></div>
       <div class="help">
         <b>Touch:</b> left side = move (joystick) · right side = swipe to look · FIRE button (drag it to aim while shooting) · SPRINT for a burst of speed. Pause → MOVE BUTTONS to drag the controls where your thumbs want them.<br>
-        <b>Desktop:</b> WASD move · Shift sprint · mouse look · click fire · R reload · H health kit · Q/E swap weapon · 1-2-3 weapons · V camera · right-click/Z sniper scope · Esc pause.<br>
+        <b>Desktop:</b> WASD move · Shift sprint · mouse look · click or SPACE to fire · R reload · H health kit · Q/E swap weapon · 1-2-3 weapons · V camera · right-click/Z sniper scope · Esc pause — every one of these except the mouse itself can be rebound from KEY BINDS below. Set INPUT to KEYBOARD to play with no mouse clicks at all — mouse look still aims.<br>
         Shotgun unlocks at wave 3, assault rifle at wave 6. Shoot the red barrels. Grab the glowing drops.
       </div>
       <div class="help" id="verLine" style="opacity:.5"></div>
@@ -731,6 +747,8 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt" id="pOptAuto">AUTO-FIRE: <span>OFF</span></div>
         <div class="opt" id="pOptTest">TEST MODE: <span>OFF</span></div>
         <div class="opt" id="pOptCam">CAMERA: <span>1ST</span></div>
+        <div class="opt on" id="pOptPlatform">PLATFORM: <span>DESKTOP</span></div>
+        <div class="opt on" id="pOptInput">INPUT: <span>MOUSE</span></div>
         <div class="opt on" id="pOptSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="pOptVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="pOptSound">SOUND: <span>ON</span></div>
@@ -739,8 +757,24 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="row">
         <button class="bigbtn" id="btnResume">RESUME</button>
         <button class="bigbtn secondary" id="btnLayout">MOVE BUTTONS</button>
+        <button class="bigbtn secondary" id="pBtnKeybinds">KEY BINDS</button>
         <button class="bigbtn secondary" id="btnQuit">QUIT TO MENU</button>
       </div>
+    </div></div>
+  </div>
+
+  <!-- Key Binds: desktop keyboard remapping -->
+  <div id="keybinds" class="screen">
+    <button class="backbtn" id="btnBackKeybinds">← BACK</button>
+    <div class="scroll"><div class="panel">
+      <h1 class="title" style="font-size:clamp(26px,6vw,46px)">KEY <em>BINDS</em></h1>
+      <div class="tag">CLICK A KEY TO REBIND IT · DESKTOP ONLY</div>
+      <div id="keybindsList" class="kblist"></div>
+      <div class="row" style="margin-top:14px">
+        <button class="bigbtn secondary" id="btnKeybindsReset">RESET TO DEFAULTS</button>
+        <button class="bigbtn secondary" id="btnKeybindsBack">DONE</button>
+      </div>
+      <div class="help">Mouse click always fires and right-click always opens the scope, no matter what is bound above. Q and E always swap weapons and Esc and P always pause, too — rebinding SWAP WEAPON or PAUSE gives you a second way in without taking away the one you already know.</div>
     </div></div>
   </div>
 
@@ -912,7 +946,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.80.0';
+const GAME_VERSION = 'v1.81.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1938,6 +1972,49 @@ const Audio = {
   }
 };
 
+/* ------------------------------------------------------------------ desktop key bindings — remappable via the KEY BINDS
+   screen (menu). A physical keyboard's layout is a device-level preference, not a per-callsign
+   one like the rest of Game's saved options, so this lives in its own single localStorage slot
+   rather than following playerPrefKey. Mouse buttons (click fire, right-click scope) and the
+   always-on Arrow-key/Q·E/Esc·P fallbacks below are intentionally NOT part of this — remapping
+   covers the primary keyboard action, the odd extra hardcoded key stays as a convenience alias so
+   nobody loses a binding they already knew by rebinding its partner. */
+const KEYBIND_DEFAULTS = {
+  moveForward: 'KeyW', moveBack: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD',
+  sprint: 'ShiftLeft', fire: 'Space', reload: 'KeyR', swap: 'KeyQ', medkit: 'KeyH',
+  ultimate: 'KeyG', scope: 'KeyZ', camera: 'KeyV', auto: 'KeyT', pause: 'Escape',
+  weapon1: 'Digit1', weapon2: 'Digit2', weapon3: 'Digit3'
+};
+const KEYBIND_LABELS = {
+  moveForward: 'MOVE FORWARD', moveBack: 'MOVE BACK', moveLeft: 'MOVE LEFT', moveRight: 'MOVE RIGHT',
+  sprint: 'SPRINT', fire: 'FIRE', reload: 'RELOAD', swap: 'SWAP WEAPON', medkit: 'HEALTH KIT',
+  ultimate: 'SPECIAL / ULTIMATE', scope: 'SNIPER SCOPE', camera: 'TOGGLE CAMERA', auto: 'TOGGLE AUTO-FIRE',
+  pause: 'PAUSE', weapon1: 'WEAPON SLOT 1', weapon2: 'WEAPON SLOT 2', weapon3: 'WEAPON SLOT 3'
+};
+// display names for keys a player is likely to bind — anything not listed here just shows the
+// raw KeyboardEvent.code with the "Key"/"Digit" prefix stripped, which reads fine on its own
+// (e.g. "KeyR" -> "R")
+const KEY_DISPLAY = {
+  Space: 'SPACE', ShiftLeft: 'SHIFT', ShiftRight: 'R SHIFT', ControlLeft: 'CTRL', ControlRight: 'R CTRL',
+  AltLeft: 'ALT', AltRight: 'R ALT', Escape: 'ESC', Tab: 'TAB', CapsLock: 'CAPS', Enter: 'ENTER',
+  Backquote: '`', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→'
+};
+const Keybinds = Object.assign({}, KEYBIND_DEFAULTS);
+function keyDisplayName(code) {
+  if (!code) return '—';
+  if (KEY_DISPLAY[code]) return KEY_DISPLAY[code];
+  if (code.indexOf('Key') === 0) return code.slice(3);
+  if (code.indexOf('Digit') === 0) return code.slice(5);
+  return code;
+}
+function loadKeybinds() {
+  try {
+    const raw = localStorage.getItem('dnd_keybinds'), parsed = raw ? JSON.parse(raw) : null;
+    for (const k in KEYBIND_DEFAULTS) Keybinds[k] = (parsed && typeof parsed[k] === 'string') ? parsed[k] : KEYBIND_DEFAULTS[k];
+  } catch (e) { Object.assign(Keybinds, KEYBIND_DEFAULTS); }
+}
+function saveKeybinds() { try { localStorage.setItem('dnd_keybinds', JSON.stringify(Keybinds)); } catch (e) { } }
+
 /* ------------------------------------------------------------------ input: virtual joystick, swipe-look, fire button, keyboard/mouse */
 const Input = {
   mx: 0, my: 0, lookDX: 0, lookDY: 0,
@@ -2004,33 +2081,48 @@ const Input = {
     // Keyboard
     window.addEventListener('keydown', function (e) {
       if (e.repeat) return; self.keys[e.code] = true; self.on.any();
-      if (e.code === 'KeyR') self.on.reload();
-      else if (e.code === 'KeyH') self.on.medkit();
-      else if (e.code === 'KeyQ' || e.code === 'KeyE') self.on.swap();
-      else if (e.code === 'KeyG') self.on.ultimate();
-      else if (e.code === 'KeyZ') self.on.scope();
-      else if (e.code === 'KeyT') self.on.auto();
-      else if (e.code === 'KeyV') self.on.camera();
-      else if (e.code === 'Escape' || e.code === 'KeyP') self.on.pause();
-      else if (e.code === 'Digit1') self.on.select(0); else if (e.code === 'Digit2') self.on.select(1); else if (e.code === 'Digit3') self.on.select(2);
-      else if (e.code === 'Space') { self.fire = true; self.fireEdge = true; }
+      // KEY BINDS' rebind capture (see KeybindsUI.startCapture) owns the next keydown instead of
+      // the game acting on it — otherwise picking a new key for, say, RELOAD would also reload.
+      if (KeybindsUI.capturing) { KeybindsUI.capture(e); return; }
+      // Q/E and Esc/P have always both worked for swap/pause no matter what — that stays true even
+      // once SWAP WEAPON or PAUSE gets rebound to something else, so nobody who already has one of
+      // these in muscle memory loses it just because they picked a new primary key for the other.
+      if (e.code === Keybinds.reload) self.on.reload();
+      else if (e.code === Keybinds.medkit) self.on.medkit();
+      else if (e.code === Keybinds.swap || e.code === 'KeyQ' || e.code === 'KeyE') self.on.swap();
+      else if (e.code === Keybinds.ultimate) self.on.ultimate();
+      else if (e.code === Keybinds.scope) self.on.scope();
+      else if (e.code === Keybinds.auto) self.on.auto();
+      else if (e.code === Keybinds.camera) self.on.camera();
+      else if (e.code === Keybinds.pause || e.code === 'Escape' || e.code === 'KeyP') self.on.pause();
+      else if (e.code === Keybinds.weapon1) self.on.select(0); else if (e.code === Keybinds.weapon2) self.on.select(1); else if (e.code === Keybinds.weapon3) self.on.select(2);
+      else if (e.code === Keybinds.fire) { self.fire = true; self.fireEdge = true; }
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.code) >= 0) e.preventDefault();
+      // KEYBOARD input scheme (desktop, Options > INPUT) means fire is a key rather than a click —
+      // so the one thing a mouse click used to be required for, (re)acquiring pointer lock, needs a
+      // keyboard way in too. Mouse movement still steers the camera exactly as it does under the
+      // MOUSE scheme; only how you get *into* the lock differs.
+      if (Game.state === 'playing' && Game.platform === 'desktop' && Game.inputScheme === 'keyboard' &&
+        !self.pointerLocked && cv.requestPointerLock &&
+        [Keybinds.moveForward, Keybinds.moveBack, Keybinds.moveLeft, Keybinds.moveRight, Keybinds.fire].indexOf(e.code) >= 0) {
+        try { const lockReq = cv.requestPointerLock(); if (lockReq && lockReq.catch) lockReq.catch(function () { }); } catch (err) { }
+      }
     });
-    window.addEventListener('keyup', function (e) { self.keys[e.code] = false; if (e.code === 'Space') self.fire = false; });
+    window.addEventListener('keyup', function (e) { self.keys[e.code] = false; if (e.code === Keybinds.fire) self.fire = false; });
     window.addEventListener('blur', function () { self.keys = Object.create(null); self.fire = false; self.mx = self.my = 0; });
     // Mouse look / fire on the canvas
     const cv = el.c;
     cv.addEventListener('mousedown', function (e) {
       if (e.button === 2) { e.preventDefault(); self.on.any(); if (Game.state === 'playing') self.on.scope(); return; }
       if (e.button !== 0) return; e.preventDefault(); self.on.any(); self.mouseDown = true;
-      if (Game.state === 'playing') { self.fire = true; self.fireEdge = true; if (!self.pointerLocked && cv.requestPointerLock) { try { cv.requestPointerLock(); } catch (err) { } } }
+      if (Game.state === 'playing') { self.fire = true; self.fireEdge = true; if (!self.pointerLocked && cv.requestPointerLock) { try { const lockReq = cv.requestPointerLock(); if (lockReq && lockReq.catch) lockReq.catch(function () { }); } catch (err) { } } }
     });
     cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     document.addEventListener('mousemove', function (e) {
       if (Game.state !== 'playing') return;
       if (self.pointerLocked || self.mouseDown) { self.lookDX += e.movementX || 0; self.lookDY += e.movementY || 0; }
     });
-    document.addEventListener('pointerlockchange', function () { self.pointerLocked = document.pointerLockElement === cv; if (!self.pointerLocked && Game.state === 'playing' && !self.touchSeen) Game.pause(); });
+    document.addEventListener('pointerlockchange', function () { self.pointerLocked = document.pointerLockElement === cv; if (!self.pointerLocked && Game.state === 'playing' && !self.touchSeen && Game.platform !== 'phone') Game.pause(); });
     document.addEventListener('pointerlockerror', function () { self.pointerLocked = false; });
     // Block page scrolling / zoom gestures outside scrollable menu panels
     document.addEventListener('touchmove', function (e) { if (!e.target.closest || !e.target.closest('.scroll')) e.preventDefault(); }, opt);
@@ -2074,8 +2166,8 @@ const Input = {
   },
   getMove(out) {
     const k = this.keys;
-    let x = this.mx + ((k.KeyD || k.ArrowRight) ? 1 : 0) - ((k.KeyA || k.ArrowLeft) ? 1 : 0);
-    let y = this.my + ((k.KeyW || k.ArrowUp) ? 1 : 0) - ((k.KeyS || k.ArrowDown) ? 1 : 0);
+    let x = this.mx + ((k[Keybinds.moveRight] || k.ArrowRight) ? 1 : 0) - ((k[Keybinds.moveLeft] || k.ArrowLeft) ? 1 : 0);
+    let y = this.my + ((k[Keybinds.moveForward] || k.ArrowUp) ? 1 : 0) - ((k[Keybinds.moveBack] || k.ArrowDown) ? 1 : 0);
     const l = Math.sqrt(x * x + y * y); if (l > 1) { x /= l; y /= l; }
     out.x = x; out.y = y; return out;
   },
@@ -2149,10 +2241,24 @@ const Layout = {
     } catch (e) { this.pos = {}; }
   },
   save() { try { localStorage.setItem(this.key(), JSON.stringify(this.pos)); } catch (e) { } },
+  // notch / Dynamic Island / home-indicator insets, read from the same --sat/--sab/--sal/--sar
+  // custom properties the default CSS positions already respect (see :root, near the top of
+  // <style>). A dragged or reapplied button ignored these before, so on a notched phone in
+  // landscape (iPhone-class: camera cutout on whichever side is physically on the right) a
+  // control could get saved or re-clamped right up against the true edge, ending up rendered
+  // under the cutout — visually "off screen" even though window.innerWidth still counts that
+  // strip as part of the page.
+  safeInsets() {
+    const cs = getComputedStyle(document.documentElement);
+    const v = function (name) { return parseFloat(cs.getPropertyValue(name)) || 0; };
+    return { top: v('--sat'), bottom: v('--sab'), left: v('--sal'), right: v('--sar') };
+  },
   place(id, cx, cy) {
     const el = this.els[id]; if (!el) return;
+    const s = this.safeInsets();
     const mx = el.offsetWidth / 2 + 6, my = el.offsetHeight / 2 + 6;
-    cx = clamp(cx, mx, window.innerWidth - mx); cy = clamp(cy, my, window.innerHeight - my);
+    cx = clamp(cx, mx + s.left, window.innerWidth - mx - s.right);
+    cy = clamp(cy, my + s.top, window.innerHeight - my - s.bottom);
     this.pos[id] = { x: cx / window.innerWidth, y: cy / window.innerHeight };
     this.applyOne(id);
   },
@@ -2163,10 +2269,13 @@ const Layout = {
     // a fraction saved at one window size (or with Safari's address bar in a different state —
     // innerHeight on iOS changes as it shows/hides) can land a button off-screen when reapplied at
     // another. Re-clamp on every apply, not just at drag time, so a stale saved position can never
-    // push a control past the edge — same margin `place()` uses when you actually drag it.
+    // push a control past the edge — same margin `place()` uses when you actually drag it. The
+    // safe-area insets are re-read here too, since rotating the phone can move the notch from one
+    // edge to the other between saves.
+    const s = this.safeInsets();
     const mx = el.offsetWidth / 2 + 6, my = el.offsetHeight / 2 + 6;
-    const cx = clamp(p.x * window.innerWidth, mx, window.innerWidth - mx);
-    const cy = clamp(p.y * window.innerHeight, my, window.innerHeight - my);
+    const cx = clamp(p.x * window.innerWidth, mx + s.left, window.innerWidth - mx - s.right);
+    const cy = clamp(p.y * window.innerHeight, my + s.top, window.innerHeight - my - s.bottom);
     el.style.left = Math.round(cx - el.offsetWidth / 2) + 'px';
     el.style.top = Math.round(cy - el.offsetHeight / 2) + 'px';
   },
@@ -4641,7 +4750,7 @@ const Player = {
   // Sprint is a tap-to-engage burst, not a hold: on a phone the movement thumb cannot also hold
   // a second button. It drops out on its own when the meter empties or you stop moving.
   updateSprint(dt, mag) {
-    const shift = !!(Input.keys.ShiftLeft || Input.keys.ShiftRight);
+    const shift = !!(Input.keys[Keybinds.sprint] || Input.keys.ShiftLeft || Input.keys.ShiftRight);
     if (shift) this.sprintOn = true; else if (this._shiftWas) this.sprintOn = false;
     this._shiftWas = shift;
     const want = this.sprintOn && mag > 0.35 && this.stamina > 0;
@@ -4660,7 +4769,7 @@ const Player = {
     if (Input.consumeFireEdge()) this.escape += CFG.escTap;
     this.escape += (Math.abs(lk.x) + Math.abs(lk.y)) * CFG.escSwipe;
     const k = Input.keys;
-    if (k.KeyA || k.KeyD || k.ArrowLeft || k.ArrowRight || Math.abs(mv.x) > 0.35) this.escape += dt * 0.5;
+    if (k[Keybinds.moveLeft] || k[Keybinds.moveRight] || k.KeyA || k.KeyD || k.ArrowLeft || k.ArrowRight || Math.abs(mv.x) > 0.35) this.escape += dt * 0.5;
     this.escape = Math.min(1.2, this.escape);
     if (this.escape < 1) return;
     const h = this.pinnedBy;
@@ -5478,7 +5587,7 @@ const HUD = {
   init() {
     ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnScope', 'scopeState', 'btnSprint', 'btnMedkit', 'medkitCount', 'joyHint', 'rotateBlock',
-      'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optSquad', 'pOptSquad', 'loadErr',
+      'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optPlatform', 'pOptPlatform', 'optInput', 'pOptInput', 'optSquad', 'pOptSquad', 'loadErr',
       'testModePopup', 'btnTestModeYes', 'btnTestModeNo',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
       'btnLeaders', 'btnLeadersBack', 'btnLobbyStart', 'btnLobbyLeave', 'lobbyCode', 'lobbyPlayers', 'lobbyChars', 'lobbyStatus', 'lobbyHint', 'lobbyTimer',
@@ -5488,7 +5597,8 @@ const HUD = {
       'boss', 'bossName', 'bossBar', 'pinned', 'pinnedSub', 'pinnedBar', 'ammoStation', 'ammoStationText', 'ammoStationBar',
       'modeselect', 'levelselect', 'levelresult', 'btnChallenges', 'btnBackModeselect', 'btnSoloChallenges', 'btnCoopChallenges',
       'levelselectBody', 'levelselectTitle', 'btnBackLevelselect', 'btnLevelselectBack', 'levelResultTitle', 'levelResultSub',
-      'btnLevelRetry', 'btnLevelNext', 'btnLevelBackSelect', 'btnLevelMenu'
+      'btnLevelRetry', 'btnLevelNext', 'btnLevelBackSelect', 'btnLevelMenu',
+      'keybinds', 'keybindsList', 'btnKeybinds', 'pBtnKeybinds', 'btnBackKeybinds', 'btnKeybindsBack', 'btnKeybindsReset'
     ].forEach(id => DOM[id] = $(id));
     DOM.lowhp.style.backgroundImage = 'url(' + TEX.lowhpUrl + ')';
   },
@@ -5672,7 +5782,7 @@ const HUD = {
     DOM.banner.classList.remove('show', 'showlong'); void DOM.banner.offsetWidth; DOM.banner.classList.add(long ? 'showlong' : 'show');
   },
   subtitle(name, text) { DOM.subName.textContent = name + ':'; DOM.subText.textContent = text; DOM.subtitle.classList.add('show'); this.subT = 3.4; },
-  showScreen(id) { ['menu', 'pause', 'gameover', 'online', 'lobby', 'leaders', 'modeselect', 'levelselect', 'levelresult'].forEach(s => DOM[s].classList.toggle('show', s === id)); },
+  showScreen(id) { ['menu', 'pause', 'gameover', 'online', 'lobby', 'leaders', 'modeselect', 'levelselect', 'levelresult', 'keybinds'].forEach(s => DOM[s].classList.toggle('show', s === id)); },
   showHud(v) { DOM.hud.classList.toggle('show', v); DOM.controls.classList.toggle('show', v); },
   // called straight from Player.cycleScope/exitScope (not just refreshOptions' menu/pause-driven
   // batch) since the zoom level changes mid-run, far more often than anything else that button
@@ -5687,6 +5797,17 @@ const HUD = {
     [DOM.optAuto, DOM.pOptAuto].forEach(e => { e.classList.toggle('on', G.autoFire); e.querySelector('span').textContent = G.autoFire ? 'ON' : 'OFF'; });
     [DOM.optTest, DOM.pOptTest].forEach(e => { e.classList.toggle('on', G.testMode); e.querySelector('span').textContent = G.testMode ? (Net.mode === 'off' ? 'ON' : 'ON, BUT COOP IGNORES IT') : 'OFF'; });
     [DOM.optCam, DOM.pOptCam].forEach(e => { e.classList.toggle('on', G.camMode === 'tp'); e.querySelector('span').textContent = G.camMode === 'tp' ? '3RD-' + G.CAM_DIST_ABBR[G.camDist] : '1ST'; });
+    [DOM.optPlatform, DOM.pOptPlatform].forEach(e => { e.classList.toggle('on', G.platform === 'desktop'); e.querySelector('span').textContent = G.platform === 'phone' ? 'PHONE' : 'DESKTOP'; });
+    // choosing a control scheme only means anything on desktop — touch already puts every action
+    // on a screen button, so the row just gets out of the way rather than showing a choice with
+    // no effect
+    [DOM.optInput, DOM.pOptInput].forEach(e => {
+      e.style.display = G.platform === 'phone' ? 'none' : '';
+      e.classList.toggle('on', G.inputScheme === 'keyboard');
+      e.querySelector('span').textContent = G.inputScheme === 'keyboard' ? 'KEYBOARD' : 'MOUSE';
+    });
+    // rebinding a physical keyboard has nothing to offer a touch player either
+    [DOM.btnKeybinds, DOM.pBtnKeybinds].forEach(e => { if (e) e.style.display = G.platform === 'phone' ? 'none' : ''; });
     // in coop the squad is the people you are actually playing with, so the bot control steps
     // aside; solo cycles OFF/1/2/3 bots on a single click-through control
     [DOM.optSquad, DOM.pOptSquad].forEach(e => {
@@ -5701,6 +5822,44 @@ const HUD = {
     DOM.btnCam.classList.toggle('on', G.camMode === 'tp'); DOM.camState.textContent = G.camMode === 'tp' ? G.CAM_DIST_ABBR[G.camDist] : '1ST';
     DOM.bestLine.textContent = G.best.wave > 0 ? 'BEST RUN: WAVE ' + G.best.wave + ' · ' + fmt(G.best.points) + ' PTS' : '';
   }
+};
+
+// Desktop keyboard remapping screen. Rebinding is keydown-only — mouse buttons (click fire,
+// right-click scope) are deliberately not part of this, same reasoning as the PLATFORM/INPUT
+// split: this is about giving keyboard-only players a way to choose their own keys, not about
+// changing how the mouse works.
+const KeybindsUI = {
+  capturing: null, _el: null,
+  render() {
+    const list = DOM.keybindsList; list.innerHTML = '';
+    this.capturing = null; this._el = null;
+    const counts = {};
+    for (const a in KEYBIND_LABELS) counts[Keybinds[a]] = (counts[Keybinds[a]] || 0) + 1;
+    for (const action in KEYBIND_LABELS) {
+      const row = document.createElement('div'); row.className = 'kbrow';
+      const name = document.createElement('div'); name.className = 'kbname'; name.textContent = KEYBIND_LABELS[action];
+      const key = document.createElement('div'); key.className = 'kbkey' + (counts[Keybinds[action]] > 1 ? ' dup' : '');
+      key.textContent = keyDisplayName(Keybinds[action]);
+      key.addEventListener('click', () => this.startCapture(action, key));
+      row.appendChild(name); row.appendChild(key);
+      list.appendChild(row);
+    }
+  },
+  startCapture(action, el) {
+    if (this._el && this._el !== el) { this._el.classList.remove('listening'); this._el.textContent = keyDisplayName(Keybinds[this.capturing]); }
+    this.capturing = action; this._el = el;
+    el.classList.add('listening'); el.textContent = 'PRESS A KEY';
+  },
+  // called from Input's keydown handler while this.capturing is set — see the very top of that
+  // listener, which routes the event here instead of letting the game act on it
+  capture(e) {
+    const action = this.capturing; if (!action || !e.code) return;
+    if (e.preventDefault) e.preventDefault();
+    Keybinds[action] = e.code; saveKeybinds();
+    this.render();
+  },
+  reset() { Object.assign(Keybinds, KEYBIND_DEFAULTS); saveKeybinds(); this.render(); },
+  open() { this.render(); HUD.showScreen('keybinds'); }
 };
 
 /* ------------------------------------------------------------------ AI teammates
@@ -7345,6 +7504,12 @@ const Game = {
   timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, powerupT: 0, healthKitT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, testMode: false, testModeUsedThisRun: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
+  // 'phone' (touch) vs 'desktop' (mouse/keyboard) — resolved from device capability the very
+  // first time (see init()), then whatever the player picks in the PLATFORM option sticks from
+  // then on. inputScheme only matters on desktop: 'mouse' is click-to-fire as always, 'keyboard'
+  // means every action including fire has a key (see Input's keydown handler) so the mouse is
+  // only ever needed for looking around, same as any other FPS.
+  platform: 'desktop', inputScheme: 'mouse',
   // Hard-difficulty Challenge levels flip this on for the run (see Levels.start) so shield stops
   // refilling mid-round; reset false here every run so it can never leak into the next one
   diffNoShieldRegen: false,
@@ -7360,6 +7525,13 @@ const Game = {
     // here was saved and reloaded except this one, so it silently reverted to OFF whenever iOS
     // Safari reloaded the tab (backgrounding, low memory) even mid-session
     try { const af = localStorage.getItem('dnd_autofire'); if (af === '0' || af === '1') this.autoFire = af === '1'; } catch (e) { }
+    // no saved platform pref yet means this is a first run — guess from device capability, then
+    // whatever the player sets from here on (including explicitly overriding that guess) sticks
+    try {
+      const pf = localStorage.getItem('dnd_platform');
+      this.platform = (pf === 'phone' || pf === 'desktop') ? pf : (('ontouchstart' in window) ? 'phone' : 'desktop');
+    } catch (e) { this.platform = ('ontouchstart' in window) ? 'phone' : 'desktop'; }
+    try { const ic = localStorage.getItem('dnd_input'); if (ic === 'mouse' || ic === 'keyboard') this.inputScheme = ic; } catch (e) { }
     HUD.init(); HUD.refreshOptions();
     this.buildCharCards();
     const self = this;
@@ -7432,6 +7604,13 @@ const Game = {
     });
     if (DOM.btnTestModeNo) DOM.btnTestModeNo.addEventListener('click', () => DOM.testModePopup.classList.remove('show'));
     optToggle([DOM.optCam, DOM.pOptCam], () => self.cycleCam());
+    optToggle([DOM.optPlatform, DOM.pOptPlatform], () => self.setPlatform(self.platform === 'phone' ? 'desktop' : 'phone'));
+    optToggle([DOM.optInput, DOM.pOptInput], () => self.setInputScheme(self.inputScheme === 'mouse' ? 'keyboard' : 'mouse'));
+    if (DOM.btnKeybinds) DOM.btnKeybinds.addEventListener('click', () => KeybindsUI.open());
+    if (DOM.pBtnKeybinds) DOM.pBtnKeybinds.addEventListener('click', () => KeybindsUI.open());
+    if (DOM.btnBackKeybinds) Input.tapButton(DOM.btnBackKeybinds, () => HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'));
+    if (DOM.btnKeybindsBack) DOM.btnKeybindsBack.addEventListener('click', () => HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'));
+    if (DOM.btnKeybindsReset) DOM.btnKeybindsReset.addEventListener('click', () => { KeybindsUI.reset(); HUD.toast('KEY BINDS RESET', 1.6); });
     optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquadCount((self.squadCount + 1) % 4));
     optToggle([DOM.optVoice, DOM.pOptVoice], () => self.setVoice(!self.voice));
     optToggle([DOM.optSound, DOM.pOptSound], () => self.setSound(!self.sound));
@@ -7456,7 +7635,11 @@ const Game = {
   // the only way that actually works everywhere. Gated to touch devices only — a desktop window
   // that happens to be taller than wide isn't "portrait mode" in the sense the owner means.
   updateRotateHint() {
-    const portrait = window.innerHeight > window.innerWidth && ('ontouchstart' in window);
+    // an explicit PLATFORM choice overrides the raw capability check: forcing DESKTOP means the
+    // player is on a keyboard/mouse regardless of what the touch APIs report, and forcing PHONE
+    // applies the same landscape lock even on a device that (unusually) reports no touch support.
+    const touchLike = this.platform === 'phone' || (this.platform !== 'desktop' && 'ontouchstart' in window);
+    const portrait = window.innerHeight > window.innerWidth && touchLike;
     const was = DOM.rotateBlock.classList.contains('show');
     DOM.rotateBlock.classList.toggle('show', portrait);
     if (portrait && !was && this.state === 'playing') this.pause();
@@ -7525,6 +7708,27 @@ const Game = {
     Input.sens = v;
     try { localStorage.setItem(playerPrefKey('dnd_sens'), String(v)); } catch (e) { }
   },
+  // switches the whole control scheme, not just a HUD label — see updateRotateHint (portrait
+  // lock only applies on phone) and Game.start's joyHint toggle (the touch-joystick hint circle).
+  setPlatform(p) {
+    this.platform = p === 'phone' ? 'phone' : 'desktop';
+    try {
+      localStorage.setItem('dnd_platform', this.platform); localStorage.setItem(playerPrefKey('dnd_platform'), this.platform);
+    } catch (e) { }
+    this.updateRotateHint();
+    if (DOM.joyHint) DOM.joyHint.classList.toggle('hide', this.platform !== 'phone');
+    HUD.refreshOptions();
+  },
+  // 'keyboard' just means every action (fire included — see Input's keydown handler) has a key,
+  // so the mouse is never required to press anything; it still steers the camera exactly like
+  // 'mouse' does; that part is not a mode, it is just how mouselook works.
+  setInputScheme(s) {
+    this.inputScheme = s === 'keyboard' ? 'keyboard' : 'mouse';
+    try {
+      localStorage.setItem('dnd_input', this.inputScheme); localStorage.setItem(playerPrefKey('dnd_input'), this.inputScheme);
+    } catch (e) { }
+    HUD.refreshOptions();
+  },
   // re-applies every sticky option under THIS callsign's own key, called once Net.name is known
   // (see init(), right before Net.init()). Layout isn't touched here — boot() calls Layout.init()
   // immediately after Game.init() returns, and by then Net.name is already set, so Layout.load()
@@ -7539,6 +7743,8 @@ const Game = {
     try { const vc = localStorage.getItem(playerPrefKey('dnd_voice')); if (vc === '0' || vc === '1') this.voice = vc === '1'; } catch (e) { }
     try { const sd = localStorage.getItem(playerPrefKey('dnd_sound')); if (sd === '0' || sd === '1') { this.sound = sd === '1'; Audio.setEnabled(this.sound); } } catch (e) { }
     try { const se = localStorage.getItem(playerPrefKey('dnd_sens')); if (se != null) { const v = parseFloat(se); if (Number.isFinite(v)) Input.sens = clamp(v, 0.4, 5); } } catch (e) { }
+    try { const pf = localStorage.getItem(playerPrefKey('dnd_platform')); if (pf === 'phone' || pf === 'desktop') this.platform = pf; } catch (e) { }
+    try { const ic = localStorage.getItem(playerPrefKey('dnd_input')); if (ic === 'mouse' || ic === 'keyboard') this.inputScheme = ic; } catch (e) { }
     HUD.refreshOptions();
   },
   // dev/QA toggle: keeps the SPECIAL gauge topped off with no cooldown and every weapon owned, so
@@ -7649,12 +7855,21 @@ const Game = {
     this.powerBag.length = 0; this.powerBagPool = null;
     Director.reset(); Bots.spawn();
     HUD.last = {}; HUD.dirty = true; HUD.showScreen(null); HUD.showHud(true); HUD.refreshOptions();
-    DOM.joyHint.classList.toggle('hide', !('ontouchstart' in window)); DOM.dmg.style.opacity = '0'; DOM.lowhp.classList.remove('on');
+    DOM.joyHint.classList.toggle('hide', this.platform !== 'phone'); DOM.dmg.style.opacity = '0'; DOM.lowhp.classList.remove('on');
     DOM.downed.classList.remove('show'); DOM.revive.classList.remove('show'); DOM.pinned.classList.remove('show'); DOM.boss.classList.remove('show');
     DOM.ammoStation.classList.remove('show');
     this.interT = 4; HUD.banner('GET READY', 'THE SAND IS HUNGRY', false);
     this.say('start', true); World.computeFlow(0, 0);
-    if (!Input.touchSeen && $('c').requestPointerLock && !Input.pointerLocked) { try { $('c').requestPointerLock(); } catch (e) { } }
+    this.reacquirePointerLock();
+  },
+  // pause() releases pointer lock so a mouse click can actually land on a menu button (the OS
+  // cursor is frozen and hidden while locked) — resume() has to explicitly ask for it back, since
+  // losing lock never re-locks itself. Shared with start(), which needs the exact same guard for
+  // its own very first request.
+  reacquirePointerLock() {
+    if (this.platform !== 'phone' && !Input.touchSeen && $('c').requestPointerLock && !Input.pointerLocked) {
+      try { const lockReq = $('c').requestPointerLock(); if (lockReq && lockReq.catch) lockReq.catch(function () { }); } catch (e) { }
+    }
   },
   pause() {
     // Coop cannot freeze the world for everyone else, so the menu opens over a running game.
@@ -7670,8 +7885,9 @@ const Game = {
     if (document.exitPointerLock && Input.pointerLocked) { try { document.exitPointerLock(); } catch (e) { } }
   },
   resume() {
-    if (this.coopMenu) { this.coopMenu = false; HUD.showScreen(null); Input.reset(); Audio.resume(); return; }
+    if (this.coopMenu) { this.coopMenu = false; HUD.showScreen(null); Input.reset(); Audio.resume(); this.reacquirePointerLock(); return; }
     if (this.state !== 'paused') return; this.state = 'playing'; HUD.showScreen(null); Input.reset(); Audio.resume();
+    this.reacquirePointerLock();
   },
   toMenu() {
     Net.leave(); this.coopMenu = false;
@@ -9624,7 +9840,7 @@ function boot() {
   if (!window.THREE) { $('loadErr').classList.add('show'); return; }
   try {
     buildTextures(); R.init(); World.init(); Particles.init(); Dust.init(); Floaties.init(); Decals.init(); Bullets.init();
-    Grenades.init(); ChainFX.init();
+    Grenades.init(); ChainFX.init(); loadKeybinds();
     Zombies.init(); Pickups.init(); AmmoStations.init(); Zones.init(); CheckpointMarker.init(); Structures.initMarkers(); Explosions.init(); Player.init(); FX.init(); Input.init(); Game.init(); Layout.init();
   } catch (e) {
     console.error(e);
