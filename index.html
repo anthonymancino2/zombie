@@ -164,6 +164,10 @@ button{font-family:inherit;color:inherit;}
 #btnMedkit{width:52px;height:52px;right:calc(134px + var(--sar));bottom:calc(186px + var(--sab));font-size:9px;border-color:#ffd83b;}
 #btnMedkit small{font-size:13px;letter-spacing:0;margin-top:1px;font-weight:bold;}
 #btnMedkit.empty{opacity:.45;}
+/* GRENADE stacks directly above MEDKIT in the same column, same draggable-button treatment. */
+#btnGrenade{width:48px;height:48px;right:calc(134px + var(--sar));bottom:calc(250px + var(--sab));font-size:8px;border-color:#8fbf5a;}
+#btnGrenade small{font-size:13px;letter-spacing:0;margin-top:1px;font-weight:bold;}
+#btnGrenade.empty{opacity:.45;}
 #btnSwitch{width:56px;height:56px;right:calc(24px + var(--sar));bottom:calc(136px + var(--sab));font-size:12px;}
 /* ultimate-move button, stacked above SWAP WEAPON in the same right-edge column — this slot used
    to also clear the ammo/weapon-name text block before that moved to the left side (see #coopWrap
@@ -337,6 +341,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnFire{width:78px;height:78px;bottom:calc(12px + var(--sab));right:calc(14px + var(--sar));}
   #btnReload{width:50px;height:50px;right:calc(116px + var(--sar));bottom:calc(16px + var(--sab));}
   #btnMedkit{width:44px;height:44px;right:calc(116px + var(--sar));bottom:calc(156px + var(--sab));}
+  #btnGrenade{width:40px;height:40px;right:calc(116px + var(--sar));bottom:calc(210px + var(--sab));}
   #btnSwitch{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(112px + var(--sab));}
   #btnUlt{width:46px;height:46px;right:calc(16px + var(--sar));bottom:calc(220px + var(--sab));}
   #btnAuto{width:40px;height:40px;right:calc(64px + var(--sar));top:calc(10px + var(--sat));}
@@ -585,6 +590,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <div id="btnSwitch" class="tbtn">SWAP<small>WEAPON</small></div>
     <div id="btnReload" class="tbtn">RELOAD</div>
     <div id="btnMedkit" class="tbtn empty">MEDKIT<small id="medkitCount">0</small></div>
+    <div id="btnGrenade" class="tbtn empty">GRENADE<small id="grenadeCount">0</small></div>
     <div id="btnSprint" class="tbtn"><span class="meter"></span>SPRINT</div>
     <div id="btnUlt" class="tbtn"><span class="meter"></span>SPECIAL<small id="ultTimer"></small></div>
     <div id="btnFire" class="tbtn"><span class="ring"></span>FIRE</div>
@@ -672,7 +678,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt on" id="optSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="optVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="optSound">SOUND: <span>ON</span></div>
-        <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="0.4" max="5" step="0.1" value="1"><span id="sensVal">1.0</span></div>
+        <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="-3" max="5" step="0.1" value="1"><span id="sensVal">1.0</span></div>
       </div>
       <div class="row">
         <button class="bigbtn" id="btnStart">ENTER THE ARENA</button>
@@ -689,8 +695,8 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div class="best" id="bestLine"></div>
       <div class="help">
         <b>Touch:</b> left side = move (joystick) · right side = swipe to look · FIRE button (drag it to aim while shooting) · SPRINT for a burst of speed. Pause → MOVE BUTTONS to drag the controls where your thumbs want them.<br>
-        <b>Desktop:</b> WASD move · Shift sprint · mouse look · click or SPACE to fire · R reload · H health kit · Q/E swap weapon · 1-2-3 weapons · V camera · right-click/Z sniper scope · Esc pause — every one of these except the mouse itself can be rebound from KEY BINDS below. Set INPUT to KEYBOARD to play with no mouse clicks at all — mouse look still aims.<br>
-        Shotgun unlocks at wave 3, assault rifle at wave 6. Shoot the red barrels. Grab the glowing drops.
+        <b>Desktop:</b> WASD move · Shift sprint · mouse look · click or SPACE to fire · R reload · H health kit · right-click or F grenade · Q/E swap weapon · 1-2-3 weapons · V camera · Z sniper scope · Esc pause — every one of these except the mouse itself can be rebound from KEY BINDS below. Set INPUT to KEYBOARD to play with no mouse clicks at all — mouse look still aims.<br>
+        Shotgun unlocks at wave 3, assault rifle at wave 6. Shoot the red barrels. Grab the glowing drops — including the grenade power-up, thrown with right-click/F or the GRENADE button.
       </div>
       <div class="help" id="verLine" style="opacity:.5"></div>
     </div></div>
@@ -752,7 +758,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt on" id="pOptSquad">BOT SQUAD: <span>3</span></div>
         <div class="opt on" id="pOptVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="pOptSound">SOUND: <span>ON</span></div>
-        <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="0.4" max="5" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
+        <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="-3" max="5" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
       </div>
       <div class="row">
         <button class="bigbtn" id="btnResume">RESUME</button>
@@ -774,7 +780,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <button class="bigbtn secondary" id="btnKeybindsReset">RESET TO DEFAULTS</button>
         <button class="bigbtn secondary" id="btnKeybindsBack">DONE</button>
       </div>
-      <div class="help">Mouse click always fires and right-click always opens the scope, no matter what is bound above. Q and E always swap weapons and Esc and P always pause, too — rebinding SWAP WEAPON or PAUSE gives you a second way in without taking away the one you already know.</div>
+      <div class="help">Mouse click always fires and right-click always throws a grenade, no matter what is bound above. Q and E always swap weapons and Esc and P always pause, too — rebinding SWAP WEAPON or PAUSE gives you a second way in without taking away the one you already know.</div>
     </div></div>
   </div>
 
@@ -946,7 +952,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.81.0';
+const GAME_VERSION = 'v1.82.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1007,6 +1013,11 @@ const CFG = {
   // either. Carried, not instant: picking one up banks it (up to healthKitMax) and pressing the
   // MEDKIT button/H key spends one for an immediate heal (see Player.useHealthKit).
   healthKitMax: 3, healthKitHeal: 50, healthKitSpawnMin: 20, healthKitSpawnMax: 35, healthKitCap: 2,
+  // grenades: a power-up pickup like insta/double/etc. (joins POWER_POOL_LATE), but carried rather
+  // than a timed buff — same shape as health kits above. Weaker than the purchasable Grenade
+  // Launcher's own shell (dmg 260/radius 6.5) since this is a found, not bought, throw — see
+  // Player.throwGrenade, which reuses the same Grenades module the launcher weapon fires into.
+  grenadeMax: 3, grenadeDmg: 170, grenadeRadius: 5.5, grenadeFuse: 1.5, grenadeGravity: 9.5, grenadeSpeed: 24,
   // coop: how long you bleed out on the sand, and what it costs a teammate to pick you back up
   downTime: 45, reviveTime: 3.5, reviveRange: 2.4, reviveHp: 0.4,
   // ammo refill stations: channel near one (same idea as reviving a teammate) and every owned
@@ -1605,7 +1616,7 @@ function genIcon(type) {
   const glow = {
     health: '#ff4040', ammo: '#ffb040', insta: '#ff2020', double: '#ffe040', noreload: '#40c4ff',
     infammo: '#40ff8a', invincible: '#ffffff', rapidfire: '#ff8a00', fastmove: '#00e5ff', phase: '#b968ff',
-    healthkit: '#ffd83b'
+    healthkit: '#ffd83b', grenade: '#8fbf5a'
   }[type];
   g.shadowColor = glow; g.shadowBlur = 22;
   // shared badge backdrop for every power-up glyph below (double included) — a dark disc with a
@@ -1680,12 +1691,25 @@ function genIcon(type) {
     g.beginPath(); g.moveTo(40, 100); g.lineTo(64, 20); g.lineTo(88, 100); g.lineTo(64, 80); g.closePath(); g.fill();
     g.globalAlpha = 1;
     ring();
-  } else {
-    // healthkit: a bold gold cross, same silhouette as the red health icon but unmistakably a
+  } else if (type === 'healthkit') {
+    // a bold gold cross, same silhouette as the red health icon but unmistakably a
     // different (carried, stackable) item at a glance thanks to the yellow badge/ring
     badge();
     g.fillStyle = glow; roundRect(g, 22, 22, 84, 84, 16); g.fill();
     g.shadowBlur = 0; g.fillStyle = '#1a1200'; g.fillRect(52, 34, 24, 60); g.fillRect(34, 52, 60, 24);
+    ring();
+  } else {
+    // grenade: an oval pineapple body with a cross-hatch texture and a top lever/pin, in the same
+    // carried-item badge language as the health kit above
+    badge();
+    g.shadowBlur = 0;
+    g.fillStyle = glow; g.beginPath(); g.ellipse(64, 72, 26, 30, 0, 0, TAU); g.fill();
+    g.strokeStyle = '#1a1200'; g.lineWidth = 3;
+    for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(64 - 24, 72 + i * 10); g.lineTo(64 + 24, 72 + i * 10); g.stroke(); }
+    for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(64 + i * 13, 72 - 27); g.lineTo(64 + i * 13, 72 + 27); g.stroke(); }
+    g.fillStyle = '#3a3a3a'; roundRect(g, 58, 30, 12, 16, 3); g.fill();
+    g.strokeStyle = glow; g.lineWidth = 5; g.beginPath(); g.arc(78, 30, 14, Math.PI * 0.9, Math.PI * 2.15); g.stroke();
+    g.fillStyle = '#c9c9c9'; roundRect(g, 76, 18, 5, 16, 2); g.fill();
     ring();
   }
   return c;
@@ -1738,7 +1762,7 @@ function buildTextures() {
   TEX.glow = mkTex(genRadial(64, [[0, 'rgba(255,255,255,1)'], [.35, 'rgba(255,255,255,.55)'], [1, 'rgba(255,255,255,0)']]), 0);
   TEX.shadow = mkTex(genRadial(64, [[0, 'rgba(0,0,0,.55)'], [.6, 'rgba(0,0,0,.3)'], [1, 'rgba(0,0,0,0)']]), 0);
   TEX.icons = {};
-  for (const t of ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase', 'healthkit']) TEX.icons[t] = mkTex(genIcon(t), 0);
+  for (const t of ['health', 'ammo', 'insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase', 'healthkit', 'grenade']) TEX.icons[t] = mkTex(genIcon(t), 0);
   TEX.lowhpUrl = genLowHpOverlay();
 }
 
@@ -1975,19 +1999,19 @@ const Audio = {
 /* ------------------------------------------------------------------ desktop key bindings — remappable via the KEY BINDS
    screen (menu). A physical keyboard's layout is a device-level preference, not a per-callsign
    one like the rest of Game's saved options, so this lives in its own single localStorage slot
-   rather than following playerPrefKey. Mouse buttons (click fire, right-click scope) and the
+   rather than following playerPrefKey. Mouse buttons (click fire, right-click grenade) and the
    always-on Arrow-key/Q·E/Esc·P fallbacks below are intentionally NOT part of this — remapping
    covers the primary keyboard action, the odd extra hardcoded key stays as a convenience alias so
    nobody loses a binding they already knew by rebinding its partner. */
 const KEYBIND_DEFAULTS = {
   moveForward: 'KeyW', moveBack: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD',
-  sprint: 'ShiftLeft', fire: 'Space', reload: 'KeyR', swap: 'KeyQ', medkit: 'KeyH',
+  sprint: 'ShiftLeft', fire: 'Space', reload: 'KeyR', swap: 'KeyQ', medkit: 'KeyH', grenade: 'KeyF',
   ultimate: 'KeyG', scope: 'KeyZ', camera: 'KeyV', auto: 'KeyT', pause: 'Escape',
   weapon1: 'Digit1', weapon2: 'Digit2', weapon3: 'Digit3'
 };
 const KEYBIND_LABELS = {
   moveForward: 'MOVE FORWARD', moveBack: 'MOVE BACK', moveLeft: 'MOVE LEFT', moveRight: 'MOVE RIGHT',
-  sprint: 'SPRINT', fire: 'FIRE', reload: 'RELOAD', swap: 'SWAP WEAPON', medkit: 'HEALTH KIT',
+  sprint: 'SPRINT', fire: 'FIRE', reload: 'RELOAD', swap: 'SWAP WEAPON', medkit: 'HEALTH KIT', grenade: 'GRENADE',
   ultimate: 'SPECIAL / ULTIMATE', scope: 'SNIPER SCOPE', camera: 'TOGGLE CAMERA', auto: 'TOGGLE AUTO-FIRE',
   pause: 'PAUSE', weapon1: 'WEAPON SLOT 1', weapon2: 'WEAPON SLOT 2', weapon3: 'WEAPON SLOT 3'
 };
@@ -2025,7 +2049,7 @@ const Input = {
   fireId: null, fireLX: 0, fireLY: 0,
   sens: 1.0, R: 58,
   touchSeen: false, pointerLocked: false, mouseDown: false,
-  on: { reload() { }, swap() { }, auto() { }, pause() { }, select() { }, sprint() { }, camera() { }, ultimate() { }, scope() { }, any() { } },
+  on: { reload() { }, swap() { }, auto() { }, pause() { }, select() { }, sprint() { }, camera() { }, ultimate() { }, scope() { }, grenade() { }, any() { } },
   el: {},
   // shared by the HUD control buttons below AND every menu nav button (back buttons etc — see
   // Game.init): a plain 'click' listener alone is an unreliable way to catch a touch tap in this
@@ -2044,7 +2068,7 @@ const Input = {
   },
   init() {
     const el = this.el;
-    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt', 'btnMedkit', 'btnScope', 'btnPause', 'c'].forEach(id => el[id] = $(id));
+    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt', 'btnMedkit', 'btnGrenade', 'btnScope', 'btnPause', 'c'].forEach(id => el[id] = $(id));
     const self = this, opt = { passive: false };
     const layer = el.touchLayer;
     layer.addEventListener('touchstart', function (e) { e.preventDefault(); self.touchSeen = true; self.on.any(); for (const t of e.changedTouches) self.touchBegin(t); }, opt);
@@ -2071,6 +2095,7 @@ const Input = {
     // Tap buttons
     self.tapButton(el.btnReload, () => self.on.reload());
     self.tapButton(el.btnMedkit, () => self.on.medkit());
+    self.tapButton(el.btnGrenade, () => self.on.grenade());
     self.tapButton(el.btnSwitch, () => self.on.swap());
     self.tapButton(el.btnAuto, () => self.on.auto());
     self.tapButton(el.btnCam, () => self.on.camera());
@@ -2089,6 +2114,7 @@ const Input = {
       // these in muscle memory loses it just because they picked a new primary key for the other.
       if (e.code === Keybinds.reload) self.on.reload();
       else if (e.code === Keybinds.medkit) self.on.medkit();
+      else if (e.code === Keybinds.grenade) self.on.grenade();
       else if (e.code === Keybinds.swap || e.code === 'KeyQ' || e.code === 'KeyE') self.on.swap();
       else if (e.code === Keybinds.ultimate) self.on.ultimate();
       else if (e.code === Keybinds.scope) self.on.scope();
@@ -2113,7 +2139,10 @@ const Input = {
     // Mouse look / fire on the canvas
     const cv = el.c;
     cv.addEventListener('mousedown', function (e) {
-      if (e.button === 2) { e.preventDefault(); self.on.any(); if (Game.state === 'playing') self.on.scope(); return; }
+      // right-click throws a grenade on desktop by default — scope is Z-key only now (still in
+      // the desktop help text); gated on platform rather than just "button 2 fired" so a stray
+      // right-click reported by some touch/stylus setup can't burn a grenade on phone.
+      if (e.button === 2) { e.preventDefault(); self.on.any(); if (Game.state === 'playing' && Game.platform === 'desktop') self.on.grenade(); return; }
       if (e.button !== 0) return; e.preventDefault(); self.on.any(); self.mouseDown = true;
       if (Game.state === 'playing') { self.fire = true; self.fireEdge = true; if (!self.pointerLocked && cv.requestPointerLock) { try { const lockReq = cv.requestPointerLock(); if (lockReq && lockReq.catch) lockReq.catch(function () { }); } catch (err) { } } }
     });
@@ -2185,7 +2214,7 @@ const Layout = {
   // per-callsign now (see playerPrefKey) — a saved arrangement follows the same person on the
   // same phone rather than whoever last typed a name into this browser
   key() { return playerPrefKey('dnd_layout_v1'); },
-  ids: ['btnFire', 'btnReload', 'btnMedkit', 'btnSwitch', 'btnAuto', 'btnCam', 'btnScope', 'btnSprint', 'btnUlt'],
+  ids: ['btnFire', 'btnReload', 'btnMedkit', 'btnGrenade', 'btnSwitch', 'btnAuto', 'btnCam', 'btnScope', 'btnSprint', 'btnUlt'],
   pos: {}, editing: false, drag: null, els: {}, bar: null,
   init() {
     for (const id of this.ids) this.els[id] = $(id);
@@ -3933,7 +3962,8 @@ const PICKUP_DEFS = {
   noreload: { color: 0x40c4ff, label: 'NO RELOAD' }, infammo: { color: 0x40ff8a, label: '∞ AMMO' },
   invincible: { color: 0xffffff, label: 'INVINCIBLE' }, rapidfire: { color: 0xff8a00, label: 'RAPID FIRE' },
   fastmove: { color: 0x00e5ff, label: 'SPEED BOOST' }, phase: { color: 0xb968ff, label: 'WALL PHASE' },
-  healthkit: { color: 0xffd83b, label: 'HEALTH KIT' }
+  healthkit: { color: 0xffd83b, label: 'HEALTH KIT' },
+  grenade: { color: 0x6b8f3a, label: 'GRENADE' }
 };
 const Pickups = {
   pool: [],
@@ -5061,6 +5091,25 @@ const Player = {
     Floaties.spawn(this.x, 1.6, this.z, '+' + CFG.healthKitHeal + ' HP', '#ffd83b', 20, 1.2);
     HUD.dirty = true;
   },
+  // manual throw for a carried (picked-up) grenade — independent of the equipped weapon, so it
+  // never touches its mag/reserve/cooldown. Aims exactly like tryFire()'s own grenade branch does
+  // (same auto-target snap, same eye-ray fallback) and lobs into the same Grenades module the
+  // purchasable Grenade Launcher fires into, just with its own (weaker) damage/radius from CFG.
+  throwGrenade() {
+    if (!this.alive || this.downed) { Audio.empty(); return; }
+    if (Game.grenades <= 0) { Audio.empty(); HUD.toast('NO GRENADES', 1.8); return; }
+    Game.grenades--;
+    const dir = this.eyeDir(this._dir), ey = this.eyeY();
+    const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
+    const mx = this.x + dir.x * 0.5 + rx * 0.2, my = ey + dir.y * 0.5 - 0.14, mz = this.z + dir.z * 0.5 + rz * 0.2;
+    let ax, ay, az;
+    if (this.autoTarget) { const t = this.autoTarget; ax = t.x; ay = t.y + t.height * 0.62; az = t.z; }
+    else { ax = this.x + dir.x * 60; ay = ey + dir.y * 60; az = this.z + dir.z * 60; }
+    let dx = ax - mx, dy = ay - my, dz = az - mz; const L = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    Grenades.fire(mx, my, mz, dx / L, dy / L, dz / L, CFG.grenadeSpeed, { dmg: CFG.grenadeDmg, radius: CFG.grenadeRadius, fuse: CFG.grenadeFuse, gravity: CFG.grenadeGravity });
+    Audio.powerup(); HUD.toast('GRENADE THROWN — ' + Game.grenades + '/' + CFG.grenadeMax + ' LEFT', 1.8);
+    HUD.dirty = true;
+  },
   revive() {
     if (!this.downed) return;
     this.downed = false; this.downT = 0; this.alive = true;
@@ -5586,7 +5635,7 @@ const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
     ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
-      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnScope', 'scopeState', 'btnSprint', 'btnMedkit', 'medkitCount', 'joyHint', 'rotateBlock',
+      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnScope', 'scopeState', 'btnSprint', 'btnMedkit', 'medkitCount', 'btnGrenade', 'grenadeCount', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optPlatform', 'pOptPlatform', 'optInput', 'pOptInput', 'optSquad', 'pOptSquad', 'loadErr',
       'testModePopup', 'btnTestModeYes', 'btnTestModeNo',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
@@ -5659,6 +5708,10 @@ const HUD = {
     this.set('medkits', DOM.medkitCount, String(G.healthKits));
     const kitsEmpty = G.healthKits <= 0;
     if (this.last.kitsEmpty !== kitsEmpty) { this.last.kitsEmpty = kitsEmpty; DOM.btnMedkit.classList.toggle('empty', kitsEmpty); }
+    // grenade count — same carried-not-timed shape as health kits above
+    this.set('grenades', DOM.grenadeCount, String(G.grenades));
+    const grenadesEmpty = G.grenades <= 0;
+    if (this.last.grenadesEmpty !== grenadesEmpty) { this.last.grenadesEmpty = grenadesEmpty; DOM.btnGrenade.classList.toggle('empty', grenadesEmpty); }
     // score
     this.set('pts', DOM.points, fmt(G.points));
     this.set('kills', DOM.kills, G.kills + (G.kills === 1 ? ' KILL' : ' KILLS'));
@@ -5825,7 +5878,7 @@ const HUD = {
 };
 
 // Desktop keyboard remapping screen. Rebinding is keydown-only — mouse buttons (click fire,
-// right-click scope) are deliberately not part of this, same reasoning as the PLATFORM/INPUT
+// right-click grenade) are deliberately not part of this, same reasoning as the PLATFORM/INPUT
 // split: this is about giving keyboard-only players a way to choose their own keys, not about
 // changing how the mouse works.
 const KeybindsUI = {
@@ -7500,7 +7553,7 @@ const Levels = {
 /* ------------------------------------------------------------------ game state, waves, economy, voice lines, main loop */
 const Game = {
   state: 'menu', time: 0, wave: 0, points: 0, kills: 0, shake: 0,
-  noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0, phase: 0, healthKits: 0,
+  noReload: 0, infAmmo: 0, invincible: 0, rapidFire: 0, fastMove: 0, phase: 0, healthKits: 0, grenades: 0,
   timeScale: 1, matchTime: 0,
   toSpawn: 0, spawnT: 0, waveActive: false, interT: 0, pickupT: 0, powerupT: 0, healthKitT: 0, streak: 0, sayT: -99, heartT: 0, menuT: 0,
   autoFire: false, testMode: false, testModeUsedThisRun: false, voice: true, sound: true, charId: 'cloud', camMode: 'fp', camDist: 'medium', squad: true, squadCount: 3,
@@ -7544,6 +7597,7 @@ const Game = {
     Input.on.any = function () { if (!Audio.ready) Audio.unlock(); else Audio.resume(); };
     Input.on.reload = function () { if (self.state === 'playing') Player.reload(); };
     Input.on.medkit = function () { if (self.state === 'playing') Player.useHealthKit(); };
+    Input.on.grenade = function () { if (self.state === 'playing') Player.throwGrenade(); };
     Input.on.swap = function () { if (self.state === 'playing') Player.swapWeapon(); };
     Input.on.ultimate = function () { if (self.state === 'playing') Player.tryUltimate(); };
     Input.on.scope = function () { if (self.state === 'playing') Player.cycleScope(); };
@@ -7704,9 +7758,24 @@ const Game = {
     this.sound = v; Audio.setEnabled(v);
     try { localStorage.setItem(playerPrefKey('dnd_sound'), v ? '1' : '0'); } catch (e) { }
   },
+  // sensitivity is saved per PLATFORM, not as one shared number — a phone thumb-swipe and a desk
+  // mouse want completely different values, and switching PLATFORM should bring back whichever
+  // number was last set for that platform, not whatever the other one happened to be (see
+  // setPlatform/loadSensForPlatform below).
   setSens(v) {
     Input.sens = v;
-    try { localStorage.setItem(playerPrefKey('dnd_sens'), String(v)); } catch (e) { }
+    try { localStorage.setItem(playerPrefKey('dnd_sens_' + this.platform), String(v)); } catch (e) { }
+  },
+  // negative values invert both axes (mouse right -> look left, mouse up -> look down) rather than
+  // just refusing to go below "very slow" — some players specifically want inverted look, and a
+  // slider that stops at a small positive number can't express that at all.
+  loadSensForPlatform() {
+    try {
+      let se = localStorage.getItem(playerPrefKey('dnd_sens_' + this.platform));
+      if (se == null) se = localStorage.getItem(playerPrefKey('dnd_sens')); // pre-platform-split save, if any
+      if (se != null) { const v = parseFloat(se); if (Number.isFinite(v)) { Input.sens = clamp(v, -3, 5); return; } }
+    } catch (e) { }
+    Input.sens = 1;
   },
   // switches the whole control scheme, not just a HUD label — see updateRotateHint (portrait
   // lock only applies on phone) and Game.start's joyHint toggle (the touch-joystick hint circle).
@@ -7715,6 +7784,7 @@ const Game = {
     try {
       localStorage.setItem('dnd_platform', this.platform); localStorage.setItem(playerPrefKey('dnd_platform'), this.platform);
     } catch (e) { }
+    this.loadSensForPlatform();
     this.updateRotateHint();
     if (DOM.joyHint) DOM.joyHint.classList.toggle('hide', this.platform !== 'phone');
     HUD.refreshOptions();
@@ -7742,9 +7812,10 @@ const Game = {
     try { const af = localStorage.getItem(playerPrefKey('dnd_autofire')); if (af === '0' || af === '1') this.autoFire = af === '1'; } catch (e) { }
     try { const vc = localStorage.getItem(playerPrefKey('dnd_voice')); if (vc === '0' || vc === '1') this.voice = vc === '1'; } catch (e) { }
     try { const sd = localStorage.getItem(playerPrefKey('dnd_sound')); if (sd === '0' || sd === '1') { this.sound = sd === '1'; Audio.setEnabled(this.sound); } } catch (e) { }
-    try { const se = localStorage.getItem(playerPrefKey('dnd_sens')); if (se != null) { const v = parseFloat(se); if (Number.isFinite(v)) Input.sens = clamp(v, 0.4, 5); } } catch (e) { }
+    // platform/input must load before sensitivity — loadSensForPlatform reads this.platform
     try { const pf = localStorage.getItem(playerPrefKey('dnd_platform')); if (pf === 'phone' || pf === 'desktop') this.platform = pf; } catch (e) { }
     try { const ic = localStorage.getItem(playerPrefKey('dnd_input')); if (ic === 'mouse' || ic === 'keyboard') this.inputScheme = ic; } catch (e) { }
+    this.loadSensForPlatform();
     HUD.refreshOptions();
   },
   // dev/QA toggle: keeps the SPECIAL gauge topped off with no cooldown and every weapon owned, so
@@ -7843,7 +7914,7 @@ const Game = {
     // Levels.start() (Challenge levels only) may flip this back on right after this call returns
     this.diffNoShieldRegen = false;
     this.state = 'playing'; this.time = 0; this.matchTime = 0; this.wave = 0; this.points = 0; this.kills = 0; this.shake = 0;
-    this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0; this.phase = 0; this.healthKits = 0;
+    this.noReload = 0; this.infAmmo = 0; this.invincible = 0; this.rapidFire = 0; this.fastMove = 0; this.phase = 0; this.healthKits = 0; this.grenades = 0;
     // a fresh run starts clean unless test mode is already on when it begins (Player.reset() just
     // above already benefited from it if so) — either way, this is what gates the leaderboard
     // submit at the end of the run (see showGameOver)
@@ -7998,7 +8069,7 @@ const Game = {
     { key: 'phase', dom: 'pillPhase', label: 'WALL PHASE' }
   ],
   POWER_POOL_EARLY: ['insta', 'double'],
-  POWER_POOL_LATE: ['insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase'],
+  POWER_POOL_LATE: ['insta', 'double', 'noreload', 'infammo', 'invincible', 'rapidfire', 'fastmove', 'phase', 'grenade'],
   // pickups (power-ups included) land twice as often as the original 13-21s pace and up to twice
   // as many now sit on the ground at once — ramps the gap down further by wave 20, rather than
   // changing drop ODDS (spawnPickup's own mix is untouched).
@@ -8260,6 +8331,12 @@ const Game = {
     else if (type === 'healthkit') {
       if (this.healthKits < CFG.healthKitMax) { this.healthKits++; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'HEALTH KIT ' + this.healthKits + '/' + CFG.healthKitMax, '#ffd83b', 20, 1.2); HUD.toast('HEALTH KIT — ' + this.healthKits + '/' + CFG.healthKitMax, 2.2); }
       else { Audio.empty(); Floaties.spawn(x, 1.6, z, 'KITS FULL', '#ffd83b', 18, 1.0); HUD.toast('HEALTH KITS ALREADY FULL (' + CFG.healthKitMax + '/' + CFG.healthKitMax + ')', 2.2); }
+    }
+    // carried, not instant, same shape as the health kit above — banks up to grenadeMax for a
+    // manual throw later via the GRENADE button/key or right-click (see Player.throwGrenade)
+    else if (type === 'grenade') {
+      if (this.grenades < CFG.grenadeMax) { this.grenades++; Audio.powerup(); Floaties.spawn(x, 1.6, z, 'GRENADE ' + this.grenades + '/' + CFG.grenadeMax, '#8fbf5a', 20, 1.2); HUD.toast('GRENADE — ' + this.grenades + '/' + CFG.grenadeMax, 2.2); }
+      else { Audio.empty(); Floaties.spawn(x, 1.6, z, 'GRENADES FULL', '#8fbf5a', 18, 1.0); HUD.toast('GRENADES ALREADY FULL (' + CFG.grenadeMax + '/' + CFG.grenadeMax + ')', 2.2); }
     }
     Particles.sparks(x, 1.2, z, 12); HUD.dirty = true;
   },
