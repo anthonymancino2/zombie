@@ -89,9 +89,9 @@ button{font-family:inherit;color:inherit;}
 #shieldFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
   background:linear-gradient(90deg,#39e6ff,#0ea5e0);box-shadow:0 0 8px rgba(57,230,255,.7);transition:transform .12s linear;}
 #shieldFill.recharging{opacity:.55;}
-/* SPECIAL/ultimate meter — moved to its own bottom-left spot (.hudbl) and given 3x the shield
-   bar's height (6px -> 18px) so it reads as a distinctly bigger, more prominent gauge there. */
-#ultBar{width:min(42vw,220px);height:18px;border:2px solid #ffd83b;background:rgba(0,0,0,.45);border-radius:3px;
+/* SPECIAL/ultimate meter — moved to its own bottom-left spot (.hudbl) and given 4x the HEALTH
+   bar's height (14px -> 56px) so it reads as a distinctly bigger, more prominent gauge there. */
+#ultBar{width:min(42vw,220px);height:56px;border:2px solid #ffd83b;background:rgba(0,0,0,.45);border-radius:3px;
   box-shadow:0 0 10px rgba(255,216,59,.35),inset 0 0 6px rgba(0,0,0,.6);margin-top:4px;overflow:hidden;position:relative;}
 #ultFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
   background:linear-gradient(90deg,#8a5cff,#c04bff);box-shadow:0 0 8px rgba(180,80,255,.6);transition:transform .12s linear;}
@@ -971,7 +971,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.84.0';
+const GAME_VERSION = 'v1.85.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -4530,10 +4530,14 @@ function addAmmoDisplay(g, x, y, z, w, h) {
   g.add(mesh);
   g.userData.ammoDisplay = { ctx: canvas.getContext('2d'), tex: tex, last: null };
 }
-function refreshAmmoDisplay(g, mag) {
+function refreshAmmoDisplay(g, mag, maxMag) {
   const ad = g && g.userData.ammoDisplay; if (!ad || ad.last === mag) return;
   ad.last = mag;
-  const c = ad.ctx, low = mag <= 0, col = low ? '#ff3a3a' : '#5dff7a';
+  // green above half a magazine, yellow at half or under, red at a fifth or under (and always
+  // red at literally empty, which a fifth-or-under already covers for every real magazine size)
+  const pct = maxMag > 0 ? mag / maxMag : 1;
+  const col = pct <= 0.2 ? '#ff3a3a' : (pct <= 0.5 ? '#ffd83b' : '#5dff7a');
+  const c = ad.ctx;
   c.clearRect(0, 0, 64, 32);
   c.fillStyle = '#0a1408'; c.fillRect(0, 0, 64, 32);
   c.strokeStyle = '#2a3a24'; c.lineWidth = 2; c.strokeRect(1, 1, 62, 30);
@@ -4681,10 +4685,10 @@ const Player = {
   autoTarget: null, lowSaid: false,
   _mv: { x: 0, y: 0 }, _lk: { x: 0, y: 0 }, _dir: new THREE.Vector3(), _right: new THREE.Vector3(), _up: new THREE.Vector3(), _v: new THREE.Vector3(),
   init() {
-    // bumped up from the original 0.88 so the new digital ammo display (see addAmmoDisplay) reads
-    // clearly instead of shrinking to an illegible dot on a small viewmodel
-    this.vm.root = new THREE.Group(); this.vm.root.scale.setScalar(1.15); R.gunScene.add(this.vm.root);
-    this.vm.rootL = new THREE.Group(); this.vm.rootL.scale.setScalar(1.15); this.vm.rootL.visible = false; R.gunScene.add(this.vm.rootL);
+    // 50% bigger than the original 0.88 (-> 1.32) so the digital ammo display (see
+    // addAmmoDisplay) reads clearly instead of shrinking to an illegible dot on a small viewmodel
+    this.vm.root = new THREE.Group(); this.vm.root.scale.setScalar(1.32); R.gunScene.add(this.vm.root);
+    this.vm.rootL = new THREE.Group(); this.vm.rootL.scale.setScalar(1.32); this.vm.rootL.visible = false; R.gunScene.add(this.vm.rootL);
     this.vm.flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, color: 0xffe0b0 }));
     this.vm.flash.visible = false; this.vm.flash.scale.set(0.16, 0.16, 1); R.gunScene.add(this.vm.flash);
     this.buildModels();
@@ -5228,7 +5232,7 @@ const Player = {
   },
   updateViewmodel(dt) {
     const vm = this.vm, root = vm.root, w = this.weapon(), def = w.def;
-    refreshAmmoDisplay(vm.models[this.cur], w.mag);
+    refreshAmmoDisplay(vm.models[this.cur], w.mag, def.mag);
     // Anchor the viewmodel relative to the gun camera's frustum so it sits in the same
     // screen-space corner on every aspect ratio (a fixed offset falls off-screen in landscape).
     const pz = -0.66;
