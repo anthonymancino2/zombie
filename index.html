@@ -76,7 +76,11 @@ button{font-family:inherit;color:inherit;}
 .hudtc{position:absolute;left:50%;top:calc(8px + var(--sat));transform:translateX(-50%);text-align:center;}
 .hudtcRow{display:flex;align-items:center;justify-content:center;gap:10px;}
 .hudtcText{text-align:center;min-width:0;}
-.hudtr{position:absolute;right:calc(112px + var(--sar));top:calc(10px + var(--sat));text-align:right;}
+/* .hudtr (POINTS/KILLS) and .hudAmmo (reserve ammo/weapon name, moved here from the left side)
+   share one positioned row — .hudAmmo sits to POINTS' left, and lets the pair wrap onto two lines
+   (ammo below points, both still right-aligned) if a narrow screen can't fit them side by side. */
+.hudtrRow{position:absolute;right:calc(112px + var(--sar));top:calc(10px + var(--sat));display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:flex-start;gap:2px 18px;max-width:60vw;}
+.hudtr{text-align:right;}
 .lbl{font-size:11px;letter-spacing:.18em;color:var(--accent2);text-shadow:0 0 8px var(--glow),0 1px 3px #000;opacity:.95;}
 #hpBar{width:min(42vw,220px);height:14px;border:2px solid var(--accent);background:rgba(0,0,0,.45);border-radius:3px;
   box-shadow:0 0 12px var(--glow),inset 0 0 8px rgba(0,0,0,.6);overflow:hidden;position:relative;flex:none;}
@@ -396,7 +400,12 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnAuto{right:calc(10px + var(--sar));top:calc(64px + var(--sat));}
   #btnCam{right:calc(10px + var(--sar));top:calc(118px + var(--sat));}
   #btnScope{right:calc(10px + var(--sar));top:calc(172px + var(--sat));}
-  .hudtr{right:calc(68px + var(--sar));}
+  .hudtrRow{right:calc(68px + var(--sar));}
+  /* narrow portrait doesn't have the horizontal room for the ammo readout beside POINTS without
+     it colliding with the centered wave banner (.hudtc) — fixed (viewport-relative, ignoring
+     .hudtrRow as an ancestor) back to its old spot on the left, below the squad list, generously
+     far down since portrait has vertical room to spare and squad size (0-4) varies its height. */
+  .hudAmmo{position:fixed;left:calc(12px + var(--sal));top:calc(260px + var(--sat));text-align:left;}
   .hudtcRow{gap:6px;} #radar{width:56px;height:56px;}
   #hpBar{width:34vw;} #hpNum{font-size:18px;} #points{font-size:22px;} #waveNum{font-size:22px;} #zLeft{font-size:10px;} #matchClock{font-size:11px;margin-top:3px;}
   #subtitle{bottom:calc(272px + var(--sab));max-width:86vw;font-size:13px;}
@@ -478,14 +487,14 @@ h1.title em{font-style:normal;color:var(--accent2);}
   background:rgba(6,3,1,.78);z-index:1000;padding:16px;}
 #testModePopup.show{display:flex;}
 
-/* teammate strip + ammo/weapon-name readout, stacked together on the left under the player's own
-   HP/shield/ult bars (.hudtl) — #coopWrap is always visible (ammo has to be, even solo) and #coop
-   itself still hides in solo, collapsing to zero height so .hudAmmo sits flush under .hudtl until
-   there's an actual squad list above it. */
+/* teammate strip — sits on the left under the player's own HP/shield/ult bars (.hudtl). Just the
+   squad list now; the ammo/weapon-name readout that used to share this corner (.hudAmmo) moved up
+   to the top-right, next to POINTS (see .hudtrRow) — #coop itself still hides in solo, collapsing
+   to zero height, so this wrapper is otherwise empty then rather than hidden outright. */
 #coopWrap{position:absolute;left:calc(12px + var(--sal));top:calc(96px + var(--sat));display:flex;flex-direction:column;gap:8px;pointer-events:none;}
 #coop{display:none;flex-direction:column;gap:5px;}
 #coop.show{display:flex;}
-.hudAmmo{text-align:left;}
+.hudAmmo{text-align:right;}
 .mate{background:rgba(12,6,3,.6);border:1px solid rgba(255,255,255,.13);border-radius:7px;padding:4px 8px;min-width:132px;}
 .mate .mn{font-family:var(--hud-font);font-size:11px;letter-spacing:.14em;color:var(--sand);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:132px;}
 .mate .mb{height:5px;background:rgba(0,0,0,.55);border-radius:3px;overflow:hidden;margin-top:3px;}
@@ -671,12 +680,21 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="pill phase" id="pillPhase">WALL PHASE 15s</div>
       </div>
     </div>
-    <div class="hudtr">
-      <div class="lbl">POINTS</div>
-      <div id="points">0</div>
-      <div id="mult"></div>
-      <div id="kills">0 KILLS</div>
-      <div id="netPill"></div>
+    <div class="hudtrRow">
+      <div class="hudAmmo">
+        <div id="reloadHint"></div>
+        <div id="ammoRes">12</div>
+        <div id="ammoResLabel">RESERVE</div>
+        <div id="wpnName">M9 PISTOL</div>
+        <div id="wpnClass">LIGHT</div>
+      </div>
+      <div class="hudtr">
+        <div class="lbl">POINTS</div>
+        <div id="points">0</div>
+        <div id="mult"></div>
+        <div id="kills">0 KILLS</div>
+        <div id="netPill"></div>
+      </div>
     </div>
     <button id="btnPause" aria-label="Pause">II</button>
     <div id="subtitle"><b id="subName">HANK</b><span id="subText"></span></div>
@@ -685,13 +703,6 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <div id="toast"></div>
     <div id="coopWrap">
       <div id="coop"></div>
-      <div class="hudAmmo">
-        <div id="reloadHint"></div>
-        <div id="ammoRes">12</div>
-        <div id="ammoResLabel">RESERVE</div>
-        <div id="wpnName">M9 PISTOL</div>
-        <div id="wpnClass">LIGHT</div>
-      </div>
     </div>
     <div id="downed"><div class="dt">YOU ARE DOWN</div><div class="ds" id="downedSub">HOLD ON — A TEAMMATE CAN REVIVE YOU</div><div class="dbar"><i id="downedBar"></i></div></div>
     <div id="revive"><div class="rt" id="reviveText">REVIVING</div><div class="rbar"><i id="reviveBar"></i></div></div>
@@ -1002,7 +1013,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.95.0';
+const GAME_VERSION = 'v1.96.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
