@@ -724,7 +724,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt on" id="optVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="optSound">SOUND: <span>ON</span></div>
         <div class="opt" id="optInvert">INVERT LOOK: <span>OFF</span></div>
-        <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="-3" max="5" step="0.1" value="1"><span id="sensVal">1.0</span></div>
+        <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="0.1" max="5" step="0.1" value="1"><span id="sensVal">1.0</span></div>
       </div>
       <!-- shared with Challenges' own level-select screen — see Levels.diffPickerHtml/wireDiffPicker -->
       <div id="menuDiffPicker"></div>
@@ -807,7 +807,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt on" id="pOptVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="pOptSound">SOUND: <span>ON</span></div>
         <div class="opt" id="pOptInvert">INVERT LOOK: <span>OFF</span></div>
-        <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="-3" max="5" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
+        <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="0.1" max="5" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
       </div>
       <div class="row">
         <button class="bigbtn" id="btnResume">RESUME</button>
@@ -1002,7 +1002,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.94.0';
+const GAME_VERSION = 'v1.95.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -2334,11 +2334,11 @@ const Input = {
     out.x = x; out.y = y; return out;
   },
   consumeLook(out) {
-    // INVERT LOOK flips vertical only (mouse/swipe up looks down and vice versa) — the standard
-    // FPS convention. Separately, LOOK SENS itself can go negative (down to -3), which mirrors
-    // BOTH axes at once — a full mirrored-look style some players want independent of the Y-only
-    // toggle above. The two stack: negative sens + INVERT LOOK on cancels the Y flip back out and
-    // leaves only X mirrored, which is intentional, not a bug.
+    // INVERT LOOK is the ONLY direction control, vertical only (mouse/swipe up looks down and vice
+    // versa) — standard FPS convention. LOOK SENS is a pure speed magnitude, nothing else; letting
+    // it go negative (a prior version did, down to -3) silently mirrored horizontal look too,
+    // whether INVERT LOOK was on or not, which broke the toggle's own promise. Sens is positive-only
+    // now (see setSens/loadSensForPlatform) specifically so this can't happen again.
     out.x = this.lookDX * this.sens; out.y = this.lookDY * this.sens * (Game.invertLook ? -1 : 1); this.lookDX = 0; this.lookDY = 0; return out;
   },
   consumeFireEdge() { const e = this.fireEdge; this.fireEdge = false; return e; }
@@ -7115,9 +7115,10 @@ const COOP_CHALLENGES_CONFIG = [
   { level: 30, name: 'The World Eater', archetype: 'Grand Finale', objectives: ['Phase 1: charge an orbital beam via hold intervals. Phase 2: timed bomb placements. Phase 3: manage aggro'], winConditions: { bossesKilled: 1, chargesPlanted: 2, holdComplete: true }, perfCap: 30 }
 ];
 
-// Only Tier 1 (1-10) is wired so far — levels reuse the exact same Zones/Structures primitives
-// Solo does, plus a handful of new coop-flavored mechanics (see Levels.tickPlants/tickBatteries/
-// tickPatrol/tickDualBossBuff and Player.hurt's dmgMultiplier check). Every level here also works
+// All 30 are wired (COOP_LEVEL_BUILDERS below has every key) — levels reuse the exact same Zones/
+// Structures primitives Solo does, plus a handful of new coop-flavored mechanics (see
+// Levels.tickPlants/tickBatteries/tickPatrol/tickDualBossBuff/tickCharged and Player.hurt's
+// dmgMultiplier check). Every level here also works
 // solo with the bot squad filling empty slots — EXCEPT where a level's whole point is genuine
 // multi-person coordination (Split Capture's two separated zones: bots stay leashed near the
 // player rather than spreading out to a second objective, so that one specifically needs real
@@ -8139,19 +8140,21 @@ const Game = {
   // sensitivity is saved per PLATFORM, not as one shared number — a phone thumb-swipe and a desk
   // mouse want completely different values, and switching PLATFORM should bring back whichever
   // number was last set for that platform, not whatever the other one happened to be (see
-  // setPlatform/loadSensForPlatform below). Range goes down to -3, not just 0 — see consumeLook
-  // for what a negative value actually does (full mirrored look, distinct from INVERT LOOK).
+  // setPlatform/loadSensForPlatform below). Positive-only, 0.1-5 — a prior version let this go
+  // negative (down to -3) as a "lower than 0.4" request, but a negative sens silently mirrored
+  // horizontal look too, with no way to turn that off short of going positive again, independent
+  // of and contradicting the INVERT LOOK toggle. 0.1 covers "I want it slower" without that trap.
   setSens(v) {
-    Input.sens = clamp(v, -3, 5);
+    Input.sens = clamp(v, 0.1, 5);
     try { localStorage.setItem(playerPrefKey('dnd_sens_' + this.platform), String(Input.sens)); } catch (e) { }
   },
-  // any stray out-of-range saved number (e.g. from before the range was widened) is re-clamped
-  // back into range on every load, so it can never get stuck outside it.
+  // any stray out-of-range saved number (e.g. a leftover negative value from before sens went
+  // positive-only) is re-clamped back into range on every load, so it can never get stuck outside it.
   loadSensForPlatform() {
     try {
       let se = localStorage.getItem(playerPrefKey('dnd_sens_' + this.platform));
       if (se == null) se = localStorage.getItem(playerPrefKey('dnd_sens')); // pre-platform-split save, if any
-      if (se != null) { const v = parseFloat(se); if (Number.isFinite(v)) { Input.sens = clamp(v, -3, 5); return; } }
+      if (se != null) { const v = parseFloat(se); if (Number.isFinite(v)) { Input.sens = clamp(v, 0.1, 5); return; } }
     } catch (e) { }
     Input.sens = 1;
   },
