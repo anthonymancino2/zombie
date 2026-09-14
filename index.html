@@ -755,7 +755,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <button class="backbtn" id="btnBackModeselect">← BACK</button>
     <div class="scroll"><div class="panel">
       <h1 class="title" style="font-size:clamp(30px,7vw,58px)">CHALLENGES</h1>
-      <div class="tag">30 HAND-BUILT MISSIONS &middot; EACH ONE ITS OWN FIGHT</div>
+      <div class="tag">30+ HAND-BUILT MISSIONS &middot; EACH ONE ITS OWN FIGHT</div>
       <div class="row" style="margin-top:14px">
         <button class="bigbtn" id="btnSoloChallenges">SOLO CHALLENGES</button>
       </div>
@@ -1002,7 +1002,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.93.0';
+const GAME_VERSION = 'v1.94.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -3832,7 +3832,7 @@ class Zombie {
       if (this.skinMat.opacity !== op) { this.skinMat.opacity = op; this.clothMat.opacity = op; }
     }
     // The Pyromaniac: a periodic fire-barrage AOE burst around itself — heavy particles by design
-    // (see LEVEL_BUILDERS[19]'s low trickle/perfCap, which is what actually keeps the frame budget
+    // (see LEVEL_BUILDERS[21]'s low trickle/perfCap, which is what actually keeps the frame budget
     // in check rather than this effect being cheap).
     if (st !== 'dead' && T.traits && T.traits.aoe) {
       this.aoeT = (this.aoeT || 0) - dt;
@@ -6225,6 +6225,11 @@ const Bots = {
         alive: true, down: false, out: false, downT: 0, pinnedBy: null,
         kills: 0, head: 0, score: 0, cool: 0, anim: 0, gait: 0, flashT: 0, lastHurt: -99,
         target: null, aimT: 0, reviveT: 0, reviveOn: null,
+        // set only for a Protect Detail challenge's chosen VIP (see Levels.start's escort spec) —
+        // escortMul carries that level's severity multipliers; escortCombatDef()/combatRange() are
+        // what actually consume them (see below) rather than ever touching this bot's own `def`,
+        // which is the shared BOT_DEFS entry every future run (escort or not) reuses as-is.
+        escort: false, escortMul: null,
         vis: { kind: 'gltf', g: g, mixer: null, actions: {}, current: 'idle', flash: flash },
         avatarId: null, squadActive: false, shadow: shadow, label: label,
         // the zombie AI, the pin and the barrel blast all call this the same way they call it on a
@@ -6321,6 +6326,11 @@ const Bots = {
       b.hp = b.maxHp; b.shield = b.maxShield; b.shieldRegenT = 0; b.alive = true; b.down = false; b.out = false; b.downT = 0; b.pinnedBy = null;
       b.kills = 0; b.head = 0; b.score = 0; b.cool = rnd(0, 0.4); b.anim = rnd(0, 6); b.gait = 0; b.flashT = 0;
       b.lastHurt = -99; b.target = null; b.aimT = 0; b.reviveT = 0; b.reviveOn = null;
+      // always reset here (every run, every mode) rather than only when leaving a Protect Detail
+      // level — this is the one spot every run passes through, so a debuff can never leak into a
+      // later non-escort challenge or a plain endless-survival run just because the last thing
+      // played happened to be an escort level. Levels.start() re-applies it after this if needed.
+      b.escort = false; b.escortMul = null;
       b.x = Player.x + Math.cos(a) * 2.4; b.z = Player.z + Math.sin(a) * 2.4; b.vx = b.vz = 0; b.ry = Player.yaw;
       World.collide(b, 0.42);
     }
@@ -6413,10 +6423,10 @@ const Bots = {
       }
       // pinned: frozen and bleeding until a squadmate shoots it off (or CFG.pinMax expires)
       if (b.pinnedBy) { b.gait = 0; b.target = null; b.reviveT = 0; this.draw(b, dt); continue; }
-      if (b.hp < b.maxHp && Game.time - b.lastHurt > CFG.botCalm) b.hp = Math.min(b.maxHp, b.hp + CFG.botRegen * dt);
+      if (b.hp < b.maxHp && Game.time - b.lastHurt > CFG.botCalm) b.hp = Math.min(b.maxHp, b.hp + CFG.botRegen * (b.escortMul ? b.escortMul.healthRegenMul : 1) * dt);
       if (b.shield < b.maxShield && !Game.diffNoShieldRegen) {
         if (b.shieldRegenT > 0) b.shieldRegenT -= dt;
-        else b.shield = Math.min(b.maxShield, b.shield + b.maxShield / CFG.shieldRegenTime * dt);
+        else b.shield = Math.min(b.maxShield, b.shield + b.maxShield / CFG.shieldRegenTime * (b.escortMul ? b.escortMul.shieldRegenMul : 1) * dt);
       }
       this.think(b, dt);
       this.draw(b, dt);
@@ -6444,9 +6454,9 @@ const Bots = {
   think(b, dt) {
     // 1. shooting is never suspended — a bot walking to a pickup still covers the ground it crosses
     b.aimT -= dt;
-    const t = b.target;
+    const t = b.target, R = this.combatRange(b);
     if (b.aimT <= 0 || !t || !t.on || t.state === 'dead' ||
-        (t.x - b.x) * (t.x - b.x) + (t.z - b.z) * (t.z - b.z) > b.def.range * b.def.range) {
+        (t.x - b.x) * (t.x - b.x) + (t.z - b.z) * (t.z - b.z) > R * R) {
       b.target = this.pickTarget(b); b.aimT = CFG.botAimHold;
     }
     let faced = false;
@@ -6501,7 +6511,7 @@ const Bots = {
   thinkFillerMove(b, dt) {
     if (b.target) {
       const d = Math.hypot(b.target.x - b.x, b.target.z - b.z);
-      if (d > b.def.range * 0.7) this.moveTo(b, b.target.x, b.target.z, dt, 1.1, true);
+      if (d > this.combatRange(b) * 0.7) this.moveTo(b, b.target.x, b.target.z, dt, 1.1, true);
       else { b.gait = lerp(b.gait, 0, Math.min(1, dt * 8)); b.vx *= 0.8; b.vz *= 0.8; }
       return;
     }
@@ -6546,8 +6556,22 @@ const Bots = {
       this.moveTo(b, tx, tz, dt, 0.85, true);
     }
   },
+  // Protect Detail's "pistol only" rule (see Levels.start's escort spec): a bot's combat numbers
+  // normally live on its own def (BOT_DEFS entry, shared/reused every run — never mutated), so the
+  // escort target's downgrade is a swap to a synthetic def shaped the same way (dmg/rate/range/
+  // spread/pellets/kind). This is hand-authored, NOT copied from WEAPONS' own 'pistol' entry — that
+  // one is tuned for a human player's hitscan (95 range, 4.2 rate, 26 dmg = ~109 dps), a completely
+  // different balance axis from bot AI (14-40 range, 0.85-3.4 rate across BOT_DEFS); reusing it
+  // literally would make the "weak" weapon hit harder than any real squadmate's actual gun. These
+  // numbers instead sit deliberately below the weakest BOT_DEFS entry on every axis (~9 dps vs.
+  // Kess's shotgun, the squad's own low end, at ~65) so the downgrade reads as a downgrade.
+  _escortCombatDef: null,
+  escortCombatDef() {
+    return this._escortCombatDef || (this._escortCombatDef = { dmg: 6, rate: 1.5, range: 12, spread: 4, pellets: 1, kind: 'pistol' });
+  },
+  combatRange(b) { return (b.escort ? this.escortCombatDef() : b.def).range; },
   pickTarget(b) {
-    const zs = Zombies.pool, R = b.def.range;
+    const zs = Zombies.pool, R = this.combatRange(b);
     let best = null, bestScore = 0;
     for (let i = 0; i < zs.length; i++) {
       const z = zs[i];
@@ -6571,7 +6595,7 @@ const Bots = {
     return best;
   },
   shoot(b, z, dt) {
-    const def = b.def;
+    const def = b.escort ? this.escortCombatDef() : b.def;
     const tx = z.x, ty = z.y + z.height * 0.62, tz = z.z;
     b.ry = Math.atan2(-(tx - b.x), -(tz - b.z));
     b.cool -= dt;
@@ -6620,7 +6644,7 @@ const Bots = {
     }
     const px = b.x - Player.x, pz = b.z - Player.z, p2 = px * px + pz * pz;
     if (p2 < 1.69 && p2 > 1e-6) { const pdd = Math.sqrt(p2); sx += px / pdd * (1.3 - pdd) / 1.3 * 1.4; sz += pz / pdd * (1.3 - pdd) / 1.3 * 1.4; }
-    const sp = b.def.speed * (mul || 1), k = Math.min(1, dt * 8);
+    const sp = b.def.speed * (mul || 1) * (b.escortMul ? b.escortMul.speedMul : 1), k = Math.min(1, dt * 8);
     b.vx += (dx * sp + sx * 3.2 - b.vx) * k; b.vz += (dz * sp + sz * 3.2 - b.vz) * k;
     b.x += b.vx * dt; b.z += b.vz * dt;
     World.collide(b, 0.42);
@@ -6684,7 +6708,7 @@ const Bots = {
     const v = b.vis, show = !b.out;
     v.g.visible = show; b.shadow.visible = show; b.label.visible = show;
     if (!show) return;
-    Avatars.setGun(v, b.def.kind);
+    Avatars.setGun(v, b.escort ? 'pistol' : b.def.kind);
     b.anim += dt * (1.6 + b.gait * 7);
     v.g.position.set(b.x, 0, b.z);
     v.g.rotation.y = b.ry;
@@ -6712,7 +6736,7 @@ const Bots = {
       n.style.display = b.squadActive ? '' : 'none';
       if (!b.squadActive) continue;
       n.classList.toggle('down', b.down); n.classList.toggle('gone', b.out);
-      const txt = b.name + (b.down ? ' — DOWN' : (b.out ? ' — OUT' : (b.pinnedBy ? ' — PINNED' : '')));
+      const txt = (b.escort ? '★ ' : '') + b.name + (b.down ? ' — DOWN' : (b.out ? ' — OUT' : (b.pinnedBy ? ' — PINNED' : '')));
       if (n._t !== txt) { n._t = txt; n.children[0].textContent = txt; }
       const kk = b.out ? 0 : Math.max(0, Math.min(1, b.hp / b.maxHp));
       n.children[1].firstChild.style.transform = 'scaleX(' + kk.toFixed(3) + ')';
@@ -6799,37 +6823,45 @@ const Director = {
    mixing in engine wiring. Only levels 1-10 (Tier 1) have a builder wired up so far; Tiers 2-3
    are real design data but their tiles show LOCKED in level-select until a later phase gives them
    a builder (shifting zones, boss traits, dynamic minions, etc. don't exist in the engine yet). */
+// Level numbers below don't match a plain 1..30 sequence on purpose: a repeatable 'Escort'
+// archetype (Protect Detail I-IV — see LEVEL_BUILDERS' escort spec / Bots' escort debuff hooks)
+// is threaded in at 5/15/25/33, escalating in severity each time, and every level that used to
+// sit at or after one of those spots shifted up by 1 to make room for it.
 const SOLO_CHALLENGES_CONFIG = [
   { level: 1, name: 'Iron Sights', archetype: 'Survival', objectives: ['Eliminate 15 targets'], winConditions: { kills: 15 }, perfCap: 10 },
   { level: 2, name: 'Checkpoint Alpha', archetype: 'Domination', objectives: ['Capture and hold Zone A for 45s'], winConditions: { holdTimeA: 45 }, perfCap: 12 },
   { level: 3, name: 'Barrels of Blood', archetype: 'Demolition', objectives: ['Detonate 3 structural supply caches'], winConditions: { structuresDestroyed: 3 }, perfCap: 12 },
   { level: 4, name: 'Flanking Maneuver', archetype: 'Domination', objectives: ['Secure Zone A and B simultaneously for 100pts'], winConditions: { victoryPoints: 100 }, perfCap: 15 },
-  { level: 5, name: 'The Scout', archetype: 'Boss Hunt', objectives: ['Navigate past 2 checkpoints and kill The Scout'], winConditions: { bossesKilled: 1 }, perfCap: 10 },
-  { level: 6, name: 'Supply Line Defense', archetype: 'Survival', objectives: ['Defend center Ammo Station for 2 mins'], winConditions: { surviveTime: 120, stationHealthMin: 1 }, perfCap: 15 },
-  { level: 7, name: 'Double Trouble', archetype: 'Demolition', objectives: ['Destroy 2 reinforced radio towers'], winConditions: { structuresDestroyed: 2 }, perfCap: 18 },
-  { level: 8, name: 'Trench Warfare', archetype: 'Domination', objectives: ['Capture and defend Zones A, B, and C for 150pts'], winConditions: { victoryPoints: 150 }, perfCap: 20 },
-  { level: 9, name: 'Speed Run', archetype: 'Survival', objectives: ['Achieve 40 kills before the 90s timer runs out'], winConditions: { kills: 40, timeRemainingMin: 1 }, perfCap: 22 },
-  { level: 10, name: 'The Goliath', archetype: 'Boss Hunt', objectives: ['Advance 3 checkpoints and eliminate the Goliath Tank'], winConditions: { bossesKilled: 1 }, perfCap: 15 },
-  { level: 11, name: 'Crossfire', archetype: 'Domination', objectives: ['Hold capture zones that shift locations every 30s'], winConditions: { victoryPoints: 200 }, perfCap: 20 },
-  { level: 12, name: 'Breaching Party', archetype: 'Demolition', objectives: ['Destroy Structure 1, then plant charges on Structure 2'], winConditions: { structuresDestroyed: 2 }, perfCap: 22 },
-  { level: 13, name: 'Run & Gun', archetype: 'Survival', objectives: ['Pacing Break: Infinite Ammo/Insta-kill active. Get 100 kills'], winConditions: { kills: 100 }, perfCap: 30 },
-  { level: 14, name: 'Sector Lockdown', archetype: 'Hybrid', objectives: ['Hold Zone A for 60s while enemy spawns are quadrupled'], winConditions: { holdTimeA: 60 }, perfCap: 25 },
-  { level: 15, name: 'Phantom Menace', archetype: 'Boss Hunt', objectives: ['Defeat The Phantom (Phases through walls, turns invisible)'], winConditions: { bossesKilled: 1 }, perfCap: 12 },
-  { level: 16, name: 'Shattered Earth', archetype: 'Demolition', objectives: ['Destroy 4 fortified structures in the desert canyon'], winConditions: { structuresDestroyed: 4 }, perfCap: 22 },
-  { level: 17, name: 'Triple Threat', archetype: 'Domination', objectives: ['Points only tick if holding ALL 3 zones. Reach 100pts'], winConditions: { tripleHoldPoints: 100 }, perfCap: 25 },
-  { level: 18, name: 'Extraction Point', archetype: 'Survival', objectives: ['Endure a massive 3-minute siege waiting for helicopter'], winConditions: { surviveTime: 180 }, perfCap: 28 },
-  { level: 19, name: 'The Pyromaniac', archetype: 'Boss Hunt', objectives: ['Defeat the fire-barrage AOE boss (Heavy GPU particles)'], winConditions: { bossesKilled: 1 }, perfCap: 15 },
-  { level: 20, name: 'Overlord', archetype: 'Hybrid', objectives: ['Destroy the shield generator mainframe, then kill the boss'], winConditions: { structuresDestroyed: 1, bossesKilled: 1 }, perfCap: 20 },
-  { level: 21, name: 'Iron Fortress', archetype: 'Domination', objectives: ['Enemy starts with 150pt lead. Reverse it and get 300pts'], winConditions: { victoryPoints: 300 }, perfCap: 25 },
-  { level: 22, name: 'Detonator Gauntlet', archetype: 'Demolition', objectives: ['Destroy 3 structures in order; each kill adds 45s to bomb timer'], winConditions: { structuresDestroyed: 3, masterTimerMin: 1 }, perfCap: 25 },
-  { level: 23, name: 'The Swarm', archetype: 'Survival', objectives: ['Pacing Break: Stress test. Kill 150 low-health crawlers'], winConditions: { kills: 150 }, perfCap: 40 },
-  { level: 24, name: "No Man's Land", archetype: 'Domination', objectives: ['Hold center zone; health drains unless inside the point'], winConditions: { holdTimeCenter: 90 }, perfCap: 25 },
-  { level: 25, name: 'Hive Mother', archetype: 'Boss Hunt', objectives: ['Kill Hive Mother; she spawns dynamic minion waves when hit'], winConditions: { bossesKilled: 1 }, perfCap: 28 },
-  { level: 26, name: 'Total War', archetype: 'Hybrid', objectives: ['Maintain 2 capture zones while destroying 2 hidden supply caches'], winConditions: { victoryPoints: 200, structuresDestroyed: 2 }, perfCap: 28 },
-  { level: 27, name: 'Apocalypse Now', archetype: 'Survival', objectives: ['Get 75 kills without using any ammo boxes or medkits'], winConditions: { kills: 75, medkitsUsed: 0 }, perfCap: 25 },
-  { level: 28, name: "Titan's Wrath", archetype: 'Hybrid', objectives: ['Kill Titan Boss; completely immune unless team holds Zone B'], winConditions: { bossesKilled: 1 }, perfCap: 20 },
-  { level: 29, name: 'Omega Protocol', archetype: 'Hybrid', objectives: ['Clear 4 checkpoints, destroy terminal in each, kill 4 mini-bosses'], winConditions: { structuresDestroyed: 4, miniBossesKilled: 4 }, perfCap: 30 },
-  { level: 30, name: 'The Desert God', archetype: 'Grand Finale', objectives: ['Defeat multi-phase boss. Phase 2: destroy 2 pillars. Phase 3: 60s hold'], winConditions: { bossesKilled: 1, structuresDestroyed: 2, finalHoldComplete: true }, perfCap: 32 }
+  { level: 5, name: 'Protect Detail', archetype: 'Escort', objectives: ['Protect a debuffed squadmate for 150s — pistol only, 75% regen, 75% speed'], winConditions: { surviveTime: 150 }, perfCap: 14 },
+  { level: 6, name: 'The Scout', archetype: 'Boss Hunt', objectives: ['Navigate past 2 checkpoints and kill The Scout'], winConditions: { bossesKilled: 1 }, perfCap: 10 },
+  { level: 7, name: 'Supply Line Defense', archetype: 'Survival', objectives: ['Defend center Ammo Station for 2 mins'], winConditions: { surviveTime: 120, stationHealthMin: 1 }, perfCap: 15 },
+  { level: 8, name: 'Double Trouble', archetype: 'Demolition', objectives: ['Destroy 2 reinforced radio towers'], winConditions: { structuresDestroyed: 2 }, perfCap: 18 },
+  { level: 9, name: 'Trench Warfare', archetype: 'Domination', objectives: ['Capture and defend Zones A, B, and C for 150pts'], winConditions: { victoryPoints: 150 }, perfCap: 20 },
+  { level: 10, name: 'Speed Run', archetype: 'Survival', objectives: ['Achieve 40 kills before the 90s timer runs out'], winConditions: { kills: 40, timeRemainingMin: 1 }, perfCap: 22 },
+  { level: 11, name: 'The Goliath', archetype: 'Boss Hunt', objectives: ['Advance 3 checkpoints and eliminate the Goliath Tank'], winConditions: { bossesKilled: 1 }, perfCap: 15 },
+  { level: 12, name: 'Crossfire', archetype: 'Domination', objectives: ['Hold capture zones that shift locations every 30s'], winConditions: { victoryPoints: 200 }, perfCap: 20 },
+  { level: 13, name: 'Breaching Party', archetype: 'Demolition', objectives: ['Destroy Structure 1, then plant charges on Structure 2'], winConditions: { structuresDestroyed: 2 }, perfCap: 22 },
+  { level: 14, name: 'Run & Gun', archetype: 'Survival', objectives: ['Pacing Break: Infinite Ammo/Insta-kill active. Get 100 kills'], winConditions: { kills: 100 }, perfCap: 30 },
+  { level: 15, name: 'Protect Detail II', archetype: 'Escort', objectives: ['Protect a debuffed squadmate for 150s — pistol only, 50% regen, 50% speed'], winConditions: { surviveTime: 150 }, perfCap: 20 },
+  { level: 16, name: 'Sector Lockdown', archetype: 'Hybrid', objectives: ['Hold Zone A for 60s while enemy spawns are quadrupled'], winConditions: { holdTimeA: 60 }, perfCap: 25 },
+  { level: 17, name: 'Phantom Menace', archetype: 'Boss Hunt', objectives: ['Defeat The Phantom (Phases through walls, turns invisible)'], winConditions: { bossesKilled: 1 }, perfCap: 12 },
+  { level: 18, name: 'Shattered Earth', archetype: 'Demolition', objectives: ['Destroy 4 fortified structures in the desert canyon'], winConditions: { structuresDestroyed: 4 }, perfCap: 22 },
+  { level: 19, name: 'Triple Threat', archetype: 'Domination', objectives: ['Points only tick if holding ALL 3 zones. Reach 100pts'], winConditions: { tripleHoldPoints: 100 }, perfCap: 25 },
+  { level: 20, name: 'Extraction Point', archetype: 'Survival', objectives: ['Endure a massive 3-minute siege waiting for helicopter'], winConditions: { surviveTime: 180 }, perfCap: 28 },
+  { level: 21, name: 'The Pyromaniac', archetype: 'Boss Hunt', objectives: ['Defeat the fire-barrage AOE boss (Heavy GPU particles)'], winConditions: { bossesKilled: 1 }, perfCap: 15 },
+  { level: 22, name: 'Overlord', archetype: 'Hybrid', objectives: ['Destroy the shield generator mainframe, then kill the boss'], winConditions: { structuresDestroyed: 1, bossesKilled: 1 }, perfCap: 20 },
+  { level: 23, name: 'Iron Fortress', archetype: 'Domination', objectives: ['Enemy starts with 150pt lead. Reverse it and get 300pts'], winConditions: { victoryPoints: 300 }, perfCap: 25 },
+  { level: 24, name: 'Detonator Gauntlet', archetype: 'Demolition', objectives: ['Destroy 3 structures in order; each kill adds 45s to bomb timer'], winConditions: { structuresDestroyed: 3, masterTimerMin: 1 }, perfCap: 25 },
+  { level: 25, name: 'Protect Detail III', archetype: 'Escort', objectives: ['Protect a debuffed squadmate for 150s — pistol only, 25% regen, 25% speed'], winConditions: { surviveTime: 150 }, perfCap: 26 },
+  { level: 26, name: 'The Swarm', archetype: 'Survival', objectives: ['Pacing Break: Stress test. Kill 150 low-health crawlers'], winConditions: { kills: 150 }, perfCap: 40 },
+  { level: 27, name: "No Man's Land", archetype: 'Domination', objectives: ['Hold center zone; health drains unless inside the point'], winConditions: { holdTimeCenter: 90 }, perfCap: 25 },
+  { level: 28, name: 'Hive Mother', archetype: 'Boss Hunt', objectives: ['Kill Hive Mother; she spawns dynamic minion waves when hit'], winConditions: { bossesKilled: 1 }, perfCap: 28 },
+  { level: 29, name: 'Total War', archetype: 'Hybrid', objectives: ['Maintain 2 capture zones while destroying 2 hidden supply caches'], winConditions: { victoryPoints: 200, structuresDestroyed: 2 }, perfCap: 28 },
+  { level: 30, name: 'Apocalypse Now', archetype: 'Survival', objectives: ['Get 75 kills without using any ammo boxes or medkits'], winConditions: { kills: 75, medkitsUsed: 0 }, perfCap: 25 },
+  { level: 31, name: "Titan's Wrath", archetype: 'Hybrid', objectives: ['Kill Titan Boss; completely immune unless team holds Zone B'], winConditions: { bossesKilled: 1 }, perfCap: 20 },
+  { level: 32, name: 'Omega Protocol', archetype: 'Hybrid', objectives: ['Clear 4 checkpoints, destroy terminal in each, kill 4 mini-bosses'], winConditions: { structuresDestroyed: 4, miniBossesKilled: 4 }, perfCap: 30 },
+  { level: 33, name: 'Protect Detail IV', archetype: 'Escort', objectives: ['Protect a debuffed squadmate for 150s — pistol only, no regen, 15% speed'], winConditions: { surviveTime: 150 }, perfCap: 30 },
+  { level: 34, name: 'The Desert God', archetype: 'Grand Finale', objectives: ['Defeat multi-phase boss. Phase 2: destroy 2 pillars. Phase 3: 60s hold'], winConditions: { bossesKilled: 1, structuresDestroyed: 2, finalHoldComplete: true }, perfCap: 32 }
 ];
 
 // Engine-side layout for the levels that are actually wired up (Tier 1, 1-10 — see Phase plan).
@@ -6851,7 +6883,7 @@ const LEVEL_BUILDERS = {
     // "simultaneously" is checked literally (see Levels.tickZones' dualHold branch) — a solo
     // player's 3-bot squad stays leashed near the player (see Bots.thinkFormationMove/CFG.botLeash)
     // rather than spreading out to hold a separate objective on its own, so A and B have to overlap
-    // close enough for one occupant to stand in both at once, same trick as Triple Threat (17)
+    // close enough for one occupant to stand in both at once, same trick as Triple Threat (19)
     const c = Levels.pickSpots(1, 10, 18, 0)[0], ang = Math.random() * Math.PI * 2, gap = 3.5, r = 4.5;
     return {
       arenaR: 38, weaponWave: 4, trickle: { min: 1.6, max: 2.4, maxAlive: 10, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
@@ -6861,35 +6893,45 @@ const LEVEL_BUILDERS = {
       ], dualHold: ['A', 'B']
     };
   },
+  // Protect Detail (Tier 1 escort) — see Bots' escort field/escortMul/escortCombatDef for how this
+  // spec actually debuffs whichever squadmate gets picked in Levels.start(). 75% of normal regen
+  // and speed; win condition is a plain surviveTime reused as-is (see evalLose's escort fail check
+  // for the other half of "protect" — bleeding out ends the level, not just running out the clock).
   5: function () {
+    return {
+      arenaR: 32, weaponWave: 5, trickle: { min: 1.6, max: 2.6, maxAlive: 8, types: [{ t: 'walker', w: 0.85 }, { t: 'runner', w: 0.15 }] },
+      escort: { shieldRegenMul: 0.75, healthRegenMul: 0.75, speedMul: 0.75 }
+    };
+  },
+  6: function () {
     const cps = Levels.pickSpots(2, 9, 24, 9);
     return {
       arenaR: 36, weaponWave: 3, trickle: { min: 2.6, max: 4, maxAlive: 4, types: [{ t: 'walker', w: 1 }] },
       checkpoints: cps.map(function (p) { return { x: p.x, z: p.z, r: 5 }; }), boss: { type: 'scout', wave: 5, label: 'THE SCOUT DOWN' }
     };
   },
-  6: function () { return { arenaR: 28, weaponWave: 4, trickle: { min: 1.3, max: 2.1, maxAlive: 10, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] }, station: { x: 0, z: 0, r: 5, hp: 100, dps: 5 } }; },
-  7: function () {
+  7: function () { return { arenaR: 28, weaponWave: 4, trickle: { min: 1.3, max: 2.1, maxAlive: 10, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] }, station: { x: 0, z: 0, r: 5, hp: 100, dps: 5 } }; },
+  8: function () {
     const spots = Levels.pickSpots(2, 12, 25, 13);
     // "reinforced" — noticeably tougher than level 3's supply caches, needs sustained fire rather than one lucky hit
     return { arenaR: 36, weaponWave: 5, trickle: { min: 1.1, max: 1.9, maxAlive: 12, types: [{ t: 'walker', w: 0.75 }, { t: 'runner', w: 0.25 }] }, structures: spots.map(function (p) { return { x: p.x, z: p.z, hp: 140 }; }) };
   },
-  8: function () {
+  9: function () {
     const spots = Levels.pickSpots(3, 12, 28, 13);
     return {
       arenaR: 42, weaponWave: 6, trickle: { min: 1.1, max: 1.8, maxAlive: 14, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.25 }, { t: 'brute', w: 0.1 }] },
       zones: [{ id: 'A', x: spots[0].x, z: spots[0].z, r: 4.5, name: 'ZONE A' }, { id: 'B', x: spots[1].x, z: spots[1].z, r: 4.5, name: 'ZONE B' }, { id: 'C', x: spots[2].x, z: spots[2].z, r: 4.5, name: 'ZONE C' }], anyHold: true
     };
   },
-  9: function () { return { arenaR: 34, weaponWave: 6, trickle: { min: 0.7, max: 1.2, maxAlive: 16, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.35 }, { t: 'brute', w: 0.05 }] }, timeLimitFail: 90 }; },
-  10: function () {
+  10: function () { return { arenaR: 34, weaponWave: 6, trickle: { min: 0.7, max: 1.2, maxAlive: 16, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.35 }, { t: 'brute', w: 0.05 }] }, timeLimitFail: 90 }; },
+  11: function () {
     const cps = Levels.pickSpots(3, 12, 28, 11);
     return {
       arenaR: 40, weaponWave: 7, trickle: { min: 1.6, max: 2.6, maxAlive: 8, types: [{ t: 'walker', w: 1 }] },
       checkpoints: cps.map(function (p) { return { x: p.x, z: p.z, r: 5 }; }), boss: { type: 'tank', wave: 10, label: 'GOLIATH DOWN' }
     };
   },
-  11: function () {
+  12: function () {
     const p = Levels.pickSpots(1, 10, 20, 0)[0];
     return {
       arenaR: 44, weaponWave: 11, trickle: { min: 0.9, max: 1.5, maxAlive: 18, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.35 }, { t: 'brute', w: 0.05 }] },
@@ -6898,35 +6940,42 @@ const LEVEL_BUILDERS = {
       zones: [{ id: 'A', x: p.x, z: p.z, r: 4.5, name: 'ZONE A' }], shiftingZone: { id: 'A', interval: 30, rate: 2 }
     };
   },
-  12: function () {
+  13: function () {
     const spots = Levels.pickSpots(2, 12, 26, 14);
     return {
       arenaR: 38, weaponWave: 12, trickle: { min: 1.0, max: 1.7, maxAlive: 14, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
       sequentialStructures: [{ x: spots[0].x, z: spots[0].z, hp: 90 }, { x: spots[1].x, z: spots[1].z, hp: 110 }]
     };
   },
-  13: function () {
+  14: function () {
     return { arenaR: 36, weaponWave: 13, trickle: { min: 0.4, max: 0.75, maxAlive: 24, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] }, infiniteBuffs: true };
   },
-  14: function () {
+  // Protect Detail II — 2nd time the escort archetype shows up: regen and speed both cut in half.
+  15: function () {
+    return {
+      arenaR: 34, weaponWave: 15, trickle: { min: 1.2, max: 2.0, maxAlive: 10, types: [{ t: 'walker', w: 0.75 }, { t: 'runner', w: 0.25 }] },
+      escort: { shieldRegenMul: 0.5, healthRegenMul: 0.5, speedMul: 0.5 }
+    };
+  },
+  16: function () {
     const p = Levels.pickSpots(1, 8, 15, 0)[0];
-    // "spawns are quadrupled" — realized as a much hotter trickle than a level-14-equivalent
+    // "spawns are quadrupled" — realized as a much hotter trickle than a level-16-equivalent
     // single-zone hold would otherwise get, rather than a literal 4x multiplier on some baseline
     return {
       arenaR: 32, weaponWave: 14, trickle: { min: 0.4, max: 0.7, maxAlive: 12, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.35 }, { t: 'brute', w: 0.05 }] },
       zones: [{ id: 'A', x: p.x, z: p.z, r: 4.5, name: 'ZONE A' }]
     };
   },
-  15: function () {
+  17: function () {
     // boss "wave" only drives its HP/speed curve (see ZTYPES.hpMul/Zombie.spawn) — kept low on
     // purpose since a boss this hard to even hit shouldn't also be a raw damage sponge on top
     return { arenaR: 34, weaponWave: 12, trickle: { min: 3, max: 4.5, maxAlive: 3, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'phantom', wave: 6, label: 'THE PHANTOM DOWN', displayName: 'THE PHANTOM' } };
   },
-  16: function () {
+  18: function () {
     const spots = Levels.pickSpots(4, 12, 30, 11);
     return { arenaR: 46, weaponWave: 16, trickle: { min: 0.9, max: 1.5, maxAlive: 16, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.2 }, { t: 'brute', w: 0.1 }] }, structures: spots.map(function (p) { return { x: p.x, z: p.z, hp: 100 }; }) };
   },
-  17: function () {
+  19: function () {
     const c = Levels.pickSpots(1, 10, 20, 0)[0];
     const pts = [0, 1, 2].map(function (i) { const a = i * (Math.PI * 2 / 3); return { x: c.x + Math.cos(a) * 3, z: c.z + Math.sin(a) * 3 }; });
     return {
@@ -6935,20 +6984,20 @@ const LEVEL_BUILDERS = {
       allHold: true, allHoldRate: 8
     };
   },
-  18: function () {
+  20: function () {
     return { arenaR: 40, weaponWave: 18, trickle: { min: 0.7, max: 1.3, maxAlive: 14, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.32 }, { t: 'brute', w: 0.08 }] } };
   },
-  19: function () {
+  21: function () {
     return { arenaR: 34, weaponWave: 15, trickle: { min: 3.2, max: 4.8, maxAlive: 3, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'pyromaniac', wave: 7, label: 'THE PYROMANIAC DOWN', displayName: 'THE PYROMANIAC' } };
   },
-  20: function () {
+  22: function () {
     const p = Levels.pickSpots(1, 14, 26, 0)[0];
     return {
       arenaR: 40, weaponWave: 19, trickle: { min: 1.4, max: 2.2, maxAlive: 10, types: [{ t: 'walker', w: 0.8 }, { t: 'runner', w: 0.2 }] },
       structures: [{ x: p.x, z: p.z, hp: 120 }], structureGatesBoss: true, boss: { type: 'tank', wave: 12, label: 'OVERLORD DOWN', displayName: 'OVERLORD' }
     };
   },
-  21: function () {
+  23: function () {
     const spots = Levels.pickSpots(3, 12, 30, 13);
     return {
       arenaR: 44, weaponWave: 21, trickle: { min: 1.0, max: 1.7, maxAlive: 14, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.28 }, { t: 'brute', w: 0.07 }] },
@@ -6956,7 +7005,7 @@ const LEVEL_BUILDERS = {
       anyHold: true, startingVictoryPoints: -150
     };
   },
-  22: function () {
+  24: function () {
     const spots = Levels.pickSpots(3, 12, 28, 12);
     return {
       arenaR: 40, weaponWave: 22, trickle: { min: 1.0, max: 1.7, maxAlive: 14, types: [{ t: 'walker', w: 0.7 }, { t: 'runner', w: 0.3 }] },
@@ -6964,15 +7013,22 @@ const LEVEL_BUILDERS = {
       masterTimer: { start: 50, bonus: 45 }
     };
   },
-  23: function () { return { arenaR: 40, weaponWave: 23, spawnWave: 3, trickle: { min: 0.25, max: 0.45, maxAlive: 40, types: [{ t: 'crawler', w: 1 }] } }; },
-  24: function () {
+  // Protect Detail III — 3rd time around: only a quarter of normal regen and speed left.
+  25: function () {
+    return {
+      arenaR: 36, weaponWave: 24, trickle: { min: 0.9, max: 1.5, maxAlive: 14, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.05 }] },
+      escort: { shieldRegenMul: 0.25, healthRegenMul: 0.25, speedMul: 0.25 }
+    };
+  },
+  26: function () { return { arenaR: 40, weaponWave: 23, spawnWave: 3, trickle: { min: 0.25, max: 0.45, maxAlive: 40, types: [{ t: 'crawler', w: 1 }] } }; },
+  27: function () {
     return {
       arenaR: 34, weaponWave: 24, trickle: { min: 1.0, max: 1.7, maxAlive: 16, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.1 }] },
       zones: [{ id: 'Center', x: 0, z: 0, r: 6, name: 'CENTER' }], drainOutsideZone: { zoneId: 'Center', dps: 6 }
     };
   },
-  25: function () { return { arenaR: 38, weaponWave: 25, trickle: { min: 3, max: 4.5, maxAlive: 6, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'hivemother', wave: 9, label: 'HIVE MOTHER DOWN', displayName: 'HIVE MOTHER' } }; },
-  26: function () {
+  28: function () { return { arenaR: 38, weaponWave: 25, trickle: { min: 3, max: 4.5, maxAlive: 6, types: [{ t: 'walker', w: 1 }] }, boss: { type: 'hivemother', wave: 9, label: 'HIVE MOTHER DOWN', displayName: 'HIVE MOTHER' } }; },
+  29: function () {
     const zSpots = Levels.pickSpots(2, 12, 26, 14), sSpots = Levels.pickSpots(2, 10, 24, 12);
     return {
       arenaR: 42, weaponWave: 26, trickle: { min: 1.1, max: 1.8, maxAlive: 13, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.28 }, { t: 'brute', w: 0.07 }] },
@@ -6980,8 +7036,8 @@ const LEVEL_BUILDERS = {
       structures: sSpots.map(function (p) { return { x: p.x, z: p.z, hp: 110 }; })
     };
   },
-  27: function () { return { arenaR: 36, weaponWave: 27, trickle: { min: 1.1, max: 1.8, maxAlive: 13, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.28 }, { t: 'brute', w: 0.07 }] }, noKitsOrStations: true }; },
-  28: function () {
+  30: function () { return { arenaR: 36, weaponWave: 27, trickle: { min: 1.1, max: 1.8, maxAlive: 13, types: [{ t: 'walker', w: 0.65 }, { t: 'runner', w: 0.28 }, { t: 'brute', w: 0.07 }] }, noKitsOrStations: true }; },
+  31: function () {
     const p = Levels.pickSpots(1, 10, 22, 0)[0];
     return {
       arenaR: 40, weaponWave: 28, trickle: { min: 2.2, max: 3.4, maxAlive: 6, types: [{ t: 'walker', w: 1 }] },
@@ -6989,7 +7045,7 @@ const LEVEL_BUILDERS = {
       boss: { type: 'titan', wave: 13, label: 'TITAN DOWN', displayName: 'TITAN', gateZoneId: 'B' }
     };
   },
-  29: function () {
+  32: function () {
     const spots = Levels.pickSpots(4, 12, 30, 10);
     return {
       arenaR: 46, weaponWave: 29, trickle: { min: 1.6, max: 2.6, maxAlive: 10, types: [{ t: 'walker', w: 1 }] },
@@ -6998,7 +7054,15 @@ const LEVEL_BUILDERS = {
       })
     };
   },
-  30: function () {
+  // Protect Detail IV — the last time it shows up, right before the finale: regen fully gone,
+  // speed floored at 15% rather than 0 (a target that literally cannot move isn't protectable).
+  33: function () {
+    return {
+      arenaR: 38, weaponWave: 32, trickle: { min: 0.8, max: 1.3, maxAlive: 16, types: [{ t: 'walker', w: 0.6 }, { t: 'runner', w: 0.3 }, { t: 'brute', w: 0.1 }] },
+      escort: { shieldRegenMul: 0, healthRegenMul: 0, speedMul: 0.15 }
+    };
+  },
+  34: function () {
     const zoneSpot = Levels.pickSpots(1, 10, 22, 0)[0], pillars = Levels.pickSpots(2, 12, 26, 14);
     return {
       // deliberately light — the boss itself is the threat here, ambient trickle is just enough to
@@ -7195,7 +7259,7 @@ const COOP_LEVEL_BUILDERS = {
    through its own #levelresult screen rather than showGameOver(), since a level's win/lose has
    nothing to do with the endless-run leaderboard. */
 const Levels = {
-  active: false, mode: 'solo', cfg: null, spec: null, progress: null,
+  active: false, mode: 'solo', cfg: null, spec: null, progress: null, escortBot: null,
   checkpointIdx: 0, bossSpawned: false, stationHp: 0, trickleT: 0, elapsed: 0,
   // Normal/Hard/Nightmare — unrelated to grantWeaponsForDifficulty's weapon-unlock wave number
   // below despite the similar name. Persisted across sessions, picked on the level-select screen
@@ -7338,6 +7402,21 @@ const Levels = {
     if (!this.spec.checkpoints && !this.spec.checkpointStages && !this.spec.structureGatesBoss) {
       if (this.spec.boss) this.spawnBoss();
       if (this.spec.bosses) this.spawnBosses();
+    }
+    // Protect Detail (escort archetype, see LEVEL_BUILDERS' 5/15/25/33): pick a random active
+    // squadmate to be this run's VIP and hand them that level's severity multipliers — Bots.spawn()
+    // (called inside Game.start() above, before this.spec even exists yet) already reset escort/
+    // escortMul to false/null on every bot for us, so there's nothing stale to clear here first.
+    // No active squad (squadCount 0) means nobody to protect — the level still plays out as a
+    // plain 150s survive-the-clock with no VIP, rather than blocking the level entirely.
+    this.escortBot = null;
+    if (this.spec.escort) {
+      const active = Bots.list.filter(function (b) { return b.squadActive; });
+      if (active.length) {
+        this.escortBot = active[Math.floor(Math.random() * active.length)];
+        this.escortBot.escort = true; this.escortBot.escortMul = this.spec.escort;
+        HUD.toast('PROTECT ' + this.escortBot.name.toUpperCase() + '!', 2.8);
+      }
     }
     this.updateCheckpointMarker();
     HUD.showHud(true); HUD.banner(cfg.name.toUpperCase(), cfg.objectives[0], true);
@@ -7682,6 +7761,9 @@ const Levels = {
     if (this.spec.stations && this.stationHps.some(function (hp) { return hp <= 0; })) return 'A GENERATOR WAS DESTROYED';
     if (this.spec.timeLimitFail != null && this.elapsed >= this.spec.timeLimitFail && !this.evalWin()) return 'OUT OF TIME';
     if (this.spec.masterTimer && this.masterTimer <= 0) return 'THE BOMB DETONATED';
+    // Protect Detail: going down and getting revived is fine (the clock keeps running, same as any
+    // other surviveTime level) — only a full bleed-out (Bots.bleedOut sets `out`) ends it early.
+    if (this.spec.escort && this.escortBot && this.escortBot.out) return this.escortBot.name + ' BLED OUT — PROTECTION FAILED';
     return null;
   },
 
@@ -7718,7 +7800,7 @@ const Levels = {
     if (wc.tripleHoldPoints != null) parts.push((this.spec.allHold && !this.spec.zones.every(function (zc) { const z = Zones.get(zc.id); return z && z.held; }) ? 'HOLD ALL ZONES · ' : 'POINTS ') + Math.floor(Math.min(p.tripleHoldPoints, wc.tripleHoldPoints)) + '/' + wc.tripleHoldPoints);
     if (wc.holdTimeA != null) parts.push('ZONE A HOLD ' + Math.floor(Math.min(p.holdTimeA || 0, wc.holdTimeA)) + '/' + wc.holdTimeA + 's');
     if (wc.holdTimeCenter != null) parts.push('CENTER HOLD ' + Math.floor(Math.min(p.holdTimeCenter || 0, wc.holdTimeCenter)) + '/' + wc.holdTimeCenter + 's');
-    if (wc.surviveTime != null) parts.push('SURVIVE ' + Math.floor(Math.min(this.elapsed, wc.surviveTime)) + '/' + wc.surviveTime + 's');
+    if (wc.surviveTime != null) parts.push((this.escortBot ? 'PROTECT ' + this.escortBot.name + ' ' : 'SURVIVE ') + Math.floor(Math.min(this.elapsed, wc.surviveTime)) + '/' + wc.surviveTime + 's');
     if (wc.stationHealthMin != null) parts.push('STATION ' + Math.max(0, Math.round(this.stationHp)) + '%');
     if (this.spec.timeLimitFail != null) parts.push(Math.max(0, Math.ceil(this.spec.timeLimitFail - this.elapsed)) + 'S LEFT');
     if (this.spec.masterTimer) parts.push('BOMB ' + Math.max(0, Math.ceil(this.masterTimer)) + 's');
@@ -7808,7 +7890,12 @@ const Levels = {
     const tierNames = this.mode === 'coop'
       ? ['TIER 1 · FIRETEAM SYNCHRONIZATION', 'TIER 2 · JOINT OPERATIONS & CHAOS MANAGEMENT', 'TIER 3 · RAID-SCALE OPERATIONS']
       : ['TIER 1 · BOOT CAMP & BASICS', 'TIER 2 · TACTICAL OPS & HYBRIDS', 'TIER 3 · ELITE ARENA & BOSS GAUNTLETS'];
-    const tiers = [[1, 10, tierNames[0]], [11, 20, tierNames[1]], [21, 30, tierNames[2]]];
+    // Solo's tiers run 1-11/12-22/23-34, not the even 1-10/11-20/21-30 coop still uses — the
+    // Protect Detail levels threaded into Solo at 5/15/25/33 (see SOLO_CHALLENGES_CONFIG) pushed
+    // the back half of each tier out by however many of them land before that tier's own boundary,
+    // but each tier still ends on the same boss/finale it always did (Goliath/Overlord/Desert God).
+    const tiers = this.mode === 'coop' ? [[1, 10, tierNames[0]], [11, 20, tierNames[1]], [21, 30, tierNames[2]]]
+      : [[1, 11, tierNames[0]], [12, 22, tierNames[1]], [23, 34, tierNames[2]]];
     for (const t of tiers) {
       let cleared = 0; for (let n = t[0]; n <= t[1]; n++) if (clears[n]) cleared++;
       html += '<div class="tiertitle">' + t[2] + ' · ' + cleared + '/' + (t[1] - t[0] + 1) + ' CLEARED</div><div class="levelgrid">';
