@@ -993,7 +993,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.89.0';
+const GAME_VERSION = 'v1.90.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1309,6 +1309,11 @@ const AVATARS = {
     accent: 0x9b59b6, hide: [],
     stats: { hp: 50, speed: 85, reload: 75, attack: 90, special: 95, shield: 75, healthRegen: 85, shieldRegen: 85 } }
 };
+// label + AVATARS[id].stats key for every bar shown on a character-select card, in display order
+const STAT_ROWS = [
+  ['HP', 'hp'], ['SPEED', 'speed'], ['RELOAD', 'reload'], ['ATTACK', 'attack'],
+  ['SPECIAL ATK', 'special'], ['SHIELD', 'shield'], ['HP REGEN', 'healthRegen'], ['SHIELD REGEN', 'shieldRegen']
+];
 const AVATAR_ORDER = { male: ['cloud', 'rhino', 'chopper', 'corsair'], female: ['mage'] };
 // character-select card grouping only — purely a display layout, independent of AVATAR_ORDER
 // above (which stays gender-real for Bots.pickAvatars' male/female bot pool). Group B is Dudu,
@@ -8125,10 +8130,9 @@ const Game = {
           '<div class="cardhead"><div class="cportrait" style="background:' + hex + '33">' + av.short.charAt(0) + '</div>' +
           '<div><div class="cname">' + av.label + '</div><div class="cclass">' + av.cls + '</div></div></div>' +
           '<div class="cdesc">' + av.desc + '</div>' +
-          // these bars are the champion's own real stats (AVATARS[id].stats), not a shared/fake table
-          '<div class="stats"><span>HP</span><div class="bar"><i style="width:' + av.stats.hp + '%"></i></div>' +
-          '<span>SPEED</span><div class="bar"><i style="width:' + av.stats.speed + '%"></i></div>' +
-          '<span>RELOAD</span><div class="bar"><i style="width:' + av.stats.reload + '%"></i></div></div>';
+          // every bar here is the champion's own real stat (AVATARS[id].stats), not a shared/fake
+          // table — see STAT_ROWS/Avatars.statsFromPct for how each one actually affects gameplay
+          '<div class="stats">' + STAT_ROWS.map(r => '<span>' + r[0] + '</span><div class="bar"><i style="width:' + av.stats[r[1]] + '%"></i></div>').join('') + '</div>';
         card.addEventListener('click', () => this.selectChar(id));
         wrap.appendChild(card);
       }
