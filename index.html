@@ -437,7 +437,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   transition:border-color .15s,background .15s;}
 .lchar.mine{border-color:var(--accent2);color:#fff;background:rgba(255,255,255,.08);box-shadow:0 0 10px var(--glow);}
 .lchar.taken{opacity:.4;cursor:not-allowed;}
-/* post-run results — a 2x2 quadrant grid, one card per player (real or filler bot), each with
+/* post-run results — a 2-column auto-flow grid (up to 5 cards, the 5th starting its own row), one card per player (real or filler bot), each with
    their own kill count next to the run's shared score. #goCoop overrides its own .plist (flex
    column, used by the lobby roster) by ID specificity, no markup change needed. */
 #goCoop{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px auto 4px;max-width:440px;}
@@ -855,7 +855,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <button class="backbtn" id="btnBackOnline">← BACK</button>
     <div class="scroll"><div class="panel">
       <h1 class="title" style="font-size:clamp(30px,7vw,58px)">PLAY <em>TOGETHER</em></h1>
-      <div class="tag">2&ndash;4 SURVIVORS &middot; ONE ARENA</div>
+      <div class="tag">2&ndash;5 SURVIVORS &middot; ONE ARENA</div>
       <div class="netfield">
         <label for="inpName">CALLSIGN</label>
         <input class="netinput" id="inpName" maxlength="14" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="SURVIVOR">
@@ -993,7 +993,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.87.0';
+const GAME_VERSION = 'v1.88.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -6145,7 +6145,12 @@ const BOT_DEFS = [
     dmg: 9, rate: 1.2, range: 14, spread: 7.5, pellets: 6, kind: 'shotgun', slot: -1.3 },
   // weakest gun, picks people up at nearly twice the speed and never strays far
   { id: 'bot_june', name: 'JUNE', char: 'female', accent: 0x21e6c1, hp: 95, speed: 6.0,
-    dmg: 12, rate: 3.0, range: 24, spread: 3.2, pellets: 1, kind: 'rifle', slot: Math.PI, medic: true }
+    dmg: 12, rate: 3.0, range: 24, spread: 3.2, pellets: 1, kind: 'rifle', slot: Math.PI, medic: true },
+  // 4th squad slot (see squadCount's 0-4 range, matching NET.MAX 5 for a full-size coop room):
+  // heaviest single hit and the longest reach of the four, but the slowest trigger by far —
+  // fills the empty arc between BOONE and JUNE's formation slots
+  { id: 'bot_reyes', name: 'REYES', char: 'male', accent: 0x8a5cff, hp: 105, speed: 5.1,
+    dmg: 26, rate: 0.85, range: 40, spread: 1.1, pellets: 1, kind: 'rifle', slot: 1.9 }
 ];
 const Bots = {
   list: [], ids: "", on: false, built: false, reviver: null, revTarget: null, revT: 0, reinforceT: 0,
@@ -6233,10 +6238,13 @@ const Bots = {
     const all = AVATAR_ORDER.male.concat(AVATAR_ORDER.female).filter(id => id !== mine);
     // prefer the gender-flavored pool for each slot, but the roster is lopsided (4 male, 1 female)
     // so that pool can run dry — fall back to whatever's left rather than ever duplicating the
-    // player's own champion or handing two bots the same one
+    // player's own champion or handing two bots the same one. Driven straight off BOT_DEFS (not
+    // one hardcoded id per bot) so a 4th/5th slot added there picks up an avatar automatically.
     const used = new Set();
     const pick = pref => { const c = pref.find(id => !used.has(id)) || all.find(id => !used.has(id)); if (c) used.add(c); return c; };
-    return { bot_boone: pick(male), bot_kess: pick(male), bot_june: pick(female) };
+    const out = {};
+    for (const b of BOT_DEFS) out[b.id] = pick(b.char === 'female' ? female : male);
+    return out;
   },
   assignAvatar(b, avatarId) {
     if (b.avatarId === avatarId) return;
@@ -7797,7 +7805,7 @@ const Game = {
     try { const cm = localStorage.getItem('dnd_cam'); if (cm === 'tp' || cm === 'fp') this.camMode = cm; } catch (e) { }
     try { const cd = localStorage.getItem('dnd_camdist'); if (this.CAM_TIERS.indexOf(cd) > 0) this.camDist = cd; } catch (e) { }
     try { const sq = localStorage.getItem('dnd_squad'); if (sq === '0' || sq === '1') this.squad = sq === '1'; } catch (e) { }
-    try { const sc = localStorage.getItem('dnd_squadcount'); if (sc != null) this.squadCount = clamp(parseInt(sc, 10) || 0, 0, 3); } catch (e) { }
+    try { const sc = localStorage.getItem('dnd_squadcount'); if (sc != null) this.squadCount = clamp(parseInt(sc, 10) || 0, 0, 4); } catch (e) { }
     // auto-fire used to be the one option on this screen that didn't stick — every other toggle
     // here was saved and reloaded except this one, so it silently reverted to OFF whenever iOS
     // Safari reloaded the tab (backgrounding, low memory) even mid-session
@@ -7890,7 +7898,7 @@ const Game = {
     if (DOM.btnBackKeybinds) Input.tapButton(DOM.btnBackKeybinds, () => { KeybindsUI.cancelCapture(); HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'); });
     if (DOM.btnKeybindsBack) DOM.btnKeybindsBack.addEventListener('click', () => { KeybindsUI.cancelCapture(); HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'); });
     if (DOM.btnKeybindsReset) DOM.btnKeybindsReset.addEventListener('click', () => { KeybindsUI.reset(); HUD.toast('KEY BINDS RESET', 1.6); });
-    optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquadCount((self.squadCount + 1) % 4));
+    optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquadCount((self.squadCount + 1) % 5));
     optToggle([DOM.optVoice, DOM.pOptVoice], () => self.setVoice(!self.voice));
     optToggle([DOM.optSound, DOM.pOptSound], () => self.setSound(!self.sound));
     optToggle([DOM.optInvert, DOM.pOptInvert], () => self.setInvertLook(!self.invertLook));
@@ -7961,7 +7969,7 @@ const Game = {
   // "off". Changing it mid-run takes effect immediately — waiting for the next run to find out
   // whether you have a squad is a worse answer than the squad just changing size on the spot.
   setSquadCount(n) {
-    this.squadCount = clamp(n, 0, 3); this.squad = this.squadCount > 0;
+    this.squadCount = clamp(n, 0, 4); this.squad = this.squadCount > 0;
     try {
       localStorage.setItem('dnd_squadcount', String(this.squadCount)); localStorage.setItem('dnd_squad', this.squad ? '1' : '0');
       localStorage.setItem(playerPrefKey('dnd_squadcount'), String(this.squadCount)); localStorage.setItem(playerPrefKey('dnd_squad'), this.squad ? '1' : '0');
@@ -8043,7 +8051,7 @@ const Game = {
     try { const cm = localStorage.getItem(playerPrefKey('dnd_cam')); if (cm === 'tp' || cm === 'fp') this.camMode = cm; } catch (e) { }
     try { const cd = localStorage.getItem(playerPrefKey('dnd_camdist')); if (this.CAM_TIERS.indexOf(cd) > 0) this.camDist = cd; } catch (e) { }
     try { const sq = localStorage.getItem(playerPrefKey('dnd_squad')); if (sq === '0' || sq === '1') this.squad = sq === '1'; } catch (e) { }
-    try { const sc = localStorage.getItem(playerPrefKey('dnd_squadcount')); if (sc != null) this.squadCount = clamp(parseInt(sc, 10) || 0, 0, 3); } catch (e) { }
+    try { const sc = localStorage.getItem(playerPrefKey('dnd_squadcount')); if (sc != null) this.squadCount = clamp(parseInt(sc, 10) || 0, 0, 4); } catch (e) { }
     try { const af = localStorage.getItem(playerPrefKey('dnd_autofire')); if (af === '0' || af === '1') this.autoFire = af === '1'; } catch (e) { }
     try { const vc = localStorage.getItem(playerPrefKey('dnd_voice')); if (vc === '0' || vc === '1') this.voice = vc === '1'; } catch (e) { }
     try { const sd = localStorage.getItem(playerPrefKey('dnd_sound')); if (sd === '0' || sd === '1') { this.sound = sd === '1'; Audio.setEnabled(this.sound); } } catch (e) { }
@@ -8677,11 +8685,13 @@ const Game = {
     }
     return null;
   },
-  // up to 4 quadrants (NET.MAX and the squad cap both top out at 4 total), most kills first
+  // up to 5 cards (NET.MAX and the squad cap both top out at 5 total now), most kills first —
+  // the grid itself is just a 2-column auto-flow (see #goCoop), so a 5th card simply starts a new
+  // row on its own rather than needing a dedicated 5-slot layout.
   renderResultsGrid(rows, el) {
     if (!rows) { el.innerHTML = ''; return; }
     rows.sort(function (a, b) { return b.k - a.k; });
-    el.innerHTML = rows.slice(0, 4).map(r => (
+    el.innerHTML = rows.slice(0, 5).map(r => (
       '<div class="qcard' + (r.me ? ' me' : '') + '"><div class="qname">' + Net.esc(r.n) + '</div>' +
       '<div class="qstats">' +
       '<div class="qstat"><span class="qv">' + r.k + '</span><span class="qk">' + (r.k === 1 ? 'KILL' : 'KILLS') + '</span></div>' +
@@ -8918,7 +8928,7 @@ const Mqtt = {
 // every broker in Mqtt.BROKERS (see BROKER_TRY / Net.rotateBroker), since two players can easily
 // land on different public relays and never see each other otherwise.
 const NET = {
-  PREFIX: 'dnd/1/', VER: 1, MAX: 4, SNAP: 1 / 12, INPUT: 1 / 15, BEACON: 2, STALE: 7, DROP: 16, TIMEOUT: 11, BROKER_TRY: 3,
+  PREFIX: 'dnd/1/', VER: 1, MAX: 5, SNAP: 1 / 12, INPUT: 1 / 15, BEACON: 2, STALE: 7, DROP: 16, TIMEOUT: 11, BROKER_TRY: 3,
   // lobby: nobody can start (host included) for the first LOBBY_UNLOCK seconds — long enough for a
   // stray click not to strand a friend who is still typing in the room code. Left alone, the room
   // auto-starts at LOBBY_AUTOSTART (5 min) with no confirmation needed, same as a timeout firing.
@@ -9189,8 +9199,9 @@ const Net = {
     for (const k in this.peers) { if (k !== excludeId && this.peers[k].char === charId) return false; }
     return true;
   },
-  // first avatar nobody else in the room already holds. NET.MAX (4) is always below AVATARS' own
-  // count (5), so this can never actually fail to find one — 'cloud' is just a last-resort floor.
+  // first avatar nobody else in the room already holds. NET.MAX (5) exactly matches AVATARS'
+  // own count (5) now — a full room claims every avatar with none spare, but never more players
+  // than avatars, so this still always finds one; 'cloud' is just a last-resort floor.
   firstFreeChar(excludeId) {
     for (const cid in AVATARS) if (this.charAvailable(cid, excludeId)) return cid;
     return 'cloud';
