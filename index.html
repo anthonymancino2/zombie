@@ -358,9 +358,17 @@ h1.title em{font-style:normal;color:var(--accent2);}
 }
 @media (max-height:440px){
   #toast{top:calc(84px + var(--sat));font-size:11px;}
-  /* on a short landscape phone the SPECIAL gauge's new bottom-left spot would otherwise sit right
-     under the touch joystick hint circle (left:52px/bottom:52px, 124px across) — lift it clear */
-  .hudbl{bottom:calc(190px + var(--sab));}
+  /* on a short landscape phone, SPECIAL's default bottom-left spot (left:12px, same column as the
+     squad roster/#coopWrap below) either sits under the joystick hint circle or, if lifted to clear
+     that, lands on top of the roster instead — the roster's height also varies with BOT SQUAD count
+     (0-4), so no single vertical offset clears it in every case. Shifting it sideways instead of up
+     fixes both at once: past the joystick hint's right edge (x:42-146) and the roster's own column
+     (#coopWrap tops out around 110-122px wide), so it's clear regardless of squad size, while still
+     sitting at the same bottom:14px as the default corner spot — genuinely the bottom of the screen,
+     just right of the roster instead of on top of it. Narrowed too, so 3 bars stay clear of the
+     crosshair at screen-center on a landscape-width phone. */
+  .hudbl{left:calc(150px + var(--sal));}
+  .ultBar{width:56px;height:38px;}
   /* every buff pill active at once (rare, but possible if pickups cluster) wraps to several rows —
      shrink them here so that worst case still clears the HP bar instead of growing into it */
   .pill{font-size:9px;padding:3px 6px;}
@@ -994,7 +1002,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.92.0';
+const GAME_VERSION = 'v1.93.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
