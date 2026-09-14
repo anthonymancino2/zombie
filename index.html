@@ -67,25 +67,32 @@ button{font-family:inherit;color:inherit;}
   padding:calc(10px + var(--sat)) calc(12px + var(--sar)) calc(10px + var(--sab)) calc(12px + var(--sal));display:none;}
 #hud.show{display:block;}
 .hudtl{position:absolute;left:calc(12px + var(--sal));top:calc(10px + var(--sat));}
+/* SPECIAL gauge's own corner, split off from .hudtl so it isn't stacked in with HP/shield anymore */
+.hudbl{position:absolute;left:calc(12px + var(--sal));bottom:calc(14px + var(--sab));}
+.barrow{display:flex;align-items:center;gap:6px;margin-top:4px;}
+.baricon{width:15px;height:15px;flex:none;}
+.baricon.shield{background:#39e6ff;box-shadow:0 0 6px rgba(57,230,255,.7);clip-path:polygon(50% 0%,100% 20%,100% 55%,50% 100%,0% 55%,0% 20%);}
+.baricon.plus{background:#ff3b3b;box-shadow:0 0 6px rgba(255,59,59,.7);clip-path:polygon(35% 0%,65% 0%,65% 35%,100% 35%,100% 65%,65% 65%,65% 100%,35% 100%,35% 65%,0% 65%,0% 35%,35% 35%);}
 .hudtc{position:absolute;left:50%;top:calc(8px + var(--sat));transform:translateX(-50%);text-align:center;}
 .hudtcRow{display:flex;align-items:center;justify-content:center;gap:10px;}
 .hudtcText{text-align:center;min-width:0;}
 .hudtr{position:absolute;right:calc(112px + var(--sar));top:calc(10px + var(--sat));text-align:right;}
 .lbl{font-size:11px;letter-spacing:.18em;color:var(--accent2);text-shadow:0 0 8px var(--glow),0 1px 3px #000;opacity:.95;}
 #hpBar{width:min(42vw,220px);height:14px;border:2px solid var(--accent);background:rgba(0,0,0,.45);border-radius:3px;
-  box-shadow:0 0 12px var(--glow),inset 0 0 8px rgba(0,0,0,.6);margin-top:4px;overflow:hidden;position:relative;}
+  box-shadow:0 0 12px var(--glow),inset 0 0 8px rgba(0,0,0,.6);overflow:hidden;position:relative;flex:none;}
 #hpFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
   background:linear-gradient(90deg,var(--accent),var(--accent2));box-shadow:0 0 10px var(--glow);transition:transform .12s linear,background .3s;}
 #hpFill.low{background:linear-gradient(90deg,#ff2a2a,#ff7a1a);}
 /* shield sits right above HP, thinner — same width so the two read as one stacked meter */
 #shieldBar{width:min(42vw,220px);height:6px;border:2px solid #2fd0ff;background:rgba(0,0,0,.45);border-radius:3px;
-  box-shadow:0 0 10px rgba(47,208,255,.5),inset 0 0 6px rgba(0,0,0,.6);margin-top:4px;overflow:hidden;position:relative;}
+  box-shadow:0 0 10px rgba(47,208,255,.5),inset 0 0 6px rgba(0,0,0,.6);overflow:hidden;position:relative;flex:none;}
 #shieldFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
   background:linear-gradient(90deg,#39e6ff,#0ea5e0);box-shadow:0 0 8px rgba(57,230,255,.7);transition:transform .12s linear;}
 #shieldFill.recharging{opacity:.55;}
-/* ultimate meter — sits below the shield/HP readout, lights up gold once full and ready */
-#ultBar{width:min(42vw,220px);height:8px;border:2px solid #ffd83b;background:rgba(0,0,0,.45);border-radius:3px;
-  box-shadow:0 0 10px rgba(255,216,59,.35),inset 0 0 6px rgba(0,0,0,.6);margin-top:5px;overflow:hidden;position:relative;}
+/* SPECIAL/ultimate meter — moved to its own bottom-left spot (.hudbl) and given 3x the shield
+   bar's height (6px -> 18px) so it reads as a distinctly bigger, more prominent gauge there. */
+#ultBar{width:min(42vw,220px);height:18px;border:2px solid #ffd83b;background:rgba(0,0,0,.45);border-radius:3px;
+  box-shadow:0 0 10px rgba(255,216,59,.35),inset 0 0 6px rgba(0,0,0,.6);margin-top:4px;overflow:hidden;position:relative;}
 #ultFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
   background:linear-gradient(90deg,#8a5cff,#c04bff);box-shadow:0 0 8px rgba(180,80,255,.6);transition:transform .12s linear;}
 #ultFill.ready{background:linear-gradient(90deg,#ffd83b,#ff9a1a);box-shadow:0 0 12px rgba(255,216,59,.85);animation:ultpulse 1s ease-in-out infinite;}
@@ -111,9 +118,11 @@ button{font-family:inherit;color:inherit;}
 #points{font-size:28px;line-height:1;color:#fff;text-shadow:0 0 14px var(--glow),0 2px 2px #000;letter-spacing:.04em;}
 #mult{font-size:12px;color:#ffd83b;letter-spacing:.16em;text-shadow:0 0 8px rgba(255,216,59,.7);height:14px;margin-top:2px;}
 #kills{font-size:11px;color:var(--sand);letter-spacing:.14em;margin-top:2px;text-shadow:0 1px 3px #000,0 0 6px rgba(0,0,0,.9);}
-#ammoMag{font-size:38px;line-height:1;color:#fff;text-shadow:0 0 14px var(--glow),0 2px 2px #000;}
-#ammoMag.empty{color:var(--danger);text-shadow:0 0 14px rgba(255,59,59,.8);}
-#ammoRes{font-size:13px;color:var(--sand);letter-spacing:.08em;text-shadow:0 1px 3px #000;}
+/* current-magazine count now lives on the gun itself (see addAmmoDisplay/refreshAmmoDisplay) —
+   this HUD number is reserve ammo only, promoted to the size the mag count used to have. */
+#ammoRes{font-size:38px;line-height:1;color:#fff;text-shadow:0 0 14px var(--glow),0 2px 2px #000;}
+#ammoRes.empty{color:var(--danger);text-shadow:0 0 14px rgba(255,59,59,.8);}
+#ammoResLabel{font-size:13px;color:var(--sand);letter-spacing:.08em;text-shadow:0 1px 3px #000;}
 #wpnName{font-size:12px;letter-spacing:.2em;color:var(--accent2);text-shadow:0 0 8px var(--glow),0 1px 3px #000;margin-top:2px;}
 #wpnClass{font-size:9px;letter-spacing:.18em;color:var(--sand);opacity:.75;margin-top:1px;}
 #wpnClass.heavy{color:#ff9a5a;}
@@ -334,6 +343,9 @@ h1.title em{font-style:normal;color:var(--accent2);}
 }
 @media (max-height:440px){
   #toast{top:calc(84px + var(--sat));font-size:11px;}
+  /* on a short landscape phone the SPECIAL gauge's new bottom-left spot would otherwise sit right
+     under the touch joystick hint circle (left:52px/bottom:52px, 124px across) — lift it clear */
+  .hudbl{bottom:calc(190px + var(--sab));}
   /* every buff pill active at once (rare, but possible if pickups cluster) wraps to several rows —
      shrink them here so that worst case still clears the HP bar instead of growing into it */
   .pill{font-size:9px;padding:3px 6px;}
@@ -350,7 +362,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnSprint{width:50px;height:50px;right:calc(88px + var(--sar));bottom:calc(100px + var(--sab));}
   #joyHint{left:calc(42px + var(--sal));bottom:calc(42px + var(--sab));width:104px;height:104px;}
   #layoutBar{top:calc(56px + var(--sat));}
-  #ammoMag{font-size:30px;} #ammoRes{font-size:11px;} #wpnName{font-size:10px;} #reloadHint{font-size:10px;}
+  #ammoRes{font-size:30px;} #ammoResLabel{font-size:11px;} #wpnName{font-size:10px;} #reloadHint{font-size:10px;}
   #points{font-size:22px;} #waveNum{font-size:22px;} #hpBar{width:32vw;height:12px;} #hpNum{font-size:17px;} #zLeft{font-size:10px;} #matchClock{font-size:11px;margin-top:3px;}
   #subtitle{font-size:12px;bottom:calc(16px + var(--sab));max-width:44vw;left:38%;}
 }
@@ -601,11 +613,16 @@ h1.title em{font-style:normal;color:var(--accent2);}
   <div id="hud">
     <div class="hudtl">
       <div class="lbl" id="hpLabel">GRIT</div>
-      <div id="shieldBar"><div id="shieldFill"></div></div>
-      <div id="hpBar"><div id="hpFill"></div></div>
+      <div class="barrow"><div class="baricon shield"></div><div id="shieldBar"><div id="shieldFill"></div></div></div>
+      <div class="barrow"><div class="baricon plus"></div><div id="hpBar"><div id="hpFill"></div></div></div>
       <div id="hpNum">100 <span>/ 100</span></div>
-      <div id="ultBar"><div id="ultFill"></div></div>
       <div id="matchClock">0:00</div>
+    </div>
+    <!-- SPECIAL/ultimate gauge: moved off the top-left stack to its own bottom-left spot, and
+         3x the shield bar's height (see .hudbl / #ultBar CSS) -->
+    <div class="hudbl">
+      <div class="lbl" id="ultLabel">SPECIAL</div>
+      <div id="ultBar"><div id="ultFill"></div></div>
     </div>
     <div class="hudtc">
       <div class="hudtcRow">
@@ -642,8 +659,8 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div id="coop"></div>
       <div class="hudAmmo">
         <div id="reloadHint"></div>
-        <div id="ammoMag">12</div>
-        <div id="ammoRes">∞ RESERVE</div>
+        <div id="ammoRes">12</div>
+        <div id="ammoResLabel">RESERVE</div>
         <div id="wpnName">M9 PISTOL</div>
         <div id="wpnClass">LIGHT</div>
       </div>
@@ -954,7 +971,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.83.0';
+const GAME_VERSION = 'v1.84.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -2193,6 +2210,11 @@ const Input = {
   },
   reset() {
     this.joyId = null; this.mx = this.my = 0; this.looks.clear(); this.fireId = null; this.fire = false; this.fireEdge = false; this.lookDX = this.lookDY = 0;
+    // a held movement/sprint key whose keyup never arrives (dropped by the OS/browser around a
+    // state change) used to survive pause/resume and read as the avatar moving on its own with
+    // nothing actually held — blur already guards the tab-switch version of this, reset() didn't
+    // guard the pause/resume one, so it's added here too.
+    this.keys = Object.create(null);
     this.el.joyBase.classList.remove('on'); this.el.joyKnob.classList.remove('on'); this.el.btnFire.classList.remove('pressed');
   },
   getMove(out) {
@@ -4494,6 +4516,32 @@ function addSniperBody(g, xo) {
   g.add(box(0.034, 0.02, 0.02, M.sight, xo, 0.05, -0.19)); g.add(box(0.034, 0.02, 0.02, M.sight, xo, 0.05, -0.06));
   g.add(box(0.035, 0.14, 0.06, M.poly, xo, -0.1, 0.06, -0.22, 0, 0)); g.add(box(0.035, 0.1, 0.05, M.poly, xo, -0.09, 0.2, 0.3, 0, 0));
 }
+// Digital ammo-count readout mounted directly on every gun's viewmodel, mirroring the mag count
+// that used to live in the left HUD (see #ammoRes, now reserve-only). One small always-facing-
+// camera plane with its own tiny canvas texture, redrawn only when the number actually changes
+// (see refreshAmmoDisplay, called each frame from Player.updateViewmodel) rather than every
+// frame — a canvas redraw + texture upload per gun per frame would be wasteful for a number that
+// mostly sits still between shots.
+function addAmmoDisplay(g, x, y, z, w, h) {
+  const canvas = mkCanvas(64, 32);
+  const tex = mkTex(canvas, 0, false);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: false, depthTest: false, depthWrite: false, fog: false }));
+  mesh.renderOrder = 999; mesh.position.set(x, y, z);
+  g.add(mesh);
+  g.userData.ammoDisplay = { ctx: canvas.getContext('2d'), tex: tex, last: null };
+}
+function refreshAmmoDisplay(g, mag) {
+  const ad = g && g.userData.ammoDisplay; if (!ad || ad.last === mag) return;
+  ad.last = mag;
+  const c = ad.ctx, low = mag <= 0, col = low ? '#ff3a3a' : '#5dff7a';
+  c.clearRect(0, 0, 64, 32);
+  c.fillStyle = '#0a1408'; c.fillRect(0, 0, 64, 32);
+  c.strokeStyle = '#2a3a24'; c.lineWidth = 2; c.strokeRect(1, 1, 62, 30);
+  c.fillStyle = col; c.font = 'bold 22px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.shadowColor = col; c.shadowBlur = 9;
+  c.fillText(String(mag), 32, 18);
+  ad.tex.needsUpdate = true;
+}
 function buildGun(def) {
   const g = new THREE.Group(); const M = GUNMAT; g.userData.muzzle = new THREE.Vector3(0, 0.02, -0.21); g.userData.pump = null;
   if (def.id === 'pistol') {
@@ -4568,6 +4616,10 @@ function buildGun(def) {
     g.userData.muzzle.set(0, 0.012, -0.66);
     buildHand(g, 0.0, -0.11, 0.1, [0.3, 0, 0], false); buildHand(g, 0.0, -0.062, -0.29, [0.22, 0, 0], true);
   }
+  // sits atop the receiver, a fixed fraction of the way toward the muzzle so it lands somewhere
+  // sane on every gun's own length (a pistol's receiver vs. a sniper's) without a hand-placed
+  // offset per weapon id.
+  addAmmoDisplay(g, 0.055, 0.075, g.userData.muzzle.z * 0.28, 0.085, 0.045);
   return g;
 }
 // left-hand-only companion to buildGun's dual-wield branches, rendered under Player.vm.rootL so a
@@ -4629,8 +4681,10 @@ const Player = {
   autoTarget: null, lowSaid: false,
   _mv: { x: 0, y: 0 }, _lk: { x: 0, y: 0 }, _dir: new THREE.Vector3(), _right: new THREE.Vector3(), _up: new THREE.Vector3(), _v: new THREE.Vector3(),
   init() {
-    this.vm.root = new THREE.Group(); this.vm.root.scale.setScalar(0.88); R.gunScene.add(this.vm.root);
-    this.vm.rootL = new THREE.Group(); this.vm.rootL.scale.setScalar(0.88); this.vm.rootL.visible = false; R.gunScene.add(this.vm.rootL);
+    // bumped up from the original 0.88 so the new digital ammo display (see addAmmoDisplay) reads
+    // clearly instead of shrinking to an illegible dot on a small viewmodel
+    this.vm.root = new THREE.Group(); this.vm.root.scale.setScalar(1.15); R.gunScene.add(this.vm.root);
+    this.vm.rootL = new THREE.Group(); this.vm.rootL.scale.setScalar(1.15); this.vm.rootL.visible = false; R.gunScene.add(this.vm.rootL);
     this.vm.flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, color: 0xffe0b0 }));
     this.vm.flash.visible = false; this.vm.flash.scale.set(0.16, 0.16, 1); R.gunScene.add(this.vm.flash);
     this.buildModels();
@@ -5174,6 +5228,7 @@ const Player = {
   },
   updateViewmodel(dt) {
     const vm = this.vm, root = vm.root, w = this.weapon(), def = w.def;
+    refreshAmmoDisplay(vm.models[this.cur], w.mag);
     // Anchor the viewmodel relative to the gun camera's frustum so it sits in the same
     // screen-space corner on every aspect ratio (a fixed offset falls off-screen in landscape).
     const pz = -0.66;
@@ -5645,7 +5700,7 @@ const DOM = {};
 const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
-    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoMag', 'ammoRes', 'wpnName', 'wpnClass', 'reloadHint',
+    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoRes', 'ammoResLabel', 'wpnName', 'wpnClass', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnScope', 'scopeState', 'btnSprint', 'btnMedkit', 'medkitCount', 'btnGrenade', 'grenadeCount', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optInvert', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptInvert', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optPlatform', 'pOptPlatform', 'optInput', 'pOptInput', 'optSquad', 'pOptSquad', 'loadErr',
       'testModePopup', 'btnTestModeYes', 'btnTestModeNo',
@@ -5728,8 +5783,11 @@ const HUD = {
     this.set('kills', DOM.kills, G.kills + (G.kills === 1 ? ' KILL' : ' KILLS'));
     // ammo
     const w = P.weapon();
-    this.set('mag', DOM.ammoMag, String(w.mag)); if (this.last.magEmpty !== (w.mag === 0)) { this.last.magEmpty = w.mag === 0; DOM.ammoMag.classList.toggle('empty', w.mag === 0); }
-    this.set('res', DOM.ammoRes, (w.reserve === Infinity ? '∞' : w.reserve) + ' RESERVE');
+    // current-mag count moved onto the gun itself (see refreshAmmoDisplay, called from
+    // Player.updateViewmodel) — this HUD number is reserve ammo only now, promoted to the size
+    // the mag count used to have (see #ammoRes CSS)
+    this.set('res', DOM.ammoRes, w.reserve === Infinity ? '∞' : String(w.reserve));
+    if (this.last.resEmpty !== (w.reserve === 0)) { this.last.resEmpty = w.reserve === 0; DOM.ammoRes.classList.toggle('empty', w.reserve === 0); }
     this.set('wpn', DOM.wpnName, w.def.name);
     this.set('wpnCls', DOM.wpnClass, w.def.weightClass.toUpperCase()); DOM.wpnClass.classList.toggle('heavy', w.def.weightClass === 'heavy');
     this.set('rh', DOM.reloadHint, P.reloading ? 'RELOADING...' : (w.mag === 0 ? (w.reserve > 0 ? 'TAP RELOAD' : 'NO AMMO — SWAP') : (w.mag <= Math.ceil(w.def.mag * 0.25) ? 'LOW AMMO' : '')));
@@ -5924,7 +5982,15 @@ const KeybindsUI = {
     this.render();
   },
   reset() { Object.assign(Keybinds, KEYBIND_DEFAULTS); saveKeybinds(); this.render(); },
-  open() { this.render(); HUD.showScreen('keybinds'); }
+  open() { this.render(); HUD.showScreen('keybinds'); },
+  // leaving the screen mid-capture (click a key row, then BACK/DONE instead of pressing a key)
+  // used to leave `capturing` dangling — the very next keydown ANYWHERE, including normal
+  // gameplay input, would silently get consumed as that rebind instead of doing what it was
+  // supposed to. Call this from every way out of the screen, not just the next time it opens.
+  cancelCapture() {
+    if (this._el) { this._el.classList.remove('listening'); this._el.textContent = keyDisplayName(Keybinds[this.capturing]); }
+    this.capturing = null; this._el = null;
+  }
 };
 
 /* ------------------------------------------------------------------ AI teammates
@@ -7674,8 +7740,8 @@ const Game = {
     optToggle([DOM.optInput, DOM.pOptInput], () => self.setInputScheme(self.inputScheme === 'mouse' ? 'keyboard' : 'mouse'));
     if (DOM.btnKeybinds) DOM.btnKeybinds.addEventListener('click', () => KeybindsUI.open());
     if (DOM.pBtnKeybinds) DOM.pBtnKeybinds.addEventListener('click', () => KeybindsUI.open());
-    if (DOM.btnBackKeybinds) Input.tapButton(DOM.btnBackKeybinds, () => HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'));
-    if (DOM.btnKeybindsBack) DOM.btnKeybindsBack.addEventListener('click', () => HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'));
+    if (DOM.btnBackKeybinds) Input.tapButton(DOM.btnBackKeybinds, () => { KeybindsUI.cancelCapture(); HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'); });
+    if (DOM.btnKeybindsBack) DOM.btnKeybindsBack.addEventListener('click', () => { KeybindsUI.cancelCapture(); HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'); });
     if (DOM.btnKeybindsReset) DOM.btnKeybindsReset.addEventListener('click', () => { KeybindsUI.reset(); HUD.toast('KEY BINDS RESET', 1.6); });
     optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquadCount((self.squadCount + 1) % 4));
     optToggle([DOM.optVoice, DOM.pOptVoice], () => self.setVoice(!self.voice));
