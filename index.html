@@ -817,11 +817,12 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <h1 class="title" style="font-size:clamp(26px,6vw,46px)">KEY <em>BINDS</em></h1>
       <div class="tag">CLICK A KEY TO REBIND IT · PRESS A KEY, CLICK A MOUSE BUTTON, OR SCROLL · DESKTOP ONLY</div>
       <div id="keybindsList" class="kblist"></div>
+      <div class="tag" id="keybindsSaved" style="min-height:1.4em;color:#ffd83b"></div>
       <div class="row" style="margin-top:14px">
         <button class="bigbtn secondary" id="btnKeybindsReset">RESET TO DEFAULTS</button>
         <button class="bigbtn secondary" id="btnKeybindsBack">DONE</button>
       </div>
-      <div class="help">Left click always fires and right click always throws a grenade, no matter what is bound above — those two can't be reassigned, but middle click and any extra side buttons your mouse has can. Q and E always swap weapons and Esc and P always pause, too — rebinding SWAP WEAPON or PAUSE gives you a second way in without taking away the one you already know.</div>
+      <div class="help">Every bind saves to this browser the instant you set it — no account, no extra save step, and it's still there next time you open the game on this device. Left click always fires and right click always throws a grenade, no matter what is bound above — those two can't be reassigned, but middle click and any extra side buttons your mouse has can. Q and E always swap weapons and Esc and P always pause, too — rebinding SWAP WEAPON or PAUSE gives you a second way in without taking away the one you already know.</div>
     </div></div>
   </div>
 
@@ -993,7 +994,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.91.0';
+const GAME_VERSION = 'v1.92.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -5840,7 +5841,7 @@ const HUD = {
       'modeselect', 'levelselect', 'levelresult', 'btnChallenges', 'btnBackModeselect', 'btnSoloChallenges', 'btnCoopChallenges',
       'levelselectBody', 'levelselectTitle', 'btnBackLevelselect', 'btnLevelselectBack', 'levelResultTitle', 'levelResultSub',
       'btnLevelRetry', 'btnLevelNext', 'btnLevelBackSelect', 'btnLevelMenu',
-      'keybinds', 'keybindsList', 'btnKeybinds', 'pBtnKeybinds', 'btnBackKeybinds', 'btnKeybindsBack', 'btnKeybindsReset', 'menuDiffPicker'
+      'keybinds', 'keybindsList', 'keybindsSaved', 'btnKeybinds', 'pBtnKeybinds', 'btnBackKeybinds', 'btnKeybindsBack', 'btnKeybindsReset', 'menuDiffPicker'
     ].forEach(id => DOM[id] = $(id));
     DOM.lowhp.style.backgroundImage = 'url(' + TEX.lowhpUrl + ')';
   },
@@ -6099,6 +6100,7 @@ const KeybindsUI = {
   capturing: null, _el: null,
   render() {
     const list = DOM.keybindsList; list.innerHTML = '';
+    DOM.keybindsSaved.textContent = '';
     this.capturing = null; this._el = null;
     const counts = {};
     for (const a in KEYBIND_LABELS) counts[Keybinds[a]] = (counts[Keybinds[a]] || 0) + 1;
@@ -6121,6 +6123,11 @@ const KeybindsUI = {
     const action = this.capturing; if (!action || !code) return;
     Keybinds[action] = code; saveKeybinds();
     this.render();
+    // saveKeybinds() above already wrote it to localStorage — this line is just visible proof of
+    // that for the player. Can't use HUD.toast here: #toast lives inside #hud, which is display:none
+    // whenever this screen is reached from the main menu (only showHud(true) during actual play), so
+    // a toast posted from here would silently never be seen.
+    DOM.keybindsSaved.textContent = 'SAVED — ' + KEYBIND_LABELS[action] + ': ' + keyDisplayName(code);
   },
   // called from Input's keydown handler while this.capturing is set — see the very top of that
   // listener, which routes the event here instead of letting the game act on it
@@ -6147,7 +6154,7 @@ const KeybindsUI = {
     e.preventDefault(); if (e.stopPropagation) e.stopPropagation();
     this.assign(e.deltaY < 0 ? 'WheelUp' : 'WheelDown');
   },
-  reset() { Object.assign(Keybinds, KEYBIND_DEFAULTS); saveKeybinds(); this.render(); },
+  reset() { Object.assign(Keybinds, KEYBIND_DEFAULTS); saveKeybinds(); this.render(); DOM.keybindsSaved.textContent = 'RESET TO DEFAULTS — SAVED'; },
   open() { this.render(); HUD.showScreen('keybinds'); },
   // leaving the screen mid-capture (click a key row, then BACK/DONE instead of pressing a key)
   // used to leave `capturing` dangling — the very next keydown ANYWHERE, including normal
@@ -7930,7 +7937,7 @@ const Game = {
     if (DOM.pBtnKeybinds) DOM.pBtnKeybinds.addEventListener('click', () => KeybindsUI.open());
     if (DOM.btnBackKeybinds) Input.tapButton(DOM.btnBackKeybinds, () => { KeybindsUI.cancelCapture(); HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'); });
     if (DOM.btnKeybindsBack) DOM.btnKeybindsBack.addEventListener('click', () => { KeybindsUI.cancelCapture(); HUD.showScreen(self.state === 'paused' || self.coopMenu ? 'pause' : 'menu'); });
-    if (DOM.btnKeybindsReset) DOM.btnKeybindsReset.addEventListener('click', () => { KeybindsUI.reset(); HUD.toast('KEY BINDS RESET', 1.6); });
+    if (DOM.btnKeybindsReset) DOM.btnKeybindsReset.addEventListener('click', () => KeybindsUI.reset());
     optToggle([DOM.optSquad, DOM.pOptSquad], () => self.setSquadCount((self.squadCount + 1) % 5));
     optToggle([DOM.optVoice, DOM.pOptVoice], () => self.setVoice(!self.voice));
     optToggle([DOM.optSound, DOM.pOptSound], () => self.setSound(!self.sound));
