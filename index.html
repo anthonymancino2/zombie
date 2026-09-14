@@ -793,13 +793,13 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <button class="backbtn" id="btnBackKeybinds">← BACK</button>
     <div class="scroll"><div class="panel">
       <h1 class="title" style="font-size:clamp(26px,6vw,46px)">KEY <em>BINDS</em></h1>
-      <div class="tag">CLICK A KEY TO REBIND IT · DESKTOP ONLY</div>
+      <div class="tag">CLICK A KEY TO REBIND IT · PRESS A KEY OR CLICK A MOUSE BUTTON · DESKTOP ONLY</div>
       <div id="keybindsList" class="kblist"></div>
       <div class="row" style="margin-top:14px">
         <button class="bigbtn secondary" id="btnKeybindsReset">RESET TO DEFAULTS</button>
         <button class="bigbtn secondary" id="btnKeybindsBack">DONE</button>
       </div>
-      <div class="help">Mouse click always fires and right-click always throws a grenade, no matter what is bound above. Q and E always swap weapons and Esc and P always pause, too — rebinding SWAP WEAPON or PAUSE gives you a second way in without taking away the one you already know.</div>
+      <div class="help">Left click always fires and right click always throws a grenade, no matter what is bound above — those two can't be reassigned, but middle click and any extra side buttons your mouse has can. Q and E always swap weapons and Esc and P always pause, too — rebinding SWAP WEAPON or PAUSE gives you a second way in without taking away the one you already know.</div>
     </div></div>
   </div>
 
@@ -971,7 +971,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.85.0';
+const GAME_VERSION = 'v1.86.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -2024,8 +2024,8 @@ const Audio = {
    nobody loses a binding they already knew by rebinding its partner. */
 const KEYBIND_DEFAULTS = {
   moveForward: 'KeyW', moveBack: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD',
-  sprint: 'ShiftLeft', fire: 'Space', reload: 'KeyR', swap: 'KeyQ', medkit: 'KeyH', grenade: 'KeyF',
-  ultimate: 'KeyG', scope: 'KeyZ', camera: 'KeyV', auto: 'KeyT', pause: 'Escape',
+  sprint: 'KeyR', fire: 'Space', reload: 'KeyF', swap: 'KeyQ', medkit: 'KeyE', grenade: 'MetaLeft',
+  ultimate: 'ShiftLeft', scope: 'KeyZ', camera: 'KeyV', auto: 'KeyT', pause: 'Escape',
   weapon1: 'Digit1', weapon2: 'Digit2', weapon3: 'Digit3'
 };
 const KEYBIND_LABELS = {
@@ -2039,8 +2039,13 @@ const KEYBIND_LABELS = {
 // (e.g. "KeyR" -> "R")
 const KEY_DISPLAY = {
   Space: 'SPACE', ShiftLeft: 'SHIFT', ShiftRight: 'R SHIFT', ControlLeft: 'CTRL', ControlRight: 'R CTRL',
-  AltLeft: 'ALT', AltRight: 'R ALT', Escape: 'ESC', Tab: 'TAB', CapsLock: 'CAPS', Enter: 'ENTER',
-  Backquote: '`', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→'
+  AltLeft: 'ALT', AltRight: 'R ALT', MetaLeft: 'CMD/WIN', MetaRight: 'R CMD/WIN', Escape: 'ESC', Tab: 'TAB',
+  CapsLock: 'CAPS', Enter: 'ENTER', Backquote: '`', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+  // mouse buttons, captured the same way as a key (see KeybindsUI.captureMouse) — button index
+  // matches MouseEvent.button, stored as e.g. "Mouse1" so it can never collide with a KeyboardEvent
+  // code. Left (Mouse0) and right (Mouse2) are shown for completeness but are never actually
+  // reachable from the capture flow, since those two clicks are permanently fire/grenade already.
+  Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'MOUSE 4', Mouse4: 'MOUSE 5'
 };
 const Keybinds = Object.assign({}, KEYBIND_DEFAULTS);
 function keyDisplayName(code) {
@@ -2123,25 +2128,40 @@ const Input = {
     self.tapButton(el.btnScope, () => self.on.scope());
     self.tapButton(el.btnPause, () => self.on.pause());
     // Keyboard
+    // Shared by the keydown handler below and the mousedown handler further down — a bindable
+    // action doesn't care whether the code that triggered it came from a key or a mouse button
+    // (see KeybindsUI.captureMouse), so both feed the exact same dispatch instead of keeping two
+    // copies of this chain in sync by hand.
+    function dispatchBound(code) {
+      // Q/E and Esc/P have always both worked for swap/pause no matter what — that stays true
+      // even once SWAP WEAPON or PAUSE gets rebound to something else, so nobody who already has
+      // one of these in muscle memory loses it just because they picked a new primary key for
+      // the other.
+      if (code === Keybinds.reload) self.on.reload();
+      else if (code === Keybinds.medkit) self.on.medkit();
+      else if (code === Keybinds.grenade) self.on.grenade();
+      else if (code === Keybinds.swap || code === 'KeyQ' || code === 'KeyE') self.on.swap();
+      else if (code === Keybinds.ultimate) self.on.ultimate();
+      else if (code === Keybinds.scope) self.on.scope();
+      else if (code === Keybinds.auto) self.on.auto();
+      else if (code === Keybinds.camera) self.on.camera();
+      else if (code === Keybinds.pause || code === 'Escape' || code === 'KeyP') self.on.pause();
+      else if (code === Keybinds.weapon1) self.on.select(0); else if (code === Keybinds.weapon2) self.on.select(1); else if (code === Keybinds.weapon3) self.on.select(2);
+      else if (code === Keybinds.fire) { self.fire = true; self.fireEdge = true; }
+    }
+    // KEY BINDS' rebind capture (see KeybindsUI.startCapture) needs first look at every mousedown
+    // everywhere, not just on the canvas — the row/BACK/DONE buttons are ordinary DOM buttons a
+    // mouse-button capture would otherwise also click. Capture phase on document runs before any
+    // of those elements' own bubble-phase listeners, so stopping it here keeps that click from
+    // doing anything else.
+    document.addEventListener('mousedown', function (e) { if (KeybindsUI.capturing) KeybindsUI.captureMouse(e); }, true);
     window.addEventListener('keydown', function (e) {
       if (e.repeat) return; self.keys[e.code] = true; self.on.any();
-      // KEY BINDS' rebind capture (see KeybindsUI.startCapture) owns the next keydown instead of
-      // the game acting on it — otherwise picking a new key for, say, RELOAD would also reload.
+      // same idea as the mousedown capture-phase listener above — this one owns the next keydown
+      // instead of the game acting on it, otherwise picking a new key for, say, RELOAD would also
+      // reload.
       if (KeybindsUI.capturing) { KeybindsUI.capture(e); return; }
-      // Q/E and Esc/P have always both worked for swap/pause no matter what — that stays true even
-      // once SWAP WEAPON or PAUSE gets rebound to something else, so nobody who already has one of
-      // these in muscle memory loses it just because they picked a new primary key for the other.
-      if (e.code === Keybinds.reload) self.on.reload();
-      else if (e.code === Keybinds.medkit) self.on.medkit();
-      else if (e.code === Keybinds.grenade) self.on.grenade();
-      else if (e.code === Keybinds.swap || e.code === 'KeyQ' || e.code === 'KeyE') self.on.swap();
-      else if (e.code === Keybinds.ultimate) self.on.ultimate();
-      else if (e.code === Keybinds.scope) self.on.scope();
-      else if (e.code === Keybinds.auto) self.on.auto();
-      else if (e.code === Keybinds.camera) self.on.camera();
-      else if (e.code === Keybinds.pause || e.code === 'Escape' || e.code === 'KeyP') self.on.pause();
-      else if (e.code === Keybinds.weapon1) self.on.select(0); else if (e.code === Keybinds.weapon2) self.on.select(1); else if (e.code === Keybinds.weapon3) self.on.select(2);
-      else if (e.code === Keybinds.fire) { self.fire = true; self.fireEdge = true; }
+      dispatchBound(e.code);
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.code) >= 0) e.preventDefault();
       // KEYBOARD input scheme (desktop, Options > INPUT) means fire is a key rather than a click —
       // so the one thing a mouse click used to be required for, (re)acquiring pointer lock, needs a
@@ -2158,13 +2178,23 @@ const Input = {
     // Mouse look / fire on the canvas
     const cv = el.c;
     cv.addEventListener('mousedown', function (e) {
-      // right-click throws a grenade on desktop by default — scope is Z-key only now (still in
-      // the desktop help text); gated on platform rather than just "button 2 fired" so a stray
-      // right-click reported by some touch/stylus setup can't burn a grenade on phone.
+      if (KeybindsUI.capturing) return; // belt-and-suspenders — the capture-phase listener above should already have stopped this
+      // left (fire) and right (grenade) click are permanently hardcoded, never reassignable —
+      // see the KEY BINDS screen's own note. Anything else (middle click, side buttons) only
+      // does something if the player actually bound it to an action; see dispatchBound above.
       if (e.button === 2) { e.preventDefault(); self.on.any(); if (Game.state === 'playing' && Game.platform === 'desktop') self.on.grenade(); return; }
-      if (e.button !== 0) return; e.preventDefault(); self.on.any(); self.mouseDown = true;
-      if (Game.state === 'playing') { self.fire = true; self.fireEdge = true; if (!self.pointerLocked && cv.requestPointerLock) { try { const lockReq = cv.requestPointerLock(); if (lockReq && lockReq.catch) lockReq.catch(function () { }); } catch (err) { } } }
+      if (e.button === 0) {
+        e.preventDefault(); self.on.any(); self.mouseDown = true;
+        if (Game.state === 'playing') { self.fire = true; self.fireEdge = true; if (!self.pointerLocked && cv.requestPointerLock) { try { const lockReq = cv.requestPointerLock(); if (lockReq && lockReq.catch) lockReq.catch(function () { }); } catch (err) { } } }
+        return;
+      }
+      // preventDefault here too — middle-click can trigger autoscroll and the side buttons are
+      // browser back/forward on some setups, either of which would otherwise fire alongside (or
+      // instead of) whatever action got bound to them
+      e.preventDefault(); self.on.any(); self.keys['Mouse' + e.button] = true;
+      if (Game.state === 'playing') dispatchBound('Mouse' + e.button);
     });
+    document.addEventListener('mouseup', function (e) { if (e.button !== 0 && e.button !== 2) self.keys['Mouse' + e.button] = false; });
     cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     document.addEventListener('mousemove', function (e) {
       if (Game.state !== 'playing') return;
@@ -5975,15 +6005,30 @@ const KeybindsUI = {
   startCapture(action, el) {
     if (this._el && this._el !== el) { this._el.classList.remove('listening'); this._el.textContent = keyDisplayName(Keybinds[this.capturing]); }
     this.capturing = action; this._el = el;
-    el.classList.add('listening'); el.textContent = 'PRESS A KEY';
+    el.classList.add('listening'); el.textContent = 'PRESS A KEY/BTN';
+  },
+  assign(code) {
+    const action = this.capturing; if (!action || !code) return;
+    Keybinds[action] = code; saveKeybinds();
+    this.render();
   },
   // called from Input's keydown handler while this.capturing is set — see the very top of that
   // listener, which routes the event here instead of letting the game act on it
   capture(e) {
-    const action = this.capturing; if (!action || !e.code) return;
+    if (!this.capturing || !e.code) return;
     if (e.preventDefault) e.preventDefault();
-    Keybinds[action] = e.code; saveKeybinds();
-    this.render();
+    this.assign(e.code);
+  },
+  // mouse-button counterpart, called from a capture-phase document mousedown listener (see
+  // Input.init) so it fires before the click can also do whatever it landed on (a UI button, the
+  // canvas). Left/right click are excluded — those two are permanently fire/grenade (see the KEY
+  // BINDS screen's own note), so binding an action to either would just look bound while a
+  // completely different, hardcoded thing also happens on the same click. Middle click and any
+  // extra side buttons a mouse has are fully assignable.
+  captureMouse(e) {
+    if (!this.capturing || e.button === 0 || e.button === 2) return;
+    e.preventDefault(); if (e.stopPropagation) e.stopPropagation();
+    this.assign('Mouse' + e.button);
   },
   reset() { Object.assign(Keybinds, KEYBIND_DEFAULTS); saveKeybinds(); this.render(); },
   open() { this.render(); HUD.showScreen('keybinds'); },
