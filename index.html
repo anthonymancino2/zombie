@@ -269,7 +269,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .kblist{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0;max-width:560px;margin-left:auto;margin-right:auto;}
 @media (max-width:520px){.kblist{grid-template-columns:1fr;}}
 .kbrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--panel);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:8px 12px;}
-.kbrow .kbname{font-family:var(--hud-font);font-size:11px;letter-spacing:.1em;color:var(--sand);}
+.kbrow .kbname{font-family:var(--hud-font);font-size:11px;letter-spacing:.1em;color:var(--sand);flex:none;}
 .kbrow .kbkey{font-family:var(--hud-font);font-size:13px;letter-spacing:.1em;color:var(--accent2);text-shadow:0 0 8px var(--glow);
   background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:5px 12px;min-width:56px;text-align:center;cursor:pointer;touch-action:manipulation;}
 .kbrow .kbkey:hover{border-color:var(--accent2);}
@@ -716,7 +716,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt on" id="optVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="optSound">SOUND: <span>ON</span></div>
         <div class="opt" id="optInvert">INVERT LOOK: <span>OFF</span></div>
-        <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="0.4" max="5" step="0.1" value="1"><span id="sensVal">1.0</span></div>
+        <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="-3" max="5" step="0.1" value="1"><span id="sensVal">1.0</span></div>
       </div>
       <!-- shared with Challenges' own level-select screen — see Levels.diffPickerHtml/wireDiffPicker -->
       <div id="menuDiffPicker"></div>
@@ -799,7 +799,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt on" id="pOptVoice">VOICE LINES: <span>ON</span></div>
         <div class="opt on" id="pOptSound">SOUND: <span>ON</span></div>
         <div class="opt" id="pOptInvert">INVERT LOOK: <span>OFF</span></div>
-        <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="0.4" max="5" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
+        <div class="opt slider">LOOK SENS <input type="range" id="pOptSens" min="-3" max="5" step="0.1" value="1"><span id="pSensVal">1.0</span></div>
       </div>
       <div class="row">
         <button class="bigbtn" id="btnResume">RESUME</button>
@@ -993,7 +993,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.90.0';
+const GAME_VERSION = 'v1.91.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -2326,7 +2326,10 @@ const Input = {
   },
   consumeLook(out) {
     // INVERT LOOK flips vertical only (mouse/swipe up looks down and vice versa) — the standard
-    // FPS convention, not a sign flip on the whole sens number, which stays a plain magnitude.
+    // FPS convention. Separately, LOOK SENS itself can go negative (down to -3), which mirrors
+    // BOTH axes at once — a full mirrored-look style some players want independent of the Y-only
+    // toggle above. The two stack: negative sens + INVERT LOOK on cancels the Y flip back out and
+    // leaves only X mirrored, which is intentional, not a bug.
     out.x = this.lookDX * this.sens; out.y = this.lookDY * this.sens * (Game.invertLook ? -1 : 1); this.lookDX = 0; this.lookDY = 0; return out;
   },
   consumeFireEdge() { const e = this.fireEdge; this.fireEdge = false; return e; }
@@ -6112,7 +6115,7 @@ const KeybindsUI = {
   startCapture(action, el) {
     if (this._el && this._el !== el) { this._el.classList.remove('listening'); this._el.textContent = keyDisplayName(Keybinds[this.capturing]); }
     this.capturing = action; this._el = el;
-    el.classList.add('listening'); el.textContent = 'PRESS A KEY/BTN';
+    el.classList.add('listening'); el.textContent = 'KEY, CLICK, OR SCROLL';
   },
   assign(code) {
     const action = this.capturing; if (!action || !code) return;
@@ -8034,19 +8037,19 @@ const Game = {
   // sensitivity is saved per PLATFORM, not as one shared number — a phone thumb-swipe and a desk
   // mouse want completely different values, and switching PLATFORM should bring back whichever
   // number was last set for that platform, not whatever the other one happened to be (see
-  // setPlatform/loadSensForPlatform below).
+  // setPlatform/loadSensForPlatform below). Range goes down to -3, not just 0 — see consumeLook
+  // for what a negative value actually does (full mirrored look, distinct from INVERT LOOK).
   setSens(v) {
-    Input.sens = clamp(v, 0.4, 5);
+    Input.sens = clamp(v, -3, 5);
     try { localStorage.setItem(playerPrefKey('dnd_sens_' + this.platform), String(Input.sens)); } catch (e) { }
   },
-  // magnitude only, always positive — direction is INVERT LOOK's job (see setInvertLook), not
-  // this slider's. A value saved before that split existed (or any other stray out-of-range
-  // number) is re-clamped back into range on every load, so it can never get stuck outside it.
+  // any stray out-of-range saved number (e.g. from before the range was widened) is re-clamped
+  // back into range on every load, so it can never get stuck outside it.
   loadSensForPlatform() {
     try {
       let se = localStorage.getItem(playerPrefKey('dnd_sens_' + this.platform));
       if (se == null) se = localStorage.getItem(playerPrefKey('dnd_sens')); // pre-platform-split save, if any
-      if (se != null) { const v = parseFloat(se); if (Number.isFinite(v)) { Input.sens = clamp(v, 0.4, 5); return; } }
+      if (se != null) { const v = parseFloat(se); if (Number.isFinite(v)) { Input.sens = clamp(v, -3, 5); return; } }
     } catch (e) { }
     Input.sens = 1;
   },
