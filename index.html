@@ -627,7 +627,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   <!-- HUD -->
   <div id="hud">
     <div class="hudtl">
-      <div class="lbl" id="hpLabel">GRIT</div>
+      <div class="lbl" id="hpLabel">HP</div>
       <div class="barrow"><div class="baricon shield"></div><div id="shieldBar"><div id="shieldFill"></div></div></div>
       <div class="barrow"><div class="baricon plus"></div><div id="hpBar"><div id="hpFill"></div></div></div>
       <div id="hpNum">100 <span>/ 100</span></div>
@@ -993,7 +993,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.88.0';
+const GAME_VERSION = 'v1.89.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1213,7 +1213,10 @@ function hpBuff(frac) {
 const CHARS = {
   male: {
     id: 'male', short: 'HANK', name: 'HANK "DUST" MERCER', cls: 'RUGGED SURVIVALIST',
-    hp: 125, speed: 5.7, reloadMul: 1.0, hpLabel: 'GRIT', accent: 0xff7a1a, crosshair: 'ring',
+    // hp/speed/reloadMul/attackMul/specialMul/shieldMul/healthRegenMul/shieldRegenMul are no
+    // longer gender-shared — every avatar has its own real stats now (see AVATARS[id].stats and
+    // Avatars.statsFromPct, merged in in charFor()).
+    accent: 0xff7a1a, crosshair: 'ring',
     voice: { pitch: 0.55, rate: 0.9 }, skin: 0xc98c5a, glove: 0x5a3a20,
     lines: {
       start: ["Alright, sand. Let's see what you cough up.", "Boots on. Iron loaded. Let's dance."],
@@ -1232,7 +1235,7 @@ const CHARS = {
   },
   female: {
     id: 'female', short: 'VEGA', name: 'CPT. MARA "VEGA" SOLIS', cls: 'TACTICAL OPERATOR',
-    hp: 100, speed: 6.5, reloadMul: 1.0, hpLabel: 'VITALS', accent: 0x21e6c1, crosshair: 'ring',
+    accent: 0x21e6c1, crosshair: 'ring',
     voice: { pitch: 1.15, rate: 1.05 }, skin: 0xb27a55, glove: 0x141416,
     lines: {
       start: ["Perimeter is hot. Weapons free.", "Vega on site. Engaging on contact."],
@@ -1283,23 +1286,28 @@ const AVATARS = {
     // Family Arena's own source documents his raw armature as "authored about +90 degrees around
     // Y" and corrects it with an extra -90 on top of their own engine's base facing flip — the
     // generic 180 every other champion uses is off by that same 90 for him specifically.
-    accent: 0x3fa9d6, hide: ['Object_58'], facing: Math.PI / 2 },
+    accent: 0x3fa9d6, hide: ['Object_58'], facing: Math.PI / 2,
+    stats: { hp: 95, speed: 65, reload: 90, attack: 70, special: 80, shield: 95, healthRegen: 90, shieldRegen: 90 } },
   rhino: { id: 'rhino', gender: 'male', key: 'rhino', short: 'RHINO', label: 'GREEN RHINO RANGER', cls: 'FIELD RANGER',
     desc: 'A scout who packs light and moves lighter. Left the boomerangs at home — out here it is just him, his boots, and a rifle.',
     accent: 0x4caf50, hide: ['boomerang_l_gr', 'boomerang_r_gr'],
     // his whole moveset is one baked 7s take — same frame ranges Family Arena's own source uses
     // (GREEN_RHINO_CLIP_RANGES) to cut it into a real idle and a real run instead of playing the
     // entire reel (idle → run → attack → death) on a loop, which looks like collapsing at random.
-    subclipRanges: { Idle: [0, 55], Run: [58, 77] }, subclipFps: 30 },
+    subclipRanges: { Idle: [0, 55], Run: [58, 77] }, subclipFps: 30,
+    stats: { hp: 80, speed: 80, reload: 80, attack: 75, special: 80, shield: 80, healthRegen: 80, shieldRegen: 80 } },
   chopper: { id: 'chopper', gender: 'male', key: 'chopper', short: 'CHOPPER', label: 'CHOPPER', cls: 'OLD SALT',
     desc: 'A sailor who has buried more crews than he can count. The desert is just a different flavor of ocean to him.',
-    accent: 0xc68a5a, hide: [], statsFrom: 'mage' },
+    accent: 0xc68a5a, hide: [],
+    stats: { hp: 60, speed: 90, reload: 90, attack: 85, special: 80, shield: 75, healthRegen: 75, shieldRegen: 75 } },
   corsair: { id: 'corsair', gender: 'male', key: 'corsair', short: 'DUDU', label: 'DUDU THE PENGUIN', cls: 'COLD-BLOODED',
     desc: "Nobody asked how a penguin ended up out here. He's just fast — faster than anyone else in the sand, and gone before you ask why.",
-    accent: 0x5dffe0, hide: [], speedMul: 2.3, heightOverride: 1.365 }, // fastest in the whole roster by a wide margin; 75% of the standard height
+    accent: 0x5dffe0, hide: [], heightOverride: 1.365, // 75% of the standard height
+    stats: { hp: 60, speed: 95, reload: 90, attack: 90, special: 90, shield: 75, healthRegen: 80, shieldRegen: 80 } },
   mage: { id: 'mage', gender: 'female', key: 'mage', short: 'FOX', label: 'NINE-TAILED FOX MAGE', cls: 'ARCANE DRIFTER',
     desc: 'Traded the staff for a sidearm and kept the rest — the hood, the tails, the look that says she has seen worse than this.',
-    accent: 0x9b59b6, hide: [] }
+    accent: 0x9b59b6, hide: [],
+    stats: { hp: 50, speed: 85, reload: 75, attack: 90, special: 95, shield: 75, healthRegen: 85, shieldRegen: 85 } }
 };
 const AVATAR_ORDER = { male: ['cloud', 'rhino', 'chopper', 'corsair'], female: ['mage'] };
 // character-select card grouping only — purely a display layout, independent of AVATAR_ORDER
@@ -1309,6 +1317,23 @@ const CARD_GROUPS = { a: ['cloud', 'rhino'], b: ['corsair', 'chopper', 'mage'] }
 
 const Avatars = {
   _templates: {}, _muzzleMat: null,
+  // converts an avatar's 0-100 stat percentages (AVATARS[id].stats) into the real values/multipliers
+  // every gameplay system reads — see charFor(), which merges this onto Player.char. Every stat but
+  // reload scales linearly up from 0 to a fixed max; reload is inverted (a HIGHER reload% means a
+  // LOWER reload-time multiplier, i.e. faster reloading).
+  statsFromPct(stats) {
+    const s = stats || {};
+    return {
+      hp: Math.round((s.hp || 0) / 100 * 160),
+      speed: +((s.speed || 0) / 100 * 8).toFixed(2),
+      reloadMul: +(0.5 + (100 - (s.reload || 0)) / 100).toFixed(2),
+      attackMul: +((s.attack || 0) / 100 * 2).toFixed(2),
+      specialMul: +((s.special || 0) / 100 * 2).toFixed(2),
+      shieldMul: +((s.shield || 0) / 100).toFixed(2),
+      healthRegenMul: +((s.healthRegen || 0) / 100 * 2).toFixed(2),
+      shieldRegenMul: +((s.shieldRegen || 0) / 100 * 2).toFixed(2)
+    };
+  },
   async _gunzip(b64, asText) {
     const raw = atob(b64);
     const bytes = new Uint8Array(raw.length);
@@ -4790,7 +4815,7 @@ const Player = {
   reset(char) {
     if (this.char !== char) { this.char = char; this.buildModels(); this.buildBody(); }
     this.x = 0; this.z = 0; this.yaw = rnd(0, TAU); this.pitch = 0; this.maxHp = char.hp; this.hp = char.hp; this.alive = true; this.speed = char.speed;
-    this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
+    this.maxShield = Math.round(char.hp * char.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
     this.ultCharge = 0; this.ultStacks = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0; this.ultDurationUsed = 0;
     this.ultImmune = false; this.ultImmuneT = 0; this.ultInvisible = false;
     this.ultPreCamMode = null; this.whirlPulseT = 0; this.whirlSpinAngle = 0;
@@ -4873,7 +4898,7 @@ const Player = {
       if (this.shieldRegenT > 0) this.shieldRegenT -= dt;
       else {
         const shMul = Levels.difficulty === 'easy' ? CFG.easyShieldRegenMul : 1;
-        this.shield = Math.min(this.maxShield, this.shield + this.maxShield / CFG.shieldRegenTime * shMul * dt);
+        this.shield = Math.min(this.maxShield, this.shield + this.maxShield / CFG.shieldRegenTime * shMul * this.char.shieldRegenMul * dt);
       }
     }
     if (this.alive) {
@@ -4903,7 +4928,7 @@ const Player = {
       {
         const easy = Levels.difficulty === 'easy';
         const hurtGate = easy ? CFG.easyHealthRegenDelay : 7, hpMul = easy ? CFG.easyHealthRegenMul : 1;
-        if (Game.time - this.lastHurt > hurtGate && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + 2.2 * hpMul * dt);
+        if (Game.time - this.lastHurt > hurtGate && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + 2.2 * hpMul * this.char.healthRegenMul * dt);
       }
       // weapons
       if (this.cooldown > 0) this.cooldown -= dt;
@@ -5090,7 +5115,7 @@ const Player = {
     // desperation buff: the lower your own HP, the harder every shot hits (see CFG.hpBuffTiers) —
     // grenade launcher damage isn't touched here (its dmg lives on the projectile/explosion, not
     // this call), everything else scales at the moment of firing
-    const dmg = def.dmg * this.buffMul().dmg;
+    const dmg = def.dmg * this.buffMul().dmg * this.char.attackMul;
     if (def.grenade) {
       // one lobbed shell per trigger pull, no pellet spread — it arcs and explodes on impact
       // (see Grenades module) rather than hitscanning
@@ -5555,7 +5580,7 @@ const Ultimates = {
     // rendered at, above) rather than the player's, with its own reach for the blade's length —
     // giving a genuinely longer total range (orbitR+reach) than a flat aura around the caster ever
     // could
-    const dmg = this.rifleDmg(), r = CFG.ultWhirlwindWeaponReach, r2 = r * r;
+    const dmg = this.rifleDmg() * P.char.specialMul, r = CFG.ultWhirlwindWeaponReach, r2 = r * r;
     const wx = P._whirlWeapon ? P._whirlWeapon.position.x : P.x;
     const wz = P._whirlWeapon ? P._whirlWeapon.position.z : P.z;
     const hostSide = Net.isHost() || !Net.on();
@@ -5607,7 +5632,7 @@ const Ultimates = {
   },
   tickFox(P, dt) {
     if (!P._ultFlames) return;
-    const dmg = this.rifleDmg(), ownerKey = Net.id;
+    const dmg = this.rifleDmg() * P.char.specialMul, ownerKey = Net.id;
     for (const f of P._ultFlames) {
       f.ang += dt * 1.2;
       const homeX = P.x + Math.cos(f.ang) * CFG.ultFlameOrbitR, homeZ = P.z + Math.sin(f.ang) * CFG.ultFlameOrbitR;
@@ -8077,9 +8102,6 @@ const Game = {
   // the effective gate every gameplay check uses — the flag can stay ON while the player is in a
   // coop session (so it's ready again the moment they go back solo), but it does nothing there
   testModeActive() { return this.testMode && Net.mode === 'off'; },
-  // GRIT/VITALS, SPEED and RELOAD bars are per-gender (every champion of a gender shares that
-  // gender's stat block), not per-champion — so there are only ever two distinct bar sets.
-  GENDER_BARS: { male: { hp: 92, speed: 60, reload: 62 }, female: { hp: 70, speed: 88, reload: 62 } },
   // difficulty (see Levels.difficulty) used to be a Challenges-only concept; it now also applies
   // to a plain Solo/Coop Survival run (see the diff-driven effects wired into start(), spawnPickup,
   // spawnPowerup and Player's own regen tick), so the same picker lives on the main menu too —
@@ -8094,13 +8116,6 @@ const Game = {
       const wrap = $(wrapId); wrap.innerHTML = '';
       for (const id of CARD_GROUPS[group]) {
         const av = AVATARS[id];
-        // statsFrom borrows another champion's stat block wholesale (Chopper plays identically to
-        // the Fox) — the card must show THOSE bars, not the ones for his own card column, or the
-        // menu would promise different numbers than the run actually gives him. Falls back to the
-        // avatar's own real gender, not which display group the card happens to sit in (Group A/B
-        // is layout only — see CARD_GROUPS).
-        const statGender = av.statsFrom ? AVATARS[av.statsFrom].gender : av.gender;
-        const bars = this.GENDER_BARS[statGender], stat = CHARS[statGender];
         const hex = '#' + ('000000' + av.accent.toString(16)).slice(-6);
         const card = document.createElement('div');
         card.className = 'card ' + av.gender; card.id = 'card_' + id; card.dataset.char = id;
@@ -8110,9 +8125,10 @@ const Game = {
           '<div class="cardhead"><div class="cportrait" style="background:' + hex + '33">' + av.short.charAt(0) + '</div>' +
           '<div><div class="cname">' + av.label + '</div><div class="cclass">' + av.cls + '</div></div></div>' +
           '<div class="cdesc">' + av.desc + '</div>' +
-          '<div class="stats"><span>' + stat.hpLabel + '</span><div class="bar"><i style="width:' + bars.hp + '%"></i></div>' +
-          '<span>SPEED</span><div class="bar"><i style="width:' + clamp(Math.round(bars.speed * (av.speedMul || 1)), 0, 100) + '%"></i></div>' +
-          '<span>RELOAD</span><div class="bar"><i style="width:' + bars.reload + '%"></i></div></div>';
+          // these bars are the champion's own real stats (AVATARS[id].stats), not a shared/fake table
+          '<div class="stats"><span>HP</span><div class="bar"><i style="width:' + av.stats.hp + '%"></i></div>' +
+          '<span>SPEED</span><div class="bar"><i style="width:' + av.stats.speed + '%"></i></div>' +
+          '<span>RELOAD</span><div class="bar"><i style="width:' + av.stats.reload + '%"></i></div></div>';
         card.addEventListener('click', () => this.selectChar(id));
         wrap.appendChild(card);
       }
@@ -8125,22 +8141,16 @@ const Game = {
     const gender = AVATARS[id].gender;
     document.body.classList.toggle('char-female', gender === 'female'); document.body.classList.toggle('char-male', gender === 'male');
     document.querySelectorAll('.card').forEach(c => c.classList.toggle('sel', c.dataset.char === id));
-    const av = AVATARS[id];
-    DOM.hpLabel.textContent = CHARS[av.statsFrom ? AVATARS[av.statsFrom].gender : gender].hpLabel;
+    DOM.hpLabel.textContent = 'HP';
   },
-  // merges the chosen champion's identity onto its gender's stat/voice block — this merged object
-  // is what Player.char holds for the whole run
+  // merges the chosen champion's own real stats (AVATARS[id].stats, converted by
+  // Avatars.statsFromPct) onto its gender's voice/identity block — this merged object is what
+  // Player.char holds for the whole run
   charFor(id) {
     const av = AVATARS[id] || AVATARS.cloud;
-    let base = CHARS[av.gender];
-    // av.statsFrom borrows another champion's hp/speed/hpLabel/reloadMul wholesale (Chopper wants
-    // to play identically to the Fox) while keeping this champion's own voice lines/pitch — a
-    // straight gender swap would also hand him her dialogue, which isn't what "same stats" means.
-    if (av.statsFrom) {
-      const src = CHARS[AVATARS[av.statsFrom].gender];
-      base = Object.assign({}, base, { hp: src.hp, speed: src.speed, reloadMul: src.reloadMul, hpLabel: src.hpLabel });
-    }
-    return Object.assign({}, base, { id: av.id, short: av.short, name: av.label, accent: av.accent, speed: base.speed * (av.speedMul || 1) });
+    const base = CHARS[av.gender];
+    const real = Avatars.statsFromPct(av.stats);
+    return Object.assign({}, base, real, { id: av.id, short: av.short, name: av.label, accent: av.accent });
   },
   start(seed) {
     // every run enters in first person no matter what was last selected — the owner explicitly
