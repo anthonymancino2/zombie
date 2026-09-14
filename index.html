@@ -89,13 +89,18 @@ button{font-family:inherit;color:inherit;}
 #shieldFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
   background:linear-gradient(90deg,#39e6ff,#0ea5e0);box-shadow:0 0 8px rgba(57,230,255,.7);transition:transform .12s linear;}
 #shieldFill.recharging{opacity:.55;}
-/* SPECIAL/ultimate meter — moved to its own bottom-left spot (.hudbl) and given 4x the HEALTH
-   bar's height (14px -> 56px) so it reads as a distinctly bigger, more prominent gauge there. */
-#ultBar{width:min(42vw,220px);height:56px;border:2px solid #ffd83b;background:rgba(0,0,0,.45);border-radius:3px;
-  box-shadow:0 0 10px rgba(255,216,59,.35),inset 0 0 6px rgba(0,0,0,.6);margin-top:4px;overflow:hidden;position:relative;}
-#ultFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
+/* SPECIAL/ultimate meter — moved to its own bottom-left spot (.hudbl), given 4x the HEALTH bar's
+   height (14px -> 56px), and split into 3 same-size stacked-charge containers (Player.ultStacks)
+   in a row with a small gap between each — see .ultRow/.ultBar/.ultFill below. */
+.ultRow{display:flex;gap:6px;margin-top:4px;}
+.ultBar{width:min(30vw,150px);height:56px;border:2px solid #ffd83b;background:rgba(0,0,0,.45);border-radius:3px;
+  box-shadow:0 0 10px rgba(255,216,59,.35),inset 0 0 6px rgba(0,0,0,.6);overflow:hidden;position:relative;flex:none;}
+.ultFill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;
   background:linear-gradient(90deg,#8a5cff,#c04bff);box-shadow:0 0 8px rgba(180,80,255,.6);transition:transform .12s linear;}
-#ultFill.ready{background:linear-gradient(90deg,#ffd83b,#ff9a1a);box-shadow:0 0 12px rgba(255,216,59,.85);animation:ultpulse 1s ease-in-out infinite;}
+.ultFill.ready{background:linear-gradient(90deg,#ffd83b,#ff9a1a);box-shadow:0 0 12px rgba(255,216,59,.85);animation:ultpulse 1s ease-in-out infinite;}
+/* the currently-active move's own bar while it's running (see HUD.update) — same idea as the HP
+   bar's own "getting low" color shift, draining from the right rather than filling toward it */
+.ultFill.depleting{background:linear-gradient(90deg,#ffb347,#ff6a1a);box-shadow:0 0 10px rgba(255,138,26,.65);animation:none;}
 @keyframes ultpulse{0%,100%{opacity:1;}50%{opacity:.6;}}
 #hpNum{font-size:22px;line-height:1;margin-top:4px;text-shadow:0 0 10px var(--glow),0 2px 2px #000;}
 #matchClock{font-family:var(--hud-font);font-size:13px;letter-spacing:.1em;color:var(--sand);margin-top:5px;text-shadow:0 0 8px rgba(0,0,0,.6);}
@@ -317,12 +322,22 @@ h1.title em{font-style:normal;color:var(--accent2);}
 .diffbtn{background:var(--panel);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:9px 16px;
   font-family:var(--hud-font);font-size:12px;letter-spacing:.18em;color:var(--dim);cursor:pointer;touch-action:manipulation;}
 .diffbtn.active{color:#fff;border-color:var(--accent2);box-shadow:0 0 12px var(--glow);}
+.diffbtn.active[data-diff="easy"]{border-color:#5dff7a;color:#5dff7a;box-shadow:0 0 12px rgba(93,255,122,.4);}
 .diffbtn.active[data-diff="hard"]{border-color:#ff8a00;color:#ff8a00;box-shadow:0 0 12px rgba(255,138,0,.4);}
 .diffbtn.active[data-diff="nightmare"]{border-color:#ff3b3b;color:#ff3b3b;box-shadow:0 0 12px rgba(255,59,59,.45);}
 .diffdesc{font-size:10px;letter-spacing:.06em;color:var(--dim);text-align:center;margin:0 0 4px;line-height:1.5;}
 .stat .v{font-family:var(--hud-font);font-size:28px;color:#fff;text-shadow:0 0 12px var(--glow);}
 .stat .k{font-family:var(--hud-font);font-size:10px;letter-spacing:.22em;color:var(--dim);margin-top:2px;}
 .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:8px;}
+/* menu action buttons used to just be inline-block (sized to their own text), so "GLOBAL
+   LEADERBOARD" and "KEY BINDS" sitting side by side never lined up with anything above or below
+   them. This pins every row to one shared width and splits the lower rows into an even two-column
+   grid — one real center divide the whole cluster aligns to, not each button drifting to its own
+   text length. */
+.menuRow{display:flex;gap:10px;justify-content:center;margin:8px auto 0;max-width:460px;}
+.menuRow .bigbtn{flex:1;padding-left:10px;padding-right:10px;}
+.menuGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px auto 0;max-width:460px;}
+.menuGrid .bigbtn{width:100%;box-sizing:border-box;padding-left:10px;padding-right:10px;}
 #loadErr{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#1a0f08;color:#fff;text-align:center;padding:20px;font-family:var(--body-font);z-index:50;}
 #loadErr.show{display:flex;}
 #loadErr h3{font-family:var(--hud-font);letter-spacing:.2em;font-weight:normal;font-size:24px;color:var(--accent2);}
@@ -618,11 +633,16 @@ h1.title em{font-style:normal;color:var(--accent2);}
       <div id="hpNum">100 <span>/ 100</span></div>
       <div id="matchClock">0:00</div>
     </div>
-    <!-- SPECIAL/ultimate gauge: moved off the top-left stack to its own bottom-left spot, and
-         3x the shield bar's height (see .hudbl / #ultBar CSS) -->
+    <!-- SPECIAL/ultimate gauge: moved off the top-left stack to its own bottom-left spot, 4x the
+         health bar's height (see .hudbl / .ultBar CSS), and split into 3 same-size stacked-charge
+         containers (see Player.ultStacks) side by side with a small gap between each. -->
     <div class="hudbl">
       <div class="lbl" id="ultLabel">SPECIAL</div>
-      <div id="ultBar"><div id="ultFill"></div></div>
+      <div class="ultRow">
+        <div class="ultBar" id="ultBar0"><div class="ultFill" id="ultFill0"></div></div>
+        <div class="ultBar" id="ultBar1"><div class="ultFill" id="ultFill1"></div></div>
+        <div class="ultBar" id="ultBar2"><div class="ultFill" id="ultFill2"></div></div>
+      </div>
     </div>
     <div class="hudtc">
       <div class="hudtcRow">
@@ -698,15 +718,17 @@ h1.title em{font-style:normal;color:var(--accent2);}
         <div class="opt" id="optInvert">INVERT LOOK: <span>OFF</span></div>
         <div class="opt slider">LOOK SENS <input type="range" id="optSens" min="0.4" max="5" step="0.1" value="1"><span id="sensVal">1.0</span></div>
       </div>
-      <div class="row">
-        <button class="bigbtn" id="btnStart">ENTER THE ARENA</button>
+      <!-- shared with Challenges' own level-select screen — see Levels.diffPickerHtml/wireDiffPicker -->
+      <div id="menuDiffPicker"></div>
+      <div class="menuRow">
+        <button class="bigbtn" id="btnStart">SOLO SURVIVAL</button>
         <button class="syncbtn" id="btnSync" title="Force-reload the latest version of the game">⟳ SYNC</button>
       </div>
-      <div class="row" style="margin-top:10px">
-        <button class="bigbtn neon" id="btnOnline">COOP MODE</button>
+      <div class="menuGrid">
+        <button class="bigbtn neon" id="btnOnline">COOP SURVIVAL</button>
         <button class="bigbtn gold" id="btnChallenges">CHALLENGES</button>
       </div>
-      <div class="row" style="margin-top:10px">
+      <div class="menuGrid">
         <button class="bigbtn secondary" id="btnLeaders">GLOBAL LEADERBOARD</button>
         <button class="bigbtn secondary" id="btnKeybinds">KEY BINDS</button>
       </div>
@@ -793,7 +815,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <button class="backbtn" id="btnBackKeybinds">← BACK</button>
     <div class="scroll"><div class="panel">
       <h1 class="title" style="font-size:clamp(26px,6vw,46px)">KEY <em>BINDS</em></h1>
-      <div class="tag">CLICK A KEY TO REBIND IT · PRESS A KEY OR CLICK A MOUSE BUTTON · DESKTOP ONLY</div>
+      <div class="tag">CLICK A KEY TO REBIND IT · PRESS A KEY, CLICK A MOUSE BUTTON, OR SCROLL · DESKTOP ONLY</div>
       <div id="keybindsList" class="kblist"></div>
       <div class="row" style="margin-top:14px">
         <button class="bigbtn secondary" id="btnKeybindsReset">RESET TO DEFAULTS</button>
@@ -971,7 +993,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.86.0';
+const GAME_VERSION = 'v1.87.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1052,6 +1074,10 @@ const CFG = {
   // bot) — absorbs damage first, stops regenerating the moment something lands, then refills
   // over shieldRegenTime once shieldRegenDelay has passed with nothing new taken.
   shieldMul: 0.5, shieldRegenDelay: 4, shieldRegenTime: 3,
+  // EASY difficulty (see Levels.difficulty, now shared across Solo/Coop Survival and Challenges
+  // alike): shield and health both regen several times faster, and infinite ammo/no reload are
+  // simply left on for the whole run (see Game.start()) rather than needing a timed pickup.
+  easyShieldRegenMul: 3, easyHealthRegenMul: 3, easyHealthRegenDelay: 2,
   // desperation buff: the lower your own HP, the harder you hit and the faster you reload —
   // thresholds checked low-to-high so only the single best-matching tier ever applies (they
   // don't stack). Reload is a speed multiplier (bigger = faster), not a time multiplier.
@@ -2045,7 +2071,8 @@ const KEY_DISPLAY = {
   // matches MouseEvent.button, stored as e.g. "Mouse1" so it can never collide with a KeyboardEvent
   // code. Left (Mouse0) and right (Mouse2) are shown for completeness but are never actually
   // reachable from the capture flow, since those two clicks are permanently fire/grenade already.
-  Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'MOUSE 4', Mouse4: 'MOUSE 5'
+  Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'MOUSE 4', Mouse4: 'MOUSE 5',
+  WheelUp: 'WHEEL UP', WheelDown: 'WHEEL DOWN'
 };
 const Keybinds = Object.assign({}, KEYBIND_DEFAULTS);
 function keyDisplayName(code) {
@@ -2132,6 +2159,9 @@ const Input = {
     // action doesn't care whether the code that triggered it came from a key or a mouse button
     // (see KeybindsUI.captureMouse), so both feed the exact same dispatch instead of keeping two
     // copies of this chain in sync by hand.
+    // returns whether `code` was actually bound to something, so a caller that needs to know
+    // (the wheel listener, to decide whether to preventDefault the page scroll) doesn't have to
+    // keep its own separate copy of this same list just to ask the question first.
     function dispatchBound(code) {
       // Q/E and Esc/P have always both worked for swap/pause no matter what — that stays true
       // even once SWAP WEAPON or PAUSE gets rebound to something else, so nobody who already has
@@ -2148,6 +2178,8 @@ const Input = {
       else if (code === Keybinds.pause || code === 'Escape' || code === 'KeyP') self.on.pause();
       else if (code === Keybinds.weapon1) self.on.select(0); else if (code === Keybinds.weapon2) self.on.select(1); else if (code === Keybinds.weapon3) self.on.select(2);
       else if (code === Keybinds.fire) { self.fire = true; self.fireEdge = true; }
+      else return false;
+      return true;
     }
     // KEY BINDS' rebind capture (see KeybindsUI.startCapture) needs first look at every mousedown
     // everywhere, not just on the canvas — the row/BACK/DONE buttons are ordinary DOM buttons a
@@ -2155,6 +2187,7 @@ const Input = {
     // of those elements' own bubble-phase listeners, so stopping it here keeps that click from
     // doing anything else.
     document.addEventListener('mousedown', function (e) { if (KeybindsUI.capturing) KeybindsUI.captureMouse(e); }, true);
+    document.addEventListener('wheel', function (e) { if (KeybindsUI.capturing) KeybindsUI.captureWheel(e); }, { capture: true, passive: false });
     window.addEventListener('keydown', function (e) {
       if (e.repeat) return; self.keys[e.code] = true; self.on.any();
       // same idea as the mousedown capture-phase listener above — this one owns the next keydown
@@ -2196,6 +2229,13 @@ const Input = {
     });
     document.addEventListener('mouseup', function (e) { if (e.button !== 0 && e.button !== 2) self.keys['Mouse' + e.button] = false; });
     cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    // scroll wheel only does something once the player has actually bound one of its two
+    // directions to an action in KEY BINDS — like the middle/side mouse buttons, it has no
+    // hardcoded default job of its own.
+    window.addEventListener('wheel', function (e) {
+      if (KeybindsUI.capturing || Game.state !== 'playing') return;
+      if (dispatchBound(e.deltaY < 0 ? 'WheelUp' : 'WheelDown')) e.preventDefault();
+    }, { passive: false });
     document.addEventListener('mousemove', function (e) {
       if (Game.state !== 'playing') return;
       if (self.pointerLocked || self.mouseDown) { self.lookDX += e.movementX || 0; self.lookDY += e.movementY || 0; }
@@ -3229,7 +3269,7 @@ const Bullets = {
 // anything else that calls Player.hurt off a radius/falloff. Zombies and structures still take
 // full damage either way — this only ever gates the player's OWN hit point loss. Hard/Nightmare
 // Challenge levels keep full self-damage, same as before.
-function explosionsHurtPlayer() { return (Levels.active ? Levels.difficulty : 'normal') !== 'normal'; }
+function explosionsHurtPlayer() { return Levels.difficulty === 'hard' || Levels.difficulty === 'nightmare'; }
 // grenade launcher shells: a small pooled projectile that actually arcs (gravity on vy each
 // frame, unlike Bullets' straight-line flight) and doesn't hit-test zombies in flight at all —
 // it only cares about hitting the ground/a wall or running out of fuse, then detonates in place
@@ -4751,7 +4791,7 @@ const Player = {
     if (this.char !== char) { this.char = char; this.buildModels(); this.buildBody(); }
     this.x = 0; this.z = 0; this.yaw = rnd(0, TAU); this.pitch = 0; this.maxHp = char.hp; this.hp = char.hp; this.alive = true; this.speed = char.speed;
     this.maxShield = Math.round(char.hp * CFG.shieldMul); this.shield = this.maxShield; this.shieldRegenT = 0;
-    this.ultCharge = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0; this.ultDurationUsed = 0;
+    this.ultCharge = 0; this.ultStacks = 0; this.ultCooldownT = 0; this.ultActive = false; this.ultActiveT = 0; this.ultDurationUsed = 0;
     this.ultImmune = false; this.ultImmuneT = 0; this.ultInvisible = false;
     this.ultPreCamMode = null; this.whirlPulseT = 0; this.whirlSpinAngle = 0;
     this.scopeLevel = 0; this.scopePreCamMode = null;
@@ -4763,7 +4803,7 @@ const Player = {
     // squadmates would otherwise all boot up inside each other at the origin
     if (Net.mode !== 'off') { const a = rnd(0, TAU); this.x = Math.cos(a) * 2.6; this.z = Math.sin(a) * 2.6; }
     this.weapons = WEAPONS.map((def, i) => ({ def: def, owned: i === 0 || Game.testModeActive(), mag: def.mag, reserve: def.reserve }));
-    if (Game.testModeActive()) this.ultCharge = 100;
+    if (Game.testModeActive()) { this.ultStacks = 3; this.ultCharge = 0; }
     this.cur = 0; this.cooldown = 0; this.reloading = false; this.reloadT = 0; this.switchT = 0; this.bloom = 0; this.bobT = 0; this.stepD = 0; this.lastHurt = -99; this.recoil = 0;
     this.stats = { shots: 0, hits: 0, kills: 0, head: 0, score: 0 }; this.autoTarget = null; this.lowSaid = false;
     this.vm.models.forEach((m, i) => m.visible = i === 0);
@@ -4798,7 +4838,7 @@ const Player = {
     if (this.ultImmuneT > 0) this.ultImmuneT -= dt;
     // test mode: keep the gauge topped off and the cooldown clear every frame, so tryUltimate's
     // own gate (charge>=100 && cooldownT<=0) passes again the instant the previous move ends
-    if (Game.testModeActive()) { this.ultCharge = 100; this.ultCooldownT = 0; }
+    if (Game.testModeActive()) { this.ultStacks = 3; this.ultCharge = 0; this.ultCooldownT = 0; }
     if (this.ultActive && this.alive) {
       this.ultActiveT -= dt;
       Ultimates.tick(this, dt);
@@ -4831,7 +4871,10 @@ const Player = {
     }
     if (this.alive && this.shield < this.maxShield && !Game.diffNoShieldRegen) {
       if (this.shieldRegenT > 0) this.shieldRegenT -= dt;
-      else this.shield = Math.min(this.maxShield, this.shield + this.maxShield / CFG.shieldRegenTime * dt);
+      else {
+        const shMul = Levels.difficulty === 'easy' ? CFG.easyShieldRegenMul : 1;
+        this.shield = Math.min(this.maxShield, this.shield + this.maxShield / CFG.shieldRegenTime * shMul * dt);
+      }
     }
     if (this.alive) {
       // thrashing under a hunter still turns you, but at a third of the rate — otherwise shaking
@@ -4856,8 +4899,12 @@ const Player = {
         if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2); this.x = zb.x + dx / d * rr; this.z = zb.z + dz / d * rr; }
       }
       if (mag > 0.05) { this.bobT += dt * 9 * mag; this.stepD += Math.sqrt(vx * vx + vz * vz) * dt; if (this.stepD > 2.3) { this.stepD = 0; Audio.step(); } }
-      // regen after a quiet period
-      if (Game.time - this.lastHurt > 7 && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + 2.2 * dt);
+      // regen after a quiet period — EASY shortens the wait and heals several times faster
+      {
+        const easy = Levels.difficulty === 'easy';
+        const hurtGate = easy ? CFG.easyHealthRegenDelay : 7, hpMul = easy ? CFG.easyHealthRegenMul : 1;
+        if (Game.time - this.lastHurt > hurtGate && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + 2.2 * hpMul * dt);
+      }
       // weapons
       if (this.cooldown > 0) this.cooldown -= dt;
       this.bloom = Math.max(0, this.bloom - dt * 3.5);
@@ -5128,15 +5175,28 @@ const Player = {
   },
   // meter fills off kills (see Game.onZombieKilled); the cooldown floor below is what actually
   // scales with wave, not the meter itself, so a full meter earlier than that still has to wait
+  // SPECIAL now stacks up to 3 charges (see addUltCharge) — activating spends exactly one stack,
+  // never touches ultCharge (progress toward whichever stack is next still keeps counting), and
+  // still has to clear the same wave-scaled cooldown as before, so banking stacks lets you use
+  // one now and another shortly after rather than firing all three back to back.
   tryUltimate() {
     if (!this.alive || this.ultActive || this.downed) { Audio.empty(); return; }
-    if (this.ultCharge < 100 || this.ultCooldownT > 0) { Audio.empty(); return; }
-    this.ultCharge = 0;
+    if (this.ultStacks < 1 || this.ultCooldownT > 0) { Audio.empty(); return; }
+    this.ultStacks--;
     this.ultDurationUsed = Game.ultDurationForWave(Game.wave);
     this.ultCooldownT = Game.ultCooldownForWave(Game.wave);
     this.ultActive = true; this.ultActiveT = this.ultDurationUsed;
     Ultimates.start(this);
     HUD.dirty = true;
+  },
+  // kill-charge feed for the ultimate meter — caps at 3 banked stacks total (see tryUltimate);
+  // once maxed, extra charge from further kills is simply not tracked rather than overflowing
+  // some partial 4th bar nothing shows.
+  addUltCharge(amount) {
+    if (this.ultStacks >= 3) return;
+    this.ultCharge += amount;
+    while (this.ultCharge >= 100 && this.ultStacks < 3) { this.ultCharge -= 100; this.ultStacks++; }
+    if (this.ultStacks >= 3) this.ultCharge = 0;
   },
   unlock(i) { const w = this.weapons[i]; if (w.owned) return false; w.owned = true; w.mag = w.def.mag; w.reserve = w.def.reserve; this.switchTo(i); return true; },
   // between-wave resupply so the heavier guns stay usable without a lucky crate
@@ -5734,7 +5794,7 @@ const DOM = {};
 const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
-    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoRes', 'ammoResLabel', 'wpnName', 'wpnClass', 'reloadHint',
+    ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill0', 'ultFill1', 'ultFill2', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoRes', 'ammoResLabel', 'wpnName', 'wpnClass', 'reloadHint',
       'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnScope', 'scopeState', 'btnSprint', 'btnMedkit', 'medkitCount', 'btnGrenade', 'grenadeCount', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optInvert', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptInvert', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optPlatform', 'pOptPlatform', 'optInput', 'pOptInput', 'optSquad', 'pOptSquad', 'loadErr',
       'testModePopup', 'btnTestModeYes', 'btnTestModeNo',
@@ -5747,7 +5807,7 @@ const HUD = {
       'modeselect', 'levelselect', 'levelresult', 'btnChallenges', 'btnBackModeselect', 'btnSoloChallenges', 'btnCoopChallenges',
       'levelselectBody', 'levelselectTitle', 'btnBackLevelselect', 'btnLevelselectBack', 'levelResultTitle', 'levelResultSub',
       'btnLevelRetry', 'btnLevelNext', 'btnLevelBackSelect', 'btnLevelMenu',
-      'keybinds', 'keybindsList', 'btnKeybinds', 'pBtnKeybinds', 'btnBackKeybinds', 'btnKeybindsBack', 'btnKeybindsReset'
+      'keybinds', 'keybindsList', 'btnKeybinds', 'pBtnKeybinds', 'btnBackKeybinds', 'btnKeybindsBack', 'btnKeybindsReset', 'menuDiffPicker'
     ].forEach(id => DOM[id] = $(id));
     DOM.lowhp.style.backgroundImage = 'url(' + TEX.lowhpUrl + ')';
   },
@@ -5763,14 +5823,29 @@ const HUD = {
     if (this.last.shk !== shk) { this.last.shk = shk; DOM.shieldFill.style.transform = 'scaleX(' + shk.toFixed(3) + ')'; }
     const shRecharging = P.shieldRegenT > 0 && shk < 1;
     if (this.last.shRecharging !== shRecharging) { this.last.shRecharging = shRecharging; DOM.shieldFill.classList.toggle('recharging', shRecharging); }
-    // ultimate meter — "ready" (button lit, bar pulsing gold) needs BOTH a full meter and the
-    // wave-scaled cooldown to have actually elapsed (see Player.tryUltimate)
-    const uk = clamp(P.ultCharge / 100, 0, 1);
-    if (this.last.uk !== uk) { this.last.uk = uk; DOM.ultFill.style.transform = 'scaleX(' + uk.toFixed(3) + ')'; }
-    const ultReady = P.ultCharge >= 100 && P.ultCooldownT <= 0 && !P.ultActive;
+    // SPECIAL now stacks up to 3 charges (see Player.addUltCharge/tryUltimate) — bar i (0-2) is
+    // full once i banked stacks exist, live-fills toward the current amount.ultCharge is being
+    // banked into whichever bar comes right after the ones already full, and stays empty past
+    // that. While the move is actually ACTIVE, that same "next" bar switches to draining instead
+    // of filling — same scaleX-from-the-left mechanic the HP bar uses, just counting ultActiveT
+    // down against ultDurationUsed instead of counting HP up. "ready" (button lit, bars pulsing
+    // gold) needs at least one banked stack AND the wave-scaled cooldown to have actually elapsed
+    // (see Player.tryUltimate).
+    for (let i = 0; i < 3; i++) {
+      let fill;
+      if (i < P.ultStacks) fill = 1;
+      else if (i === P.ultStacks) fill = P.ultActive ? clamp(P.ultActiveT / P.ultDurationUsed, 0, 1) : clamp(P.ultCharge / 100, 0, 1);
+      else fill = 0;
+      const key = 'uk' + i;
+      if (this.last[key] !== fill) { this.last[key] = fill; DOM['ultFill' + i].style.transform = 'scaleX(' + fill.toFixed(3) + ')'; }
+      const depleting = i === P.ultStacks && P.ultActive;
+      const dKey = 'ud' + i;
+      if (this.last[dKey] !== depleting) { this.last[dKey] = depleting; DOM['ultFill' + i].classList.toggle('depleting', depleting); }
+    }
+    const ultReady = P.ultStacks >= 1 && P.ultCooldownT <= 0 && !P.ultActive;
     if (this.last.ultReady !== ultReady) {
       this.last.ultReady = ultReady;
-      DOM.ultFill.classList.toggle('ready', ultReady);
+      for (let i = 0; i < 3; i++) DOM['ultFill' + i].classList.toggle('ready', ultReady);
       if (DOM.btnUlt) DOM.btnUlt.classList.toggle('ready', ultReady);
     }
     // countdown on the SPECIAL button itself: remaining active time while it's running, else
@@ -5801,7 +5876,9 @@ const HUD = {
     // the 5 later-wave power-ups all follow the same on/off + countdown-text pattern as insta/dbl
     for (const p of Game.POWER_PILLS) {
       const on = G[p.key] > 0; if (this.last[p.key] !== on) { this.last[p.key] = on; DOM[p.dom].classList.toggle('on', on); }
-      if (on) this.set(p.key + 'T', DOM[p.dom], p.label + ' ' + Math.ceil(G[p.key]) + 's');
+      // EASY sets noReload/infAmmo to Infinity for the whole run (see Game.start()) rather than a
+      // timed value — "Infinitys" doesn't read as a duration, so show it as permanently on instead
+      if (on) this.set(p.key + 'T', DOM[p.dom], G[p.key] === Infinity ? p.label : p.label + ' ' + Math.ceil(G[p.key]) + 's');
     }
     // health kit count — carried across the whole run, not a timed buff, so it just mirrors
     // G.healthKits directly rather than going through POWER_PILLS' on/off + countdown shape
@@ -6029,6 +6106,13 @@ const KeybindsUI = {
     if (!this.capturing || e.button === 0 || e.button === 2) return;
     e.preventDefault(); if (e.stopPropagation) e.stopPropagation();
     this.assign('Mouse' + e.button);
+  },
+  // scroll-wheel counterpart — up and down are two distinct, separately bindable "keys" (e.g.
+  // wheel up to cycle one way through weapons, wheel down the other), same as a mouse button.
+  captureWheel(e) {
+    if (!this.capturing) return;
+    e.preventDefault(); if (e.stopPropagation) e.stopPropagation();
+    this.assign(e.deltaY < 0 ? 'WheelUp' : 'WheelDown');
   },
   reset() { Object.assign(Keybinds, KEYBIND_DEFAULTS); saveKeybinds(); this.render(); },
   open() { this.render(); HUD.showScreen('keybinds'); },
@@ -7063,8 +7147,8 @@ const Levels = {
   // conditions, swaps ammo stations for ammo pickups, tightens (Hard) or removes (Nightmare)
   // shield regen, and (Nightmare only) strips every pickup but ammo and triples the enemy count.
   difficulty: 'normal',
-  DIFF_ORDER: ['normal', 'hard', 'nightmare'],
-  DIFF_MUL: { normal: 1, hard: 1.5, nightmare: 2 },
+  DIFF_ORDER: ['easy', 'normal', 'hard', 'nightmare'],
+  DIFF_MUL: { easy: 0.75, normal: 1, hard: 1.5, nightmare: 2 },
   loadDifficulty() {
     try { const d = localStorage.getItem('dnd_challengeDifficulty'); if (this.DIFF_ORDER.indexOf(d) >= 0) this.difficulty = d; } catch (e) { }
   },
@@ -7182,7 +7266,7 @@ const Levels = {
     // simply never offering either, rather than a punishing fail-the-instant-you-touch-one trap.
     // Hard/Nightmare pull ammo stations for everyone the same way — see Game.spawnPickup for the
     // ammo-pickup stream that replaces them.
-    const stationsOff = this.spec.noKitsOrStations || this.difficulty !== 'normal';
+    const stationsOff = this.spec.noKitsOrStations || this.difficulty === 'hard' || this.difficulty === 'nightmare';
     AmmoStations.ensureCount(stationsOff ? 0 : 1);
     if (this.spec.noKitsOrStations || this.difficulty === 'nightmare') this.healthKitT = Infinity;
     // shield: Hard keeps the round's starting shield but stops it from ever refilling mid-run;
@@ -7637,9 +7721,26 @@ const Levels = {
 
   // level-select UI
   DIFF_DESC: {
+    easy: 'FASTER SHIELD & HEALTH REGEN · INFINITE AMMO, NO RELOAD EVER · AMMO-RELATED PICKUPS DON’T APPEAR (YOU DON’T NEED THEM)',
     normal: 'UNCHANGED — AMMO STATIONS, NORMAL SHIELD REGEN, STANDARD TARGETS',
     hard: 'NO AMMO STATIONS (AMMO PICKUPS INSTEAD) · SHIELD WON’T REGEN MID-ROUND (FULL AGAIN NEXT ROUND) · +50% KILL/HOLD TARGETS',
     nightmare: 'NO SHIELD AT ALL · NO POWER-UPS EXCEPT AMMO · 3X ENEMY COUNT · 2X KILL/HOLD TARGETS'
+  },
+  // shared by the Challenges level-select screen and the main menu (Solo/Coop Survival) — same
+  // difficulty, same picker markup, same click wiring, just dropped into two different screens.
+  diffPickerHtml() {
+    return '<div class="diffpick">' + this.DIFF_ORDER.map(function (d) {
+      return '<div class="diffbtn' + (d === Levels.difficulty ? ' active' : '') + '" data-diff="' + d + '">' + d.toUpperCase() + '</div>';
+    }).join('') + '</div><div class="diffdesc">' + this.DIFF_DESC[this.difficulty] + '</div>';
+  },
+  // re-renders whatever contains the picker after a change, since the active/description text
+  // depends on the current value — `rerender` is the caller's own refresh (renderSelect for
+  // Challenges, a small inline one for the main menu, see Game.init's wireMenuDiffPicker)
+  wireDiffPicker(container, rerender) {
+    if (!this._diffLoaded) { this.loadDifficulty(); this._diffLoaded = true; }
+    container.querySelectorAll('.diffbtn').forEach(function (el) {
+      el.addEventListener('click', function () { Audio.unlock(); Levels.setDifficulty(el.dataset.diff); rerender(); });
+    });
   },
   renderSelect(mode) {
     if (mode) this.mode = mode;
@@ -7647,9 +7748,7 @@ const Levels = {
     this.loadClears();
     if (DOM.levelselectTitle) DOM.levelselectTitle.innerHTML = this.mode === 'coop' ? 'COOP <em>CHALLENGES</em>' : 'SOLO <em>CHALLENGES</em>';
     const clears = this.clears[this.mode] || {};
-    let html = '<div class="diffpick">' + this.DIFF_ORDER.map(function (d) {
-      return '<div class="diffbtn' + (d === Levels.difficulty ? ' active' : '') + '" data-diff="' + d + '">' + d.toUpperCase() + '</div>';
-    }).join('') + '</div><div class="diffdesc">' + this.DIFF_DESC[this.difficulty] + '</div>';
+    let html = this.diffPickerHtml();
     const tierNames = this.mode === 'coop'
       ? ['TIER 1 · FIRETEAM SYNCHRONIZATION', 'TIER 2 · JOINT OPERATIONS & CHAOS MANAGEMENT', 'TIER 3 · RAID-SCALE OPERATIONS']
       : ['TIER 1 · BOOT CAMP & BASICS', 'TIER 2 · TACTICAL OPS & HYBRIDS', 'TIER 3 · ELITE ARENA & BOSS GAUNTLETS'];
@@ -7671,9 +7770,7 @@ const Levels = {
     DOM.levelselectBody.querySelectorAll('.leveltile:not(.locked)').forEach(function (el) {
       el.addEventListener('click', function () { Audio.unlock(); Levels.start(parseInt(el.dataset.level, 10), activeMode); });
     });
-    DOM.levelselectBody.querySelectorAll('.diffbtn').forEach(function (el) {
-      el.addEventListener('click', function () { Audio.unlock(); Levels.setDifficulty(el.dataset.diff); Levels.renderSelect(); });
-    });
+    this.wireDiffPicker(DOM.levelselectBody, function () { Levels.renderSelect(); });
   }
 };
 
@@ -7714,6 +7811,7 @@ const Game = {
     try { const ic = localStorage.getItem('dnd_input'); if (ic === 'mouse' || ic === 'keyboard') this.inputScheme = ic; } catch (e) { }
     HUD.init(); HUD.refreshOptions();
     this.buildCharCards();
+    this.renderMenuDiffPicker();
     const self = this;
     const unlockAudio = function () { Audio.unlock(); if (Audio.ready) { ['touchstart', 'touchend', 'mousedown', 'keydown', 'click'].forEach(ev => document.removeEventListener(ev, unlockAudio)); } };
     ['touchstart', 'touchend', 'mousedown', 'keydown', 'click'].forEach(ev => document.addEventListener(ev, unlockAudio, { passive: true }));
@@ -7965,7 +8063,7 @@ const Game = {
     this.testMode = v;
     if (v) {
       this.testModeUsedThisRun = true;
-      if (Net.mode === 'off') { Player.ultCharge = 100; Player.ultCooldownT = 0; for (const w of Player.weapons) w.owned = true; }
+      if (Net.mode === 'off') { Player.ultStacks = 3; Player.ultCharge = 0; Player.ultCooldownT = 0; for (const w of Player.weapons) w.owned = true; }
     }
   },
   // the effective gate every gameplay check uses — the flag can stay ON while the player is in a
@@ -7974,6 +8072,15 @@ const Game = {
   // GRIT/VITALS, SPEED and RELOAD bars are per-gender (every champion of a gender shares that
   // gender's stat block), not per-champion — so there are only ever two distinct bar sets.
   GENDER_BARS: { male: { hp: 92, speed: 60, reload: 62 }, female: { hp: 70, speed: 88, reload: 62 } },
+  // difficulty (see Levels.difficulty) used to be a Challenges-only concept; it now also applies
+  // to a plain Solo/Coop Survival run (see the diff-driven effects wired into start(), spawnPickup,
+  // spawnPowerup and Player's own regen tick), so the same picker lives on the main menu too —
+  // same markup/state as the Challenges level-select screen, see Levels.diffPickerHtml.
+  renderMenuDiffPicker() {
+    if (!Levels._diffLoaded) { Levels.loadDifficulty(); Levels._diffLoaded = true; }
+    DOM.menuDiffPicker.innerHTML = Levels.diffPickerHtml();
+    Levels.wireDiffPicker(DOM.menuDiffPicker, () => this.renderMenuDiffPicker());
+  },
   buildCharCards() {
     const build = (wrapId, group) => {
       const wrap = $(wrapId); wrap.innerHTML = '';
@@ -8063,6 +8170,20 @@ const Game = {
     this.healthKitT = rnd(CFG.healthKitSpawnMin, CFG.healthKitSpawnMax);
     this.powerBag.length = 0; this.powerBagPool = null;
     Director.reset(); Bots.spawn();
+    // Difficulty (shared with Challenges — see Levels.difficulty) now applies to a plain
+    // Solo/Coop Survival run too. Levels.start() (Challenge levels only) runs its own, more
+    // elaborate version of this right after this call returns — ammo stations, scaled win
+    // conditions — which a plain endless run has no equivalent lever for; this covers the parts
+    // that translate directly (shield behavior, health kits, ammo economy — see spawnPickup/
+    // spawnPowerup and Player's own regen tick for the EASY-only pieces).
+    {
+      const diff = Levels.difficulty;
+      this.diffNoShieldRegen = diff === 'hard';
+      if (diff === 'nightmare') {
+        Player.maxShield = 0; Player.shield = 0; this.healthKitT = Infinity;
+        for (const b of Bots.list) { b.maxShield = 0; b.shield = 0; }
+      } else if (diff === 'easy') { this.infAmmo = Infinity; this.noReload = Infinity; }
+    }
     HUD.last = {}; HUD.dirty = true; HUD.showScreen(null); HUD.showHud(true); HUD.refreshOptions();
     DOM.joyHint.classList.toggle('hide', this.platform !== 'phone'); DOM.dmg.style.opacity = '0'; DOM.lowhp.classList.remove('on');
     DOM.downed.classList.remove('show'); DOM.revive.classList.remove('show'); DOM.pinned.classList.remove('show'); DOM.boss.classList.remove('show');
@@ -8228,21 +8349,29 @@ const Game = {
     }
     return this.powerBag.pop();
   },
+  // EASY strips infammo/noreload out of the powerup rotation — every gun already has both for the
+  // whole run (see Game.start()), so the pickup would just be a wasted slot on the ground. Shared
+  // by spawnPickup's powerup branch and spawnPowerup itself.
+  powerPoolForWave() {
+    const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
+    if (Levels.difficulty === 'easy') return pool.filter(t => t !== 'infammo' && t !== 'noreload');
+    return pool;
+  },
   spawnPickup() {
     // ammo refill stations (see AmmoStations) cover ammo scarcity now — this stream is health or
     // a power-up only, EXCEPT on a Hard/Nightmare Challenge level, where Levels.start() pulled the
-    // stations and this is what replaces them (see PICKUP_DEFS.ammo/Game.collect's 'ammo' branch)
-    const diff = Levels.active ? Levels.difficulty : 'normal';
+    // stations and this is what replaces them (see PICKUP_DEFS.ammo/Game.collect's 'ammo' branch).
+    // difficulty (Levels.difficulty) now applies the same way to a plain Solo/Coop Survival run —
+    // EASY never hits the 'hard' ammo-bias branch below since it isn't 'hard', so it naturally
+    // never rolls an ammo pickup either (see Game.start(): every gun already has infinite ammo).
+    const diff = Levels.difficulty;
     let type;
     if (diff === 'nightmare') { type = 'ammo'; } // no power-ups at all except ammo on Nightmare
     else {
       const r = Math.random();
       if (r < 0.55) type = 'health';
       else if (diff === 'hard' && r < 0.65) type = 'ammo';
-      else {
-        const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
-        type = this.nextPowerType(pool);
-      }
+      else type = this.nextPowerType(this.powerPoolForWave());
     }
     if (World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn(type, this._pt.x, this._pt.z);
   },
@@ -8263,8 +8392,7 @@ const Game = {
   },
   powerupCapForWave() { return clamp(Math.round(CFG.powerupCap * Math.sqrt(this.powerupRateMul(this.wave))), CFG.powerupCap, 16); },
   spawnPowerup() {
-    const pool = this.wave >= CFG.powerupWave ? this.POWER_POOL_LATE : this.POWER_POOL_EARLY;
-    const type = this.nextPowerType(pool);
+    const type = this.nextPowerType(this.powerPoolForWave());
     if (World.coverPoint(Player.x, Player.z, this._pt)) Pickups.spawn(type, this._pt.x, this._pt.z);
   },
   // health kits: a third stream again, independent of both of the above — see CFG.healthKitMax
@@ -8325,7 +8453,7 @@ const Game = {
     // to *their* meter over the wire instead (see Net.showKill, the 'kill' message they already
     // get) — onZombieKilled here only ever runs on the host/solo machine, which never sees the
     // peer's own Player object to award it to directly.
-    if (!by) Player.ultCharge = Math.min(100, Player.ultCharge + (z.boss || z.type.special ? CFG.ultMeterPerSpecialKill : (head ? CFG.ultMeterPerHeadshot : CFG.ultMeterPerKill)));
+    if (!by) Player.addUltCharge(z.boss || z.type.special ? CFG.ultMeterPerSpecialKill : (head ? CFG.ultMeterPerHeadshot : CFG.ultMeterPerKill));
     let pts = CFG.ptsKill * (z.type.pts || 1);
     if (head) { pts += CFG.ptsHead; if (by) by.head++; else Player.stats.head++; Floaties.spawn(z.x, z.y + z.height + 0.5, z.z, 'HEADSHOT', '#ff4a2a', 18, 1.1); }
     this.addPoints(pts, z.x, z.y + z.height + 0.15, z.z, '#ffd83b', 20, by);
@@ -9392,7 +9520,7 @@ const Net = {
     // Player object, so this notification (already shooter-only, see the guard above) is what
     // credits it instead
     const special = zb.boss || (zb.type && zb.type.special);
-    Player.ultCharge = Math.min(100, Player.ultCharge + (special ? CFG.ultMeterPerSpecialKill : (m.hd ? CFG.ultMeterPerHeadshot : CFG.ultMeterPerKill)));
+    Player.addUltCharge(special ? CFG.ultMeterPerSpecialKill : (m.hd ? CFG.ultMeterPerHeadshot : CFG.ultMeterPerKill));
     Audio.killmark();
   },
 
