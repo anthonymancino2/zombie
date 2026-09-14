@@ -148,6 +148,24 @@ button{font-family:inherit;color:inherit;}
 #bannerTitle{font-size:clamp(40px,9vw,84px);line-height:1;color:#fff;letter-spacing:.1em;
   text-shadow:0 0 30px var(--glow),0 0 8px var(--accent),0 4px 4px #000;}
 #bannerSub{font-size:clamp(13px,2.4vw,20px);letter-spacing:.3em;color:var(--accent2);margin-top:8px;text-shadow:0 0 10px var(--glow),0 2px 2px #000;}
+/* Coop Challenges' pre-round ready gate (see Levels.showReadyGate) — a persistent card, not a
+   timed fly-in/out banner like #banner, since the whole point is staying up until READY is
+   clicked rather than disappearing on its own. pointer-events:auto here specifically, same as
+   #btnPause, since #hud itself is pointer-events:none. */
+#challengeReady{position:absolute;left:50%;top:18%;transform:translateX(-50%);max-width:min(86vw,520px);
+  background:rgba(10,6,3,.78);border:1px solid rgba(255,255,255,.22);border-radius:12px;padding:18px 22px;text-align:center;
+  opacity:0;pointer-events:none;transition:opacity .2s;}
+#challengeReady.show{opacity:1;pointer-events:auto;}
+#challengeReadyName{font-family:var(--hud-font);font-size:clamp(22px,4.5vw,34px);letter-spacing:.06em;color:#fff;
+  text-shadow:0 0 20px var(--glow),0 2px 2px #000;}
+#challengeReadyArch{font-family:var(--hud-font);font-size:12px;letter-spacing:.28em;color:var(--accent2);margin-top:4px;text-shadow:0 0 8px var(--glow);}
+#challengeReadyDesc{font-family:var(--body-font);font-size:14px;line-height:1.5;color:var(--sand);margin-top:14px;}
+#btnChallengeReady{margin-top:18px;font-family:var(--hud-font);font-size:16px;letter-spacing:.14em;color:#fff;
+  background:linear-gradient(180deg,var(--accent2),var(--accent));border:none;border-radius:8px;padding:12px 40px;
+  cursor:pointer;touch-action:manipulation;box-shadow:0 0 20px var(--glow),0 4px 10px rgba(0,0,0,.5);}
+#btnChallengeReady:active{transform:scale(.97);}
+#btnChallengeReady.waiting{background:rgba(255,255,255,.15);box-shadow:none;cursor:default;}
+#challengeReadyWho{font-family:var(--hud-font);font-size:11px;letter-spacing:.14em;color:var(--sand);margin-top:10px;min-height:1.2em;}
 #toast{position:absolute;left:50%;top:calc(96px + var(--sat));transform:translateX(-50%);font-size:12px;letter-spacing:.14em;
   background:rgba(0,0,0,.55);border:1px solid var(--accent);padding:6px 14px;border-radius:20px;opacity:0;transition:opacity .3s;color:#fff;white-space:nowrap;}
 #toast.show{opacity:1;}
@@ -406,6 +424,12 @@ h1.title em{font-style:normal;color:var(--accent2);}
      .hudtrRow as an ancestor) back to its old spot on the left, below the squad list, generously
      far down since portrait has vertical room to spare and squad size (0-4) varies its height. */
   .hudAmmo{position:fixed;left:calc(12px + var(--sal));top:calc(260px + var(--sat));text-align:left;}
+  /* real phones never reach this card in portrait at all — #rotateBlock gates gameplay to
+     landscape first — so this is really just for a narrow desktop browser window. Still worth
+     shrinking so it doesn't blanket the squad roster/ammo readout underneath it. */
+  #challengeReady{max-width:78vw;padding:12px 14px;}
+  #challengeReadyName{font-size:20px;} #challengeReadyDesc{font-size:12px;margin-top:8px;}
+  #btnChallengeReady{margin-top:10px;padding:9px 28px;font-size:13px;} #challengeReadyWho{font-size:10px;margin-top:6px;}
   .hudtcRow{gap:6px;} #radar{width:56px;height:56px;}
   #hpBar{width:34vw;} #hpNum{font-size:18px;} #points{font-size:22px;} #waveNum{font-size:22px;} #zLeft{font-size:10px;} #matchClock{font-size:11px;margin-top:3px;}
   #subtitle{bottom:calc(272px + var(--sab));max-width:86vw;font-size:13px;}
@@ -699,6 +723,17 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <button id="btnPause" aria-label="Pause">II</button>
     <div id="subtitle"><b id="subName">HANK</b><span id="subText"></span></div>
     <div id="banner"><div id="bannerTitle">WAVE 1</div><div id="bannerSub">THEY'RE COMING</div></div>
+    <!-- Coop Challenges only (see Levels.awaitingReady/showReadyGate): the round's world/player are
+         already live so you can walk around and look at the arena, but no enemies spawn and no
+         timer runs until you hit READY — stays up as long as it takes to actually read this,
+         instead of the old fly-in/out banner that was gone before anyone finished the sentence. -->
+    <div id="challengeReady">
+      <div id="challengeReadyName">LEVEL NAME</div>
+      <div id="challengeReadyArch">ARCHETYPE</div>
+      <div id="challengeReadyDesc"></div>
+      <button id="btnChallengeReady">READY</button>
+      <div id="challengeReadyWho"></div>
+    </div>
     <div id="midScores"></div>
     <div id="toast"></div>
     <div id="coopWrap">
@@ -1013,7 +1048,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.96.0';
+const GAME_VERSION = 'v1.97.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -5848,7 +5883,9 @@ const HUD = {
   dirty: true, last: {}, toastT: 0, subT: 0, bannerT: 0,
   init() {
     ['hud', 'controls', 'menu', 'pause', 'gameover', 'hpLabel', 'hpFill', 'hpNum', 'shieldFill', 'ultFill0', 'ultFill1', 'ultFill2', 'btnUlt', 'ultTimer', 'matchClock', 'waveNum', 'zLeft', 'midScores', 'pillInsta', 'pillDbl', 'pillNoReload', 'pillInfAmmo', 'pillInvincible', 'pillRapidFire', 'pillFastMove', 'pillPhase', 'points', 'mult', 'kills', 'ammoRes', 'ammoResLabel', 'wpnName', 'wpnClass', 'reloadHint',
-      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub', 'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnScope', 'scopeState', 'btnSprint', 'btnMedkit', 'medkitCount', 'btnGrenade', 'grenadeCount', 'joyHint', 'rotateBlock',
+      'subtitle', 'subName', 'subText', 'banner', 'bannerTitle', 'bannerSub',
+      'challengeReady', 'challengeReadyName', 'challengeReadyArch', 'challengeReadyDesc', 'btnChallengeReady', 'challengeReadyWho',
+      'toast', 'fpsTag', 'muzzle', 'dmg', 'lowhp', 'flashwhite', 'btnAuto', 'autoState', 'btnCam', 'camState', 'btnScope', 'scopeState', 'btnSprint', 'btnMedkit', 'medkitCount', 'btnGrenade', 'grenadeCount', 'joyHint', 'rotateBlock',
       'goWave', 'goPoints', 'goKills', 'goAcc', 'goHead', 'goTime', 'goBest', 'goTag', 'bestLine', 'optAuto', 'optTest', 'optVoice', 'optSound', 'optInvert', 'optSens', 'sensVal', 'pOptAuto', 'pOptTest', 'pOptVoice', 'pOptSound', 'pOptInvert', 'pOptSens', 'pSensVal', 'optCam', 'pOptCam', 'optPlatform', 'pOptPlatform', 'optInput', 'pOptInput', 'optSquad', 'pOptSquad', 'loadErr',
       'testModePopup', 'btnTestModeYes', 'btnTestModeNo',
       'online', 'lobby', 'leaders', 'netStatus', 'roomList', 'inpName', 'inpNameMenu', 'nameFieldMenu', 'inpCode', 'btnHost', 'btnJoinCode', 'btnOnline', 'btnOnlineBack',
@@ -7272,6 +7309,7 @@ const COOP_LEVEL_BUILDERS = {
    nothing to do with the endless-run leaderboard. */
 const Levels = {
   active: false, mode: 'solo', cfg: null, spec: null, progress: null, escortBot: null,
+  awaitingReady: false, pendingInitialBosses: false,
   checkpointIdx: 0, bossSpawned: false, stationHp: 0, trickleT: 0, elapsed: 0,
   // Normal/Hard/Nightmare — unrelated to grantWeaponsForDifficulty's weapon-unlock wave number
   // below despite the similar name. Persisted across sessions, picked on the level-select screen
@@ -7410,11 +7448,11 @@ const Levels = {
       for (const b of Bots.list) { b.maxShield = 0; b.shield = 0; }
     }
     // structureGatesBoss (Overlord): the boss only appears once its shield-generator structure is
-    // down, same "gate" idea as a checkpoint chain but keyed off demolition instead of navigation
-    if (!this.spec.checkpoints && !this.spec.checkpointStages && !this.spec.structureGatesBoss) {
-      if (this.spec.boss) this.spawnBoss();
-      if (this.spec.bosses) this.spawnBosses();
-    }
+    // down, same "gate" idea as a checkpoint chain but keyed off demolition instead of navigation.
+    // Deferred to spawnInitialBosses() — called immediately below for Solo, or from confirmReady()
+    // once Coop's ready gate opens — rather than fired straight from here, so a level with an
+    // instant boss doesn't drop it on players who are still reading the ready screen.
+    this.pendingInitialBosses = !this.spec.checkpoints && !this.spec.checkpointStages && !this.spec.structureGatesBoss;
     // Protect Detail (escort archetype, see LEVEL_BUILDERS' 5/15/25/33): pick a random active
     // squadmate to be this run's VIP and hand them that level's severity multipliers — Bots.spawn()
     // (called inside Game.start() above, before this.spec even exists yet) already reset escort/
@@ -7431,7 +7469,39 @@ const Levels = {
       }
     }
     this.updateCheckpointMarker();
-    HUD.showHud(true); HUD.banner(cfg.name.toUpperCase(), cfg.objectives[0], true);
+    HUD.showHud(true);
+    // Coop: hold the round at the door. The world and player are already fully live (see
+    // showReadyGate) — you can walk around and get a look at the arena — but nothing spawns and no
+    // timer runs until READY is confirmed. Solo is untouched: same instant start/banner as always.
+    if (this.mode === 'coop') { this.showReadyGate(cfg); }
+    else { this.awaitingReady = false; this.spawnInitialBosses(); HUD.banner(cfg.name.toUpperCase(), cfg.objectives[0], true); }
+  },
+
+  spawnInitialBosses() {
+    if (!this.pendingInitialBosses) return;
+    this.pendingInitialBosses = false;
+    if (this.spec.boss) this.spawnBoss();
+    if (this.spec.bosses) this.spawnBosses();
+  },
+  // Nothing here talks to Net yet — Coop Challenges can't have real teammates until hosted-room
+  // support for them ships (see the CHALLENGES mode-select screen's own note; it's bots-only under
+  // the hood right now, same as Solo), so "everyone ready" is just the local player today. This is
+  // the hook point for that later: broadcast a ready message on confirm, keep an ack per connected
+  // peer instead of the single `awaitingReady` flag, and only open the gate once they've all landed.
+  showReadyGate(cfg) {
+    this.awaitingReady = true;
+    DOM.challengeReadyName.textContent = cfg.name.toUpperCase();
+    DOM.challengeReadyArch.textContent = cfg.archetype.toUpperCase();
+    DOM.challengeReadyDesc.textContent = cfg.objectives.join(' ');
+    DOM.challengeReadyWho.textContent = 'Look around, get your bearings — nothing spawns until you hit READY.';
+    DOM.challengeReady.classList.add('show');
+  },
+  confirmReady() {
+    if (!this.awaitingReady) return;
+    this.awaitingReady = false;
+    DOM.challengeReady.classList.remove('show');
+    this.spawnInitialBosses();
+    HUD.banner(this.cfg.name.toUpperCase(), this.cfg.objectives[0], true);
   },
 
   spawnBoss() {
@@ -7781,6 +7851,7 @@ const Levels = {
 
   update(dt) {
     if (!this.active) return;
+    if (this.awaitingReady) return; // Coop's ready gate — nothing ticks until confirmReady()
     this.elapsed += dt; this.progress.surviveTime = this.elapsed;
     this.spawnTrickle(dt);
     Zones.update(dt); this.tickZones(dt); this.tickZoneDrain(dt);
@@ -8022,6 +8093,7 @@ const Game = {
     if (DOM.btnLevelNext) DOM.btnLevelNext.addEventListener('click', () => { Audio.unlock(); Levels.start(Levels.cfg.level + 1); });
     if (DOM.btnLevelBackSelect) Input.tapButton(DOM.btnLevelBackSelect, () => { self.toMenu(); Levels.renderSelect(); HUD.showScreen('levelselect'); });
     if (DOM.btnLevelMenu) Input.tapButton(DOM.btnLevelMenu, () => self.toMenu());
+    if (DOM.btnChallengeReady) Input.tapButton(DOM.btnChallengeReady, () => Levels.confirmReady());
     const optToggle = (els, fn) => els.forEach(e => e.addEventListener('click', () => { fn(); HUD.refreshOptions(); }));
     optToggle([DOM.optAuto, DOM.pOptAuto], () => self.setAutoFire(!self.autoFire));
     // turning it OFF needs no ceremony; turning it ON goes through the confirmation popup instead
@@ -8362,7 +8434,7 @@ const Game = {
   },
   toMenu() {
     Net.leave(); this.coopMenu = false;
-    Levels.active = false; Zones.clear(); Structures.clear();
+    Levels.active = false; Levels.awaitingReady = false; DOM.challengeReady.classList.remove('show'); Zones.clear(); Structures.clear();
     if (Levels._cfgOverrides) { for (const k in Levels._cfgOverrides) CFG[k] = Levels._cfgOverrides[k]; Levels._cfgOverrides = null; }
     this.state = 'menu'; HUD.showScreen('menu'); HUD.showHud(false); Input.reset(); HUD.refreshOptions();
     Zombies.clear(); Bullets.clear(); Grenades.clear(); Pickups.clear(); Floaties.clear(); DOM.lowhp.classList.remove('on'); DOM.dmg.style.opacity = '0'; this.timeScale = 1;
