@@ -1052,7 +1052,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.100.0';
+const GAME_VERSION = 'v1.101.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -9766,6 +9766,9 @@ const Net = {
       // cosmetic-only mirror of whichever ultimate this peer is running (see
       // Ultimates.syncPeerVisual) — ultPos holds their clone/flame positions when relevant
       ultActive: false, ultPos: null, _ultVis: null,
+      // y/ty: jump height, same target-and-lerp treatment as tx/tz (see setPeer/updateAvatars) —
+      // without this a peer's avatar stayed pinned to the ground no matter how high they jumped.
+      y: 0, ty: 0,
       tx: 0, tz: 0, tRy: 0, vis: null, walk: 0, flashT: 0, last: Net.clock,
       get alive() { return this.st === 0; },
       hurt: function (amount, fx, fz) { self.damagePeer(this, amount); }
@@ -9968,9 +9971,9 @@ const Net = {
   },
 
   /* ---------------- per-player state exchange ---------------- */
-  setPeer(peer, x, z, ry, hp, maxHp, st, w, kills, fire, head, afk, score, inv) {
-    if (peer.vis === null) { peer.x = x; peer.z = z; peer.ry = ry; }
-    peer.tx = x; peer.tz = z; peer.tRy = ry;
+  setPeer(peer, x, z, ry, y, hp, maxHp, st, w, kills, fire, head, afk, score, inv) {
+    if (peer.vis === null) { peer.x = x; peer.z = z; peer.ry = ry; peer.y = y || 0; }
+    peer.tx = x; peer.tz = z; peer.tRy = ry; peer.ty = y || 0;
     peer.hp = hp; peer.maxHp = maxHp || 100; peer.st = st | 0; peer.w = w | 0;
     if (kills != null) peer.kills = kills | 0;
     if (head != null) peer.head = head | 0;
@@ -9986,14 +9989,14 @@ const Net = {
   // A client owns its position and hit points but NOT its kill count — the host resolves kills,
   // so taking `kills` from the client here would wipe the tally the host just credited.
   applyPeerState(peer, m) {
-    this.setPeer(peer, m.x, m.z, m.r, m.h, m.m, m.s, m.w, null, m.f, null, m.a);
+    this.setPeer(peer, m.x, m.z, m.r, m.y, m.h, m.m, m.s, m.w, null, m.f, null, m.a);
     // cosmetic-only ultimate visuals (clone+flame positions) — see Ultimates.exportPositions/
     // syncPeerVisual and Net.updateAvatars
     peer.ultActive = !!m.u; peer.ultPos = m.up || null;
   },
   sendInput() {
     const msg = {
-      k: 'p', id: this.id, x: r2(Player.x), z: r2(Player.z), r: r2(Player.yaw),
+      k: 'p', id: this.id, x: r2(Player.x), z: r2(Player.z), r: r2(Player.yaw), y: r2(Player.y),
       h: Math.round(Player.hp), m: Player.maxHp,
       s: Player.alive ? 0 : (Player.downed ? 1 : 2),
       w: Player.cur, kl: Player.stats.kills, f: Player.vm.flashT > 0 ? 1 : 0,
@@ -10150,20 +10153,23 @@ const Net = {
     // this host's own clone/flame positions (if any) so every peer can paint the same swarm onto
     // this machine's own avatar too, exactly like a peer's own ultv is relayed below
     const myUp = Ultimates.exportPositions(Player);
+    // `y` (jump height) is appended at index 16, after everything ultimate-related — an older
+    // client just never reads that far and treats every row as grounded, same append-don't-insert
+    // convention the zombie rows above already use for their own trailing fields.
     const pl = [[this.id, r2(Player.x), r2(Player.z), r2(Player.yaw), Math.round(Player.hp), Player.maxHp,
       Player.alive ? 0 : (Player.downed ? 1 : 2), Player.cur, Player.stats.kills, Player.vm.flashT > 0 ? 1 : 0, Player.stats.head,
-      Game.coopMenu ? 1 : 0, Math.round(Player.stats.score), Player.ultInvisible ? 1 : 0, Player.ultActive ? 1 : 0, myUp || null]];
+      Game.coopMenu ? 1 : 0, Math.round(Player.stats.score), Player.ultInvisible ? 1 : 0, Player.ultActive ? 1 : 0, myUp || null, r2(Player.y)]];
     for (const k in this.peers) {
       const p = this.peers[k];
-      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head, p.afk, Math.round(p.score || 0), p.ultInvisible ? 1 : 0, p.ultActive ? 1 : 0, p.ultPos || null]);
+      pl.push([p.id, r2(p.tx), r2(p.tz), r2(p.tRy), Math.round(p.hp), p.maxHp, p.st, p.w, p.kills, 0, p.head, p.afk, Math.round(p.score || 0), p.ultInvisible ? 1 : 0, p.ultActive ? 1 : 0, p.ultPos || null, r2(p.ty)]);
     }
     // filler bots reported in the same row shape as a real peer (see roster() above) — weapon
     // index is always 0 (pistol) since bots don't track one of their own; everything else is
     // their real live state, so a downed/revived bot reads correctly on every other machine too.
-    // Bots never run an ultimate, so ult/up are always the inert 0/null.
+    // Bots never run an ultimate (or jump), so ult/up/y are always the inert 0/null/0.
     for (const b of Bots.list) {
       if (!b.squadActive) continue;
-      pl.push([b.id, r2(b.x), r2(b.z), r2(b.ry), Math.round(b.hp), b.maxHp, b.out ? 2 : (b.down ? 1 : 0), 0, b.kills, 0, b.head, 0, Math.round(b.score || 0), 0, 0, null]);
+      pl.push([b.id, r2(b.x), r2(b.z), r2(b.ry), Math.round(b.hp), b.maxHp, b.out ? 2 : (b.down ? 1 : 0), 0, b.kills, 0, b.head, 0, Math.round(b.score || 0), 0, 0, null, 0]);
     }
     this.send({
       k: 's', wv: Game.wave, wa: Game.waveActive ? 1 : 0, ts: Game.toSpawn, pts: Math.round(Game.points),
@@ -10231,7 +10237,7 @@ const Net = {
       // catch a dropped 'roster' packet) but this is the fallback of the fallback: better a
       // placeholder body than silently dropping their every position update on the floor
       if (!peer) { peer = this.mkPeer(id, 'SURVIVOR', 'cloud'); this.peers[id] = peer; }
-      this.setPeer(peer, e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null, e.length > 12 ? e[12] : null, e.length > 13 ? e[13] : null);
+      this.setPeer(peer, e[1], e[2], e[3], e.length > 16 ? e[16] : 0, e[4], e[5], e[6], e[7], e[8], e[9], e[10], e.length > 11 ? e[11] : null, e.length > 12 ? e[12] : null, e.length > 13 ? e[13] : null);
       // cosmetic-only ultimate visuals (clone+flame positions) relayed from whoever's actually
       // running the move (see Ultimates.exportPositions/syncPeerVisual)
       peer.ultActive = e.length > 14 ? !!e[14] : false;
@@ -10371,14 +10377,19 @@ const Net = {
       Ultimates.syncPeerVisual(p, v);
       const ox = p.x, oz = p.z, kk = Math.min(1, dt * 12);
       p.x += (p.tx - p.x) * kk; p.z += (p.tz - p.z) * kk;
+      // y (jump height) gets the same lerp-toward-target treatment as x/z above, just snapped
+      // faster (see kky) — a peer's jump arc is only sampled a few times a second (see NET.SNAP),
+      // so smoothing it exactly as slowly as horizontal movement would round off the whole hop.
+      const kky = Math.min(1, dt * 18);
+      p.y += (p.ty - p.y) * kky;
       let da = p.tRy - p.ry; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
       p.ry += da * Math.min(1, dt * 12);
       const sp = Math.sqrt((p.x - ox) * (p.x - ox) + (p.z - oz) * (p.z - oz)) / Math.max(dt, 1e-4);
       const gait = Math.min(1, sp / 4);
       v.anim += dt * Math.max(1.2, sp * 2.1);
-      v.g.position.set(p.x, 0, p.z);
+      v.g.position.set(p.x, p.y, p.z);
       v.g.rotation.y = p.ry;
-      v.shadow.position.set(p.x, 0.014, p.z);
+      v.shadow.position.set(p.x, World.groundHeightAt(p.x, p.z) + 0.014, p.z);
       v.label.position.set(p.x, p.st === 1 ? 1.1 : 2.35, p.z);
       Avatars.pose(v, dt, gait, p.st === 1);
       v.label.material.color.setHex(p.st === 1 ? 0xff5a3a : 0xffffff);
