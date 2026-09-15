@@ -1048,7 +1048,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.98.0';
+const GAME_VERSION = 'v1.99.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1608,6 +1608,10 @@ const Avatars = {
    already playing, the same spirit as the procedural body's own hand-tuned attack swing. */
 const ZombieModels = {
   KEYS: ['warrior', 'minion', 'rogue', 'mage'],
+  // KayKit's source textures read as warm flesh/pink tones under this scene's lighting (see the
+  // Lambert/LinearEncoding fix below) — these enemies are supposed to look undead, not fleshy, so
+  // every instance gets one of these white/gray/green tints multiplied over its diffuse map.
+  TINTS: [0xd8ddd2, 0xa8ada2, 0x8a9a7c, 0xc2cabb, 0x6e7d68, 0x939a90],
   // every 5 waves, the look shown for every big/boss zombie moves on to the next of the four —
   // Challenge levels never advance Game.wave past 0 (see LEVEL_BUILDERS's own comment on that), so
   // a challenge's boss always lands on the first entry; that's fine, a challenge boss is already a
@@ -1643,9 +1647,42 @@ const ZombieModels = {
       const scale = size.y > 1e-4 ? 1.95 / size.y : 1;
       gltf.scene.scale.setScalar(scale);
       gltf.scene.position.y = -box.min.y * scale;
+      // strip KayKit's own paint job to grayscale, once per unique texture, here on the shared
+      // template — every clone spawned from it (see spawnBody) then just multiplies a white/gray/
+      // green TINT over that gray base. A tint multiplied straight over the original color art
+      // can't reliably kill a strongly saturated red/maroon cloak (the channel that's already
+      // dominant in the source stays dominant after any plain scale-down), which is how these
+      // ended up reading as pink/fleshy in the first place — going through gray first guarantees
+      // the tint's own hue is what shows, not a wash over the original paint.
+      const desatCache = new Map();
+      gltf.scene.traverse(o => {
+        if (!o.isMesh || !o.material || !o.material.map) return;
+        const src = o.material.map;
+        if (!desatCache.has(src.uuid)) desatCache.set(src.uuid, this._desaturate(src));
+        o.material.map = desatCache.get(src.uuid);
+      });
       const wrap = new THREE.Group(); wrap.add(gltf.scene);
       return wrap;
     })();
+  },
+  _desaturate(tex) {
+    const img = tex.image;
+    if (!img || !img.width) return tex;
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width; canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const l = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+      d[i] = d[i + 1] = d[i + 2] = l;
+    }
+    ctx.putImageData(id, 0, 0);
+    const out = new THREE.CanvasTexture(canvas);
+    out.flipY = tex.flipY; out.wrapS = tex.wrapS; out.wrapT = tex.wrapT;
+    out.encoding = THREE.LinearEncoding;
+    return out;
   },
   // a live body instance for one zombie pool slot — safe to call repeatedly (e.g. the same slot
   // spawning a new big/boss type every so often); resolves once both the character mesh and the
@@ -1659,6 +1696,9 @@ const ZombieModels = {
     // per-instance here so hit-flash/DoT-glow/invisibility opacity on one zombie can never bleed
     // onto every other zombie currently wearing the same character look (see Zombie._mats()).
     const materials = [];
+    // one tint for the whole body (not re-rolled per mesh part) so the cloak/skin/armor all shift
+    // the same way, same as the procedural zombie's own random skin/cloth variant picks.
+    const tint = new THREE.Color(this.TINTS[(Math.random() * this.TINTS.length) | 0]);
     // frustumCulled off: a SkinnedMesh's auto-computed bounding sphere is based on its bind pose
     // and doesn't track skeletal deformation, so at some camera angles/poses it gets wrongly culled
     // — invisible for a frame or several — which let the "spotted through cover" outline capsule
@@ -1679,7 +1719,8 @@ const ZombieModels = {
       // colors hard — an sRGB-decoded deep maroon cloak came out a washed-out pastel pink under it,
       // while the same pixels read correctly treated as linear like everything else here does.
       if (src.map) src.map.encoding = THREE.LinearEncoding;
-      const mat = new THREE.MeshLambertMaterial({ map: src.map || null, color: src.color ? src.color.clone() : 0xffffff, transparent: src.transparent, opacity: src.opacity });
+      const color = (src.color ? src.color.clone() : new THREE.Color(1, 1, 1)).multiply(tint);
+      const mat = new THREE.MeshLambertMaterial({ map: src.map || null, color, transparent: src.transparent, opacity: src.opacity });
       o.material = mat; materials.push(mat); o.frustumCulled = false;
     });
     const mixer = new THREE.AnimationMixer(root);
@@ -3801,9 +3842,13 @@ class Zombie {
     // as final world-space sizes matching collision — divide out T.scale here so it doesn't get
     // applied twice. GLTF characters have a real tapered humanoid silhouette (plus a weapon prop
     // held out past the body) rather than the procedural body's boxy one, which the outline's own
-    // shape is still just a plain cylinder — narrowed a bit for a GLTF body so the "spotted through
-    // cover" glow hugs the actual silhouette instead of visibly filling in the gap around it.
-    const outR = (T.radius / T.scale) * (this.useGltf ? 0.72 : 1);
+    // shape is still just a plain cylinder — narrowed for a GLTF body so its round cross-section
+    // sits inside the actual (thinner, tapered) mesh at every angle. Too generous a radius here
+    // (0.72 wasn't tight enough) puts the cylinder's front surface in front of the real torso
+    // straight-on, so the GreaterDepth x-ray trick (see ZG.outlineMat) passes and the "spotted
+    // through cover" glow fills in solid across the chest even in plain open line of sight, with
+    // nothing actually between the player and the body.
+    const outR = (T.radius / T.scale) * (this.useGltf ? 0.45 : 1);
     this.outline.scale.set(outR, T.height / T.scale, outR);
     this.outline.position.set(0, T.height / (2 * T.scale), 0);
     this.group.rotation.set(T.lean, this.yaw, 0); this.group.position.set(x, this.y, z); this.group.visible = true;
@@ -4204,7 +4249,13 @@ class Zombie {
     // x-ray outline only near the local camera — perf guard so a big, dense-late-wave map isn't
     // paying a transparent draw call for every zombie regardless of where they are.
     const odx = this.x - Player.x, odz = this.z - Player.z, odsq = odx * odx + odz * odz;
-    this.outline.visible = odsq < 2025;
+    // GLTF bodies: this is a plain cylinder standing in for the real tapered mesh, and even
+    // narrowed (see Zombie.spawn's outR) its round cross-section still sits in front of the real
+    // torso surface head-on, so the GreaterDepth x-ray trick (ZG.outlineMat) passes and washes the
+    // chest in its red glow even in plain open line of sight — no cover, nothing earning the
+    // "spotted through cover" effect. Skipping it here for GLTF bodies loses that cover-tell for
+    // big/boss enemies specifically, but a reliably wrong red tint on every big/boss enemy is worse.
+    this.outline.visible = odsq < 2025 && !this.useGltf;
     // faded in past ~12m so it doesn't clutter a fight already in your face, but stays lit at any
     // range beyond that — normal depth-tested, so cover still blocks it same as the body itself.
     // The sprite's world-space size used to be fixed, so perspective still shrank it to a
