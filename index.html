@@ -233,6 +233,8 @@ button{font-family:inherit;color:inherit;}
   -webkit-mask:radial-gradient(circle,transparent 0 62%,#000 64%);mask:radial-gradient(circle,transparent 0 62%,#000 64%);}
 #btnSprint.on{border-color:#fff;box-shadow:0 0 18px var(--glow);}
 #btnSprint.spent{opacity:.5;}
+/* JUMP sits left of SPRINT, same row, clear of RELOAD/MEDKIT's column above it. */
+#btnJump{width:54px;height:54px;right:calc(176px + var(--sar));bottom:calc(118px + var(--sab));font-size:10px;border-color:#8fbf5a;}
 #btnPause{position:absolute;right:calc(10px + var(--sar));top:calc(10px + var(--sat));width:40px;height:40px;border-radius:8px;border:1px solid rgba(255,255,255,.35);
   background:rgba(0,0,0,.45);color:#fff;font-size:16px;font-family:var(--hud-font);letter-spacing:.1em;pointer-events:auto;touch-action:manipulation;}
 #btnPause:active{background:rgba(255,255,255,.25);}
@@ -405,6 +407,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
   #btnCam{width:38px;height:38px;right:calc(64px + var(--sar));top:calc(58px + var(--sat));}
   #btnScope{width:38px;height:38px;right:calc(64px + var(--sar));top:calc(106px + var(--sat));}
   #btnSprint{width:50px;height:50px;right:calc(88px + var(--sar));bottom:calc(100px + var(--sab));}
+  #btnJump{width:44px;height:44px;right:calc(148px + var(--sar));bottom:calc(100px + var(--sab));}
   #joyHint{left:calc(42px + var(--sal));bottom:calc(42px + var(--sab));width:104px;height:104px;}
   #layoutBar{top:calc(56px + var(--sat));}
   #ammoRes{font-size:30px;} #ammoResLabel{font-size:11px;} #wpnName{font-size:10px;} #reloadHint{font-size:10px;}
@@ -660,6 +663,7 @@ h1.title em{font-style:normal;color:var(--accent2);}
     <div id="btnMedkit" class="tbtn empty">MEDKIT<small id="medkitCount">0</small></div>
     <div id="btnGrenade" class="tbtn empty">GRENADE<small id="grenadeCount">0</small></div>
     <div id="btnSprint" class="tbtn"><span class="meter"></span>SPRINT</div>
+    <div id="btnJump" class="tbtn">JUMP</div>
     <div id="btnUlt" class="tbtn"><span class="meter"></span>SPECIAL<small id="ultTimer"></small></div>
     <div id="btnFire" class="tbtn"><span class="ring"></span>FIRE</div>
     <div id="layoutBar">DRAG THE BUTTONS<button id="btnLayoutReset">RESET</button><button id="btnLayoutDone" class="go">DONE</button></div>
@@ -1048,7 +1052,7 @@ function easeOut(t) { return 1 - (1 - t) * (1 - t); }
 const $ = (id) => document.getElementById(id);
 
 /* ------------------------------------------------------------------ config */
-const GAME_VERSION = 'v1.99.0';
+const GAME_VERSION = 'v1.100.0';
 const CFG = {
   // playable radius — now DYNAMIC, grows wave-by-wave (see arenaRForWave() below). arenaR0 is
   // where a match starts: 4x smaller in AREA than the 58 the map used to be pinned at everywhere
@@ -1069,6 +1073,14 @@ const CFG = {
   propDensityMul: (120 / 58) * (120 / 58),
   grid: 256, gridMin: -128, cell: 1,
   playerR: 0.45, eyeH: 1.62,
+  // jump: single jump peaks at jumpVel^2/(2*gravity) ~= 0.82m, well under a crate's 1.6m top, so a
+  // plain jump can never clear one — only a double jump (its own vy, not stacked on top of
+  // whatever's left of the first) reaches ~2.0m even if pressed the instant you leave the ground,
+  // comfortably past 1.6m with margin for landing-frame rounding. See World.groundHeightAt/
+  // Player.tryJump/Player.update's vertical-physics block.
+  gravity: 22, jumpVel: 6.0, doubleJumpVel: 9.4,
+  // airborne movement (jumping or falling) is faster than running — see Player.update's spd calc
+  airSpeedMul: 1.5,
   // sniper scope (see Player.cycleScope/enterScope/updateScopeFov): cycling through 3x/6x/12x
   // narrows the camera's own FOV by that factor (real optical zoom, not a cosmetic overlay), which
   // is also what look sensitivity divides by — the same physical mouse/swipe motion should sweep
@@ -2297,14 +2309,14 @@ const Audio = {
 const KEYBIND_DEFAULTS = {
   moveForward: 'KeyW', moveBack: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD',
   sprint: 'KeyR', fire: 'Space', reload: 'KeyF', swap: 'KeyQ', medkit: 'KeyE', grenade: 'MetaLeft',
-  ultimate: 'ShiftLeft', scope: 'KeyZ', camera: 'KeyV', auto: 'KeyT', pause: 'Escape',
+  ultimate: 'ShiftLeft', scope: 'KeyZ', camera: 'KeyV', auto: 'KeyT', pause: 'Escape', jump: 'KeyC',
   weapon1: 'Digit1', weapon2: 'Digit2', weapon3: 'Digit3'
 };
 const KEYBIND_LABELS = {
   moveForward: 'MOVE FORWARD', moveBack: 'MOVE BACK', moveLeft: 'MOVE LEFT', moveRight: 'MOVE RIGHT',
   sprint: 'SPRINT', fire: 'FIRE', reload: 'RELOAD', swap: 'SWAP WEAPON', medkit: 'HEALTH KIT', grenade: 'GRENADE',
   ultimate: 'SPECIAL / ULTIMATE', scope: 'SNIPER SCOPE', camera: 'TOGGLE CAMERA', auto: 'TOGGLE AUTO-FIRE',
-  pause: 'PAUSE', weapon1: 'WEAPON SLOT 1', weapon2: 'WEAPON SLOT 2', weapon3: 'WEAPON SLOT 3'
+  pause: 'PAUSE', jump: 'JUMP', weapon1: 'WEAPON SLOT 1', weapon2: 'WEAPON SLOT 2', weapon3: 'WEAPON SLOT 3'
 };
 // display names for keys a player is likely to bind — anything not listed here just shows the
 // raw KeyboardEvent.code with the "Key"/"Digit" prefix stripped, which reads fine on its own
@@ -2346,7 +2358,7 @@ const Input = {
   fireId: null, fireLX: 0, fireLY: 0,
   sens: 1.0, R: 58,
   touchSeen: false, pointerLocked: false, mouseDown: false,
-  on: { reload() { }, swap() { }, auto() { }, pause() { }, select() { }, sprint() { }, camera() { }, ultimate() { }, scope() { }, grenade() { }, any() { } },
+  on: { reload() { }, swap() { }, auto() { }, pause() { }, select() { }, sprint() { }, camera() { }, ultimate() { }, scope() { }, grenade() { }, jump() { }, any() { } },
   el: {},
   // shared by the HUD control buttons below AND every menu nav button (back buttons etc — see
   // Game.init): a plain 'click' listener alone is an unreliable way to catch a touch tap in this
@@ -2365,7 +2377,7 @@ const Input = {
   },
   init() {
     const el = this.el;
-    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnUlt', 'btnMedkit', 'btnGrenade', 'btnScope', 'btnPause', 'c'].forEach(id => el[id] = $(id));
+    ['touchLayer', 'joyBase', 'joyKnob', 'joyHint', 'btnFire', 'btnReload', 'btnSwitch', 'btnAuto', 'btnCam', 'btnSprint', 'btnJump', 'btnUlt', 'btnMedkit', 'btnGrenade', 'btnScope', 'btnPause', 'c'].forEach(id => el[id] = $(id));
     const self = this, opt = { passive: false };
     const layer = el.touchLayer;
     layer.addEventListener('touchstart', function (e) { e.preventDefault(); self.touchSeen = true; self.on.any(); for (const t of e.changedTouches) self.touchBegin(t); }, opt);
@@ -2397,6 +2409,7 @@ const Input = {
     self.tapButton(el.btnAuto, () => self.on.auto());
     self.tapButton(el.btnCam, () => self.on.camera());
     self.tapButton(el.btnSprint, () => self.on.sprint());
+    self.tapButton(el.btnJump, () => self.on.jump());
     self.tapButton(el.btnUlt, () => self.on.ultimate());
     self.tapButton(el.btnScope, () => self.on.scope());
     self.tapButton(el.btnPause, () => self.on.pause());
@@ -2421,6 +2434,7 @@ const Input = {
       else if (code === Keybinds.scope) self.on.scope();
       else if (code === Keybinds.auto) self.on.auto();
       else if (code === Keybinds.camera) self.on.camera();
+      else if (code === Keybinds.jump) self.on.jump();
       else if (code === Keybinds.pause || code === 'Escape' || code === 'KeyP') self.on.pause();
       else if (code === Keybinds.weapon1) self.on.select(0); else if (code === Keybinds.weapon2) self.on.select(1); else if (code === Keybinds.weapon3) self.on.select(2);
       else if (code === Keybinds.fire) { self.fire = true; self.fireEdge = true; }
@@ -2559,7 +2573,7 @@ const Layout = {
   // per-callsign now (see playerPrefKey) — a saved arrangement follows the same person on the
   // same phone rather than whoever last typed a name into this browser
   key() { return playerPrefKey('dnd_layout_v1'); },
-  ids: ['btnFire', 'btnReload', 'btnMedkit', 'btnGrenade', 'btnSwitch', 'btnAuto', 'btnCam', 'btnScope', 'btnSprint', 'btnUlt'],
+  ids: ['btnFire', 'btnReload', 'btnMedkit', 'btnGrenade', 'btnSwitch', 'btnAuto', 'btnCam', 'btnScope', 'btnSprint', 'btnJump', 'btnUlt'],
   pos: {}, editing: false, drag: null, els: {}, bar: null,
   init() {
     for (const id of this.ids) this.els[id] = $(id);
@@ -3112,7 +3126,11 @@ const World = {
   // `noObstacles` (set by the WALL PHASE power-up — see Player.update) skips the box/barrel loops
   // below but keeps the outer arena-radius clamp: phase lets you walk through crates, walls and
   // buildings, not off the edge of the playable map into whatever is (or isn't) rendered past it.
-  collide(o, r, noObstacles) {
+  // `y`, when passed (only the player does — see Player.update), is the mover's current height:
+  // a box is skipped entirely once y reaches its top, so a double-jumping player can sail in over
+  // a crate instead of being walled off by its sides (see also groundHeightAt, which is what
+  // actually lands them on top once they're over it and gravity brings them back down).
+  collide(o, r, noObstacles, y) {
     let hit = false;
     const dd = Math.sqrt(o.x * o.x + o.z * o.z), maxR = CFG.arenaR - r;
     if (dd > maxR) { const k = maxR / dd; o.x *= k; o.z *= k; hit = true; }
@@ -3120,6 +3138,7 @@ const World = {
     const boxes = this.boxes;
     for (let i = 0; i < boxes.length; i++) {
       const b = boxes[i];
+      if (y != null && y >= b.h - 1e-4) continue;
       if (o.x < b.x0 - r || o.x > b.x1 + r || o.z < b.z0 - r || o.z > b.z1 + r) continue;
       const cx = clamp(o.x, b.x0, b.x1), cz = clamp(o.z, b.z0, b.z1), dx = o.x - cx, dz = o.z - cz, d2 = dx * dx + dz * dz;
       if (d2 >= r * r) continue;
@@ -3136,6 +3155,19 @@ const World = {
       const d = Math.sqrt(d2) || 0.001; o.x += dx / d * (rr - d); o.z += dz / d * (rr - d);
     }
     return hit;
+  },
+  // the resting surface height directly under (x,z) — 0 (bare ground) unless standing over a
+  // box's footprint, in which case its top (see Player.update's vertical-physics block, which
+  // both lands a falling player on this and lets them stand on it without sinking). Point-in-box
+  // against the player's exact center, not a radius — same simplification the rest of this file's
+  // 2D-collision approach already leans on elsewhere.
+  groundHeightAt(x, z) {
+    const boxes = this.boxes; let h = 0;
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      if (b.h > h && x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1) h = b.h;
+    }
+    return h;
   },
   // segment vs world geometry. Returns t in [0,1] or -1. Sets this.hitBarrel to the barrel hit (or null).
   hitBarrel: null,
@@ -5090,6 +5122,11 @@ const Player = {
   downed: false, downT: 0, spectating: false,
   pinnedBy: null, escape: 0, escSend: 0,
   stamina: 1, sprintOn: false, sprinting: false, staminaHold: 0,
+  // jump: y is height above whatever surface is underfoot (0 on bare ground, a crate's h once
+  // standing on one — see World.groundHeightAt), grounded/jumpsUsed reset together on landing.
+  // _groundH is just last frame's groundHeightAt(x,z), cached so updateBody's shadow doesn't
+  // redo the same box scan update() already did this frame.
+  y: 0, vy: 0, jumpsUsed: 0, grounded: true, _groundH: 0,
   weapons: [], cur: 0, cooldown: 0, reloading: false, reloadT: 0, reloadTotal: 1, switchT: 0, bloom: 0,
   bobT: 0, stepD: 0, moveMag: 0, lastHurt: -99, recoil: 0, swayX: 0, swayY: 0, lastLookX: 0, lastLookY: 0,
   // insta-kill/double-points are personal now — whoever grabbed the pickup is the only one who
@@ -5147,6 +5184,7 @@ const Player = {
     this.downed = false; this.downT = 0; this.spectating = false;
     this.pinnedBy = null; this.escape = 0; this.escSend = 0;
     this.stamina = 1; this.sprintOn = false; this.sprinting = false; this.staminaHold = 0;
+    this.y = 0; this.vy = 0; this.jumpsUsed = 0; this.grounded = true; this._groundH = 0;
     this.insta = 0; this.dbl = 0; this.stationTickT = 0;
     // squadmates would otherwise all boot up inside each other at the origin
     if (Net.mode !== 'off') { const a = rnd(0, TAU); this.x = Math.cos(a) * 2.6; this.z = Math.sin(a) * 2.6; }
@@ -5175,7 +5213,15 @@ const Player = {
   eyeDir(out) { const cp = Math.cos(this.pitch); out.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp); return out; },
   eyeY() {
     if (this.downed) return 0.62; if (this.spectating) return 0.42;
-    return CFG.eyeH + Math.sin(this.bobT) * 0.035 * this.moveMag;
+    return this.y + CFG.eyeH + Math.sin(this.bobT) * 0.035 * this.moveMag;
+  },
+  // guards mirror tryFire/tryUltimate's own alive/downed/pinned checks — a downed or pinned
+  // player has no business leaving the ground. jumpsUsed caps at 2: a plain jump (from grounded)
+  // then one more anywhere in the air, same as tryUltimate's own single-purpose gate.
+  tryJump() {
+    if (!this.alive || this.downed || this.spectating || this.pinnedBy || this.jumpsUsed >= 2) return;
+    this.vy = this.jumpsUsed === 0 ? CFG.jumpVel : CFG.doubleJumpVel;
+    this.jumpsUsed++; this.grounded = false;
   },
   update(dt) {
     const mv = Input.getMove(this._mv), lk = Input.consumeLook(this._lk);
@@ -5236,16 +5282,27 @@ const Player = {
       const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw), rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
       const mag = Math.min(1, Math.sqrt(mv.x * mv.x + mv.y * mv.y)); this.moveMag = lerp(this.moveMag, mag, Math.min(1, dt * 10));
       this.updateSprint(dt, mag);
-      const spd = this.speed * (this.sprinting ? CFG.sprintMul : 1) * (Game.fastMove > 0 ? CFG.fastMoveMul : 1);
+      const spd = this.speed * (this.sprinting ? CFG.sprintMul : 1) * (Game.fastMove > 0 ? CFG.fastMoveMul : 1) * (this.grounded ? 1 : CFG.airSpeedMul);
       const vx = (fx * mv.y + rx * mv.x) * spd, vz = (fz * mv.y + rz * mv.x) * spd;
       this.x += vx * dt; this.z += vz * dt;
-      World.collide(this, CFG.playerR, Game.phase > 0);
+      // pass the current (pre-physics-step) height so a double-jumping player already above a
+      // crate's top isn't walled off by its sides — see World.collide's `y` param.
+      World.collide(this, CFG.playerR, Game.phase > 0, this.y);
       const zs = Zombies.pool;
       for (let i = 0; i < zs.length; i++) {
         const zb = zs[i]; if (!zb.on || zb.state === 'dead' || zb.state === 'emerge') continue;
         const dx = this.x - zb.x, dz = this.z - zb.z, rr = CFG.playerR + zb.radius, d2 = dx * dx + dz * dz;
         if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2); this.x = zb.x + dx / d * rr; this.z = zb.z + dz / d * rr; }
       }
+      // vertical: gravity/landing against whatever's directly underfoot now that x/z are settled
+      // for this frame (bare ground, or a crate's top — see World.groundHeightAt). Skipped once
+      // already resting exactly on it with no upward velocity, so standing still never jitters.
+      const groundH = this._groundH = World.groundHeightAt(this.x, this.z);
+      if (this.y > groundH || this.vy !== 0) {
+        this.vy -= CFG.gravity * dt; this.y += this.vy * dt;
+        if (this.y <= groundH) { this.y = groundH; this.vy = 0; this.jumpsUsed = 0; this.grounded = true; }
+        else this.grounded = false;
+      } else { this.y = groundH; this.grounded = true; }
       if (mag > 0.05) { this.bobT += dt * 9 * mag; this.stepD += Math.sqrt(vx * vx + vz * vz) * dt; if (this.stepD > 2.3) { this.stepD = 0; Audio.step(); } }
       // regen after a quiet period — EASY shortens the wait and heals several times faster
       {
@@ -5396,9 +5453,9 @@ const Player = {
     Avatars.setGun(b, this.weapon().def.id);
     const gait = Math.min(1, this.moveMag * (this.sprinting ? 1.5 : 1));
     this.bodyAnim += dt * (1.6 + this.moveMag * (this.sprinting ? 11 : 7));
-    b.g.position.set(this.x, 0, this.z);
+    b.g.position.set(this.x, this.y, this.z);
     b.g.rotation.y = this.yaw;
-    b.shadow.position.set(this.x, 0.014, this.z);
+    b.shadow.position.set(this.x, this._groundH + 0.014, this.z);
     Avatars.pose(b, dt, gait, this.downed);
     if (this.vm.flashT > 0) { b.flash.visible = true; b.flash.material.rotation = Math.random() * TAU; }
     else b.flash.visible = false;
@@ -8315,6 +8372,7 @@ const Game = {
     Input.on.select = function (i) { if (self.state === 'playing') Player.switchTo(i); };
     Input.on.auto = function () { self.setAutoFire(!self.autoFire); HUD.refreshOptions(); HUD.toast('AUTO-FIRE ' + (self.autoFire ? 'ON' : 'OFF')); };
     Input.on.sprint = function () { if (self.state === 'playing') Player.toggleSprint(); };
+    Input.on.jump = function () { if (self.state === 'playing') Player.tryJump(); };
     Input.on.camera = function () { self.cycleCam(); };
     Input.on.pause = function () { if (Layout.editing) { Layout.end(); return; } if (self.coopMenu) self.resume(); else if (self.state === 'playing') self.pause(); else if (self.state === 'paused') self.resume(); };
     // menu
